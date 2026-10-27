@@ -1,0 +1,2501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script>
+    try { if (localStorage.getItem("uploader-theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch (e) {}
+  </script>
+  <title>모두모두AI</title>
+  <link rel="icon" href="/static/favicon.svg?v=3" type="image/svg+xml" />
+  <link rel="stylesheet" href="/static/styles.css?v=bundle294" />
+</head>
+<body>
+  <header class="titlebar">
+    <strong class="brand"><img src="/static/favicon.svg?v=3" alt="" width="22" height="22" /><span class="brand-word"><span class="brand-a">모두</span><span class="brand-b">모두</span><span class="brand-ai">AI</span></span></strong>
+    <nav class="app-tabs">
+      <button type="button" id="appTabProducts" class="app-tab active">상품관리</button>
+      <button type="button" id="appTabOrders" class="app-tab">주문관리<span id="orderAlertBadge" class="tab-alert" hidden></span></button>
+      <button type="button" id="appTabInquiries" class="app-tab">문의관리<span id="inquiryAlertBadge" class="tab-alert" hidden></span></button>
+      <button type="button" id="appTabCollect" class="app-tab">상품담기</button>
+      <button type="button" id="appTabWholesalers" class="app-tab">공급처</button>
+      <button type="button" id="appTabSettings" class="app-tab">설정</button>
+      <button type="button" id="appTabHelp" class="app-tab">도움말</button>
+    </nav>
+    <span id="appEdition" class="app-edition"></span>
+    <span id="appVersion" class="app-version">v2026.10.21.21</span>
+    <button type="button" id="appQuit" class="app-quit" title="프로그램 종료">종료</button>
+  </header>
+
+  <section id="viewProducts" class="app-view">
+  <aside class="market-sidebar">
+    <div class="market-sidebar-head">마켓선택</div>
+    <div id="marketTree" class="market-tree" role="tree"></div>
+    <button type="button" id="marketSidebarSettings" class="market-sidebar-settings">설정</button>
+  </aside>
+  <div class="product-main">
+  <div class="collect-row">
+    <span id="productStatusFilters" class="product-status-filters" role="group" aria-label="등록상태 필터">
+      <button type="button" data-status-filter="registered" title="등록된 상품만 보기">등록 <strong data-status-count="registered">0</strong></button>
+      <button type="button" data-status-filter="waiting" title="대기(미등록) 상품만 보기">대기 <strong data-status-count="waiting">0</strong></button>
+      <button type="button" data-status-filter="error" title="오류 상품만 보기">오류 <strong data-status-count="error">0</strong></button>
+      <button type="button" data-status-filter="all" class="active" title="전체 보기">전체</button>
+    </span>
+    <form id="collectForm" class="collect-bar" hidden>
+      <input id="collectUrl" type="text" placeholder="상품 URL을 여기에 넣고 상품수집을 누르세요" />
+      <button type="submit" id="collectButton">상품수집</button>
+    </form>
+    <label class="inline-label">상품검색
+      <span class="product-search-row">
+        <select id="productSearchField" title="검색 대상">
+          <option value="all">전체</option>
+          <option value="name">상품명</option>
+          <option value="category">카테고리</option>
+          <option value="brand">브랜드</option>
+          <option value="manufacturer">제조사</option>
+        </select>
+        <input id="productSearch" type="search" placeholder="상품명, 카테고리, 브랜드, 제조사" />
+        <button type="button" id="productSearchButton">상품검색</button>
+      </span>
+    </label>
+    <label class="inline-label">공급처
+      <select id="productWholesalerFilter" title="공급처별 상품" autocomplete="off">
+        <option value="all" selected>전체</option>
+      </select>
+    </label>
+    <button type="button" id="productRefreshOriginal">정보업데이트</button>
+    <button type="button" id="productRefreshMarket">판매정보업데이트</button>
+    <span class="stock-menu">
+      <button type="button" id="productSyncStock" class="stock-menu-toggle">품절/재판매</button>
+      <span class="stock-menu-panel" hidden>
+        <button type="button" data-stock-mode="soldout">품절</button>
+        <button type="button" data-stock-mode="resale">재판매</button>
+      </span>
+    </span>
+    <span id="productFilterCount" class="hint"></span>
+  </div>
+  <nav class="toolbar" id="productToolbar">
+    <div class="tool-row">
+      <span class="tool-group">
+        <span class="tool-label">보기</span>
+        <button type="button" id="viewCollectedButton">수집상품보기</button>
+        <button type="button" id="viewRegisteredButton">등록상품보기</button>
+      </span>
+      <span class="tool-group tool-group-ai">
+        <span class="tool-label">AI</span>
+        <button type="button" id="aiButton" title="월간검색어 기준 상품명, 태그, 속성을 한 번에 AI로 가공합니다">AI가공</button>
+        <button type="button" id="aiNameButton">상품명AI</button>
+        <button type="button" id="aiTagButton">태그AI</button>
+        <button type="button" id="aiAttrButton">속성AI</button>
+      </span>
+      <span class="tool-group">
+        <span class="tool-label">바꾸기</span>
+        <button type="button" id="openOptionButton">옵션등록</button>
+        <button type="button" id="changeNameButton">상품명바꾸기</button>
+        <button type="button" id="changeCategoryButton">카테고리바꾸기</button>
+        <button type="button" id="changeAttributeButton">속성바꾸기</button>
+        <button type="button" id="changeTagButton">태그바꾸기</button>
+        <button type="button" id="changeImageButton">이미지바꾸기</button>
+        <button type="button" id="changeDetailButton">상세페이지 바꾸기</button>
+        <button type="button" id="detailIntroButton">상세페이지추가글</button>
+        <button type="button" id="saveButton">상품수정</button>
+      </span>
+    </div>
+    <div class="tool-row">
+      <span class="tool-group">
+        <span class="tool-label">등록</span>
+        <button type="button" id="sendMarketButton">마켓으로 보내기</button>
+        <button type="button" id="refreshOriginalButton">정보업데이트</button>
+        <button type="button" id="refreshMarketButton">판매정보업데이트</button>
+        <button type="button" id="registerButton">상품등록</button>
+      </span>
+      <span class="tool-group">
+        <span class="tool-label">설정</span>
+        <button type="button" id="openDelivery">배송/가격</button>
+        <button type="button" id="openBenefit">구매/리뷰 혜택</button>
+        <button type="button" id="openDiscount">즉시할인</button>
+        <button type="button" id="openNotices">공지사항</button>
+        <button type="button" id="openNameKeywords" onclick="openNameKeywordDialog()">등록금지키워드</button>
+      </span>
+      <span class="tool-group">
+        <span class="tool-label">이력</span>
+        <button type="button" id="undoProductButton">되돌리기</button>
+        <button type="button" id="redoProductButton">재실행</button>
+      </span>
+      <span class="tool-group tool-group-end">
+        <button type="button" id="stopJobButton" class="stop-job" disabled>작업중단</button>
+        <button type="button" id="deleteButton" class="tool-danger">선택삭제</button>
+      </span>
+      <span class="tabs">
+        <button type="button" id="tabProducts" class="tab active">상품목록</button>
+        <button type="button" id="tabOptions" class="tab">옵션/속성</button>
+      </span>
+    </div>
+  </nav>
+
+  <section class="workspace">
+    <div id="sheetProducts" class="grid-wrap">
+      <table class="grid" id="productGrid">
+        <colgroup>
+          <col data-col="check" style="width:36px" />
+          <col data-col="num" style="width:48px" />
+          <col data-col="date" style="width:90px" />
+          <col data-col="status" style="width:72px" />
+          <col data-col="soldout" style="width:60px" />
+          <col data-col="wholesale" style="width:90px" />
+          <col data-col="market" style="width:110px" />
+          <col data-col="category" style="width:160px" />
+          <col data-col="seller" style="width:120px" />
+          <col data-col="model" style="width:150px" />
+          <col data-col="name" style="width:280px" />
+          <col data-col="stock" style="width:70px" />
+          <col data-col="cost" style="width:90px" />
+          <col data-col="price" style="width:90px" />
+          <col data-col="brand" style="width:90px" />
+          <col data-col="maker" style="width:90px" />
+          <col data-col="origin" style="width:110px" />
+          <col data-col="as_phone" style="width:120px" />
+          <col data-col="as_guide" style="width:180px" />
+          <col data-col="tags" style="width:150px" />
+          <col data-col="options" style="width:180px" />
+          <col data-col="attrs" style="width:180px" />
+          <col data-col="discount" style="width:140px" />
+          <col data-col="tax" style="width:72px" />
+          <col data-col="minor" style="width:80px" />
+          <col data-col="url" style="width:220px" />
+          <col data-col="detail" style="width:220px" />
+          <col data-col="extra" style="width:140px" />
+          <col data-col="opttype" style="width:80px" />
+          <col data-col="cert" style="width:130px" />
+          <col data-col="cert_date" style="width:110px" />
+          <col data-col="ingredient" style="width:110px" />
+          <col data-col="made" style="width:100px" />
+          <col data-col="expire" style="width:100px" />
+          <col data-col="unit" style="width:90px" />
+          <col data-col="memo" style="width:160px" />
+          <col data-col="summary" style="width:180px" />
+          <col data-col="origin_no" style="width:110px" />
+          <col data-col="channel_no" style="width:110px" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="check-head"><input type="checkbox" id="selectAllProducts" title="전체 선택" /></th>
+            <th>번호</th>
+            <th data-sort="created" class="sortable" title="수집일순 정렬">수집일</th>
+            <th>등록상태</th>
+            <th data-sort="soldout" class="sortable" title="품절순 정렬">품절</th>
+            <th>공급처</th>
+            <th>마켓</th>
+            <th data-sort="category" class="sortable" title="카테고리순 정렬">카테고리</th>
+            <th>판매자코드</th>
+            <th>모델명</th>
+            <th data-sort="name" class="sortable" title="상품명순 정렬">상품명</th>
+            <th>재고</th>
+            <th>원가</th>
+            <th data-sort="price" class="sortable" title="판매가순 정렬">판매가</th>
+            <th data-sort="brand" class="sortable" title="브랜드순 정렬">브랜드</th>
+            <th data-sort="manufacturer" class="sortable" title="제조사순 정렬">제조사</th>
+            <th data-sort="origin" class="sortable" title="원산지순 정렬">원산지</th>
+            <th>A/S번호</th>
+            <th>A/S안내</th>
+            <th>상품태그</th>
+            <th>옵션</th>
+            <th>속성</th>
+            <th>즉시할인</th>
+            <th>과세</th>
+            <th>미성년구매</th>
+            <th>URL</th>
+            <th>상세설명</th>
+            <th>추가구성</th>
+            <th>옵션유형</th>
+            <th>인증정보</th>
+            <th>인증기간</th>
+            <th>주원료</th>
+            <th>제조일자</th>
+            <th>유효기간</th>
+            <th>단위가격</th>
+            <th>비고</th>
+            <th>상품요약</th>
+            <th>원상품번호</th>
+            <th>채널상품번호</th>
+          </tr>
+        </thead>
+        <tbody id="productTable"></tbody>
+      </table>
+    </div>
+
+    <div id="sheetOptions" class="grid-wrap" hidden>
+      <table class="grid" id="optionGrid">
+        <colgroup>
+          <col data-col="check" style="width:36px" />
+          <col data-col="num" style="width:48px" />
+          <col data-col="name" style="width:240px" />
+          <col data-col="kind" style="width:70px" />
+          <col data-col="type" style="width:120px" />
+          <col data-col="attr_name" style="width:150px" />
+          <col data-col="attr_value" style="width:240px" />
+          <col data-col="brand" style="width:90px" />
+          <col data-col="maker" style="width:90px" />
+          <col data-col="origin" style="width:110px" />
+          <col data-col="cert" style="width:130px" />
+          <col data-col="cert_date" style="width:110px" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="check-head"><input type="checkbox" id="selectAllOptions" title="전체 선택" /></th>
+            <th>번호</th>
+            <th>상품명</th>
+            <th>구분</th>
+            <th>옵션유형</th>
+            <th>속성명</th>
+            <th>속성값</th>
+            <th>브랜드</th>
+            <th>제조사</th>
+            <th>원산지</th>
+            <th>인증정보</th>
+            <th>인증기간</th>
+          </tr>
+        </thead>
+        <tbody id="optionTable"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="bottom">
+    <div class="preview">
+      <img id="previewImage" alt="" />
+      <div>
+        <div id="previewText" class="preview-text">상품을 선택하면 대표이미지가 여기에 보입니다.</div>
+        <div id="imageStrip" class="images"></div>
+      </div>
+    </div>
+    <div class="status-log">
+      <h3>작업상태</h3>
+      <div class="job-status">
+        <div class="job-status-text" data-job-status-text>대기</div>
+      </div>
+      <ul id="logList" class="job-log"></ul>
+    </div>
+  </section>
+  </div>
+  </section>
+
+  <section id="viewWholesalers" class="app-view" hidden>
+    <nav class="toolbar">
+      <button type="button" id="wholesaleNew">신규</button>
+      <button type="button" id="wholesaleSave">저장</button>
+      <button type="button" id="wholesaleDelete">삭제</button>
+      <button type="button" id="wholesaleLogin">공급처로그인</button>
+      <button type="button" id="wholesaleGoCollect">상품담기로</button>
+    </nav>
+    <div class="wholesale-split">
+      <div class="grid-wrap">
+        <table class="grid" id="wholesaleGrid">
+          <colgroup>
+            <col data-col="wname" style="width:140px" />
+            <col data-col="wurl" style="width:220px" />
+            <col data-col="wtype" style="width:90px" />
+            <col data-col="wid" style="width:120px" />
+            <col data-col="wcount" style="width:70px" />
+            <col data-col="wenabled" style="width:60px" />
+            <col data-col="wmemo" style="width:220px" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>공급처</th>
+              <th>사이트</th>
+              <th>유형</th>
+              <th>아이디</th>
+              <th>상품수</th>
+              <th>사용</th>
+              <th>메모</th>
+            </tr>
+          </thead>
+          <tbody id="wholesaleTable"></tbody>
+        </table>
+      </div>
+      <form id="wholesaleForm" class="wholesale-form">
+        <h3>공급처 정보</h3>
+        <input type="hidden" name="id" />
+        <label>공급처 이름<input name="name" placeholder="예: 케이페이지" /></label>
+        <label>사이트 URL<input name="url" placeholder="https://kpage.co.kr/" /></label>
+        <label>연동 유형
+          <select name="type" id="wholesaleType">
+            <option value="cafe24">카페24</option>
+            <option value="godomall">고도몰</option>
+            <option value="imweb">아임웹</option>
+            <option value="custom">기타(직접입력)</option>
+            <option value="ownerclan">오너클랜</option>
+          </select>
+        </label>
+        <label>로그인 아이디<input name="login_id" autocomplete="username" /></label>
+        <label>로그인 비밀번호<input name="login_password" type="password" autocomplete="new-password" /></label>
+        <label class="check"><input name="enabled" type="checkbox" checked /> 사용</label>
+        <label>메모<textarea name="memo" rows="4"></textarea></label>
+        <button type="submit" class="wholesale-save">저장</button>
+        <p class="hint">아이디와 비밀번호는 이 컴퓨터에만 저장됩니다. 상품 검색·담기는 위쪽 <strong>상품담기</strong>에서 합니다.</p>
+      </form>
+    </div>
+  </section>
+
+  <section id="viewCollect" class="app-view" hidden>
+    <aside class="market-sidebar collect-sidebar">
+      <div class="market-sidebar-head">공급사</div>
+      <div id="collectSupplierTree" class="market-tree" role="tree"></div>
+      <button type="button" id="collectOpenWholesalers" class="market-sidebar-settings">공급처 로그인 설정</button>
+    </aside>
+    <div class="product-main collect-main">
+      <div id="collectPaneEmpty" class="collect-pane collect-pane-empty">
+        <h3>상품담기</h3>
+        <p>왼쪽에서 공급사를 고르면 상품을 검색해 담을 수 있습니다. 로그인 정보는 <strong>공급처</strong> 메뉴에서 등록합니다.</p>
+        <button type="button" id="collectEmptyOpenWholesalers">공급처 로그인 설정</button>
+      </div>
+      <div id="collectPaneCafe24" class="collect-pane" hidden>
+        <div class="collect-cafe24-page">
+          <aside class="collect-cafe24-cats">
+            <div class="collect-cafe24-cats-head">분류</div>
+            <div id="collectCafe24CategoryList" class="collect-cafe24-cat-list"></div>
+            <button type="button" id="collectCafe24ReloadCats" class="collect-cafe24-cats-reload">분류 새로고침</button>
+          </aside>
+          <div class="collect-cafe24-products">
+            <div class="collect-cafe24-bar">
+              <strong id="collectCafe24Title">공급사 상품</strong>
+              <span id="collectCafe24Path" class="hint"></span>
+              <input id="collectCafe24Search" type="search" placeholder="이 분류에서 검색" />
+              <button type="button" id="collectCafe24SearchBtn">검색</button>
+              <label class="check"><input type="checkbox" id="collectCafe24HideSoldout" checked /> 품절 숨김</label>
+              <label class="check collect-only-new"><input type="checkbox" id="collectCafe24OnlyNew" /> 안담은 상품만 보기</label>
+              <span class="collect-cafe24-sort">
+                <button type="button" class="ownerclan-rank active" id="collectCafe24SortLow" data-cafe24-sort="lowPrice">낮은가격순</button>
+                <button type="button" class="ownerclan-rank" id="collectCafe24SortHigh" data-cafe24-sort="highPrice">높은가격순</button>
+              </span>
+              <button type="button" id="collectCafe24SelectAll">전체선택</button>
+              <button type="button" id="collectCafe24Send" class="wholesale-save">상품관리로 보내기</button>
+              <button type="button" id="collectCafe24ImportNew">새상품만</button>
+              <button type="button" id="collectCafe24OpenProducts">상품관리에서 보기</button>
+              <span id="collectCafe24Status" class="hint"></span>
+            </div>
+            <div class="collect-cafe24-pager">
+              <button type="button" id="collectCafe24Prev">이전</button>
+              <div id="collectCafe24PageNumbers" class="ownerclan-page-numbers"></div>
+              <button type="button" id="collectCafe24Next">다음</button>
+              <span id="collectCafe24Total" class="hint"></span>
+            </div>
+            <div id="collectCafe24List" class="ownerclan-product-list collect-cafe24-list"></div>
+          </div>
+        </div>
+      </div>
+      <div id="collectPaneOwnerclan" class="collect-pane" hidden>
+<div class="ownerclan-page">
+      <div class="ownerclan-cats">
+        <div id="ownerclanCategoryList" class="ownerclan-menu"></div>
+        <div class="ownerclan-products">
+          <div class="ownerclan-filters">
+            <div class="ownerclan-filter-row ownerclan-filter-line">
+              <div class="ownerclan-filter-group">
+                <span>과세/면세</span>
+                <label><input type="radio" name="ocTax" value="0" checked /> 전체</label>
+                <label><input type="radio" name="ocTax" value="1" /> 과세</label>
+                <label><input type="radio" name="ocTax" value="2" /> 면세</label>
+              </div>
+              <div class="ownerclan-filter-group">
+                <span>배송지</span>
+                <label><input type="radio" name="ocOrigin" value="0" /> 전체</label>
+                <label><input type="radio" name="ocOrigin" value="1" checked /> 국내배송</label>
+                <label><input type="radio" name="ocOrigin" value="2" /> 해외배송</label>
+              </div>
+              <div class="ownerclan-filter-group">
+                <span>배송비</span>
+                <label><input type="radio" name="ocDeli" value="0" checked /> 전체</label>
+                <label><input type="radio" name="ocDeli" value="1" /> 무료배송</label>
+                <label><input type="radio" name="ocDeli" value="2" /> 유료배송</label>
+              </div>
+              <div class="ownerclan-filter-group">
+                <span>판매타입</span>
+                <label><input type="radio" name="ocSale" value="0" checked /> 전체</label>
+                <label><input type="radio" name="ocSale" value="1" /> 가격준수</label>
+                <label><input type="radio" name="ocSale" value="2" /> 가격자율</label>
+              </div>
+              <div class="ownerclan-filter-group">
+                <span>반품가능</span>
+                <label><input type="radio" name="ocReturn" value="0" checked /> 전체</label>
+                <label><input type="radio" name="ocReturn" value="1" /> 가능</label>
+                <label><input type="radio" name="ocReturn" value="2" /> 불가</label>
+              </div>
+              <div class="ownerclan-filter-group">
+                <span>반품접수</span>
+                <label><input type="radio" name="ocReturnType" value="0" checked /> 전체</label>
+                <label><input type="radio" name="ocReturnType" value="1" /> 공급사 반품접수</label>
+                <label><input type="radio" name="ocReturnType" value="2" /> 원운송장 반품접수</label>
+              </div>
+            </div>
+            <div class="ownerclan-filter-row">
+              <button type="button" class="ownerclan-rank active" data-rank="lowPrice">낮은가격순</button>
+              <button type="button" class="ownerclan-rank" data-rank="highPrice">높은가격순</button>
+              <button type="button" class="ownerclan-rank" data-rank="date">신상품순</button>
+              <button type="button" class="ownerclan-rank" data-rank="rankUp">오너클랜랭킹순</button>
+              <span id="ownerclanProductTotal" class="hint"></span>
+              <span>상품가격</span>
+              <input id="ownerclanMinPrice" inputmode="numeric" placeholder="최소" />
+              <span>~</span>
+              <input id="ownerclanMaxPrice" inputmode="numeric" placeholder="최대" />
+              <span>결과내 재검색</span>
+              <select id="ownerclanResearchMode">
+                <option value="and">포함</option>
+                <option value="not">제외</option>
+              </select>
+              <input id="ownerclanResearch" placeholder="검색어" />
+              <button type="button" id="ownerclanFilterSearch">검색</button>
+              <label class="ownerclan-remember"><input type="checkbox" id="ownerclanFilterSave" /> 검색조건 저장</label>
+            </div>
+          </div>
+          <div class="ownerclan-product-bar">
+            <select id="ownerclanSearchType">
+              <option value="all" selected>통합검색</option>
+              <option value="keyword">상품명/키워드</option>
+              <option value="selfcode">상품코드</option>
+              <option value="vendercode">공급사코드</option>
+            </select>
+            <input id="ownerclanSearchKeyword" placeholder="검색어" />
+            <button type="button" id="ownerclanProductSearch">검색</button>
+            <label class="check collect-only-new"><input type="checkbox" id="ownerclanOnlyNew" /> 안담은 상품만 보기</label>
+            <button type="button" id="ownerclanSelectAll">전체선택</button>
+            <button type="button" id="ownerclanLowest">최저가 가져오기</button>
+            <button type="button" id="ownerclanSend" class="wholesale-save">상품관리로 보내기</button>
+            <input id="ownerclanExcluded" placeholder="제외 공급사코드" />
+            <button type="button" id="ownerclanExcludedSave">제외코드 저장</button>
+            <span id="ownerclanProductStatus" class="hint"></span>
+          </div>
+          <div class="ownerclan-pager">
+            <button type="button" id="ownerclanPrev">이전</button>
+            <div id="ownerclanPageNumbers" class="ownerclan-page-numbers"></div>
+            <button type="button" id="ownerclanNext">다음</button>
+          </div>
+          <div id="ownerclanProductList" class="ownerclan-product-list"></div>
+        </div>
+      </div>
+    </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="viewOrders" class="app-view" hidden>
+    <aside class="market-sidebar">
+      <div class="market-sidebar-head">마켓선택</div>
+      <div id="orderMarketTree" class="market-tree" role="tree"></div>
+    </aside>
+    <div class="product-main">
+      <nav class="order-status-tabs" id="orderStatusTabs">
+        <button type="button" data-order-tab="new" class="active">신규주문</button>
+        <button type="button" data-order-tab="wait">발송대기</button>
+        <button type="button" data-order-tab="shipping">배송중</button>
+        <button type="button" data-order-tab="delivered">배송완료</button>
+        <button type="button" data-order-tab="confirmed">구매확정</button>
+        <button type="button" data-order-tab="canceled">취소주문</button>
+        <button type="button" data-order-tab="returned">반품주문</button>
+        <button type="button" data-order-tab="exchanged">교환주문</button>
+        <button type="button" data-order-tab="all">통합주문관리</button>
+        <button type="button" data-order-tab="cs">CS메모관리</button>
+        <button type="button" data-order-tab="inquiries">긴급/문의관리</button>
+        <button type="button" data-order-tab="excel">엑셀양식설정</button>
+      </nav>
+      <div class="order-work-head" id="orderActionBar">
+        <div id="orderFilterBar">
+        <div class="order-filters order-collect-row">
+          <select id="orderDateBasis" title="날짜 기준">
+            <option value="paid">결제일시</option>
+            <option value="order">주문일</option>
+            <option value="dispatch">발송일시</option>
+          </select>
+          <input id="orderDateFrom" type="date" />
+          <span>~</span>
+          <input id="orderDateTo" type="date" />
+          <select id="orderPeriod" title="기간지정"></select>
+          <select id="orderChannelFilter" title="쇼핑몰계정그룹"></select>
+          <select id="orderStoreFilter" title="쇼핑몰"></select>
+          <button type="button" id="loadOrdersButton" class="inquiry-collect">수집하기(F5)</button>
+          <span id="orderFilterCount" class="hint"></span>
+        </div>
+        <div id="orderMenuBar" class="order-menu-bar">
+          <div class="order-menu-row">
+            <button type="button" id="menuConfirmOrders">주문확인(N)</button>
+            <button type="button" id="menuReplace">바꾸기설정</button>
+            <div class="order-menu-drop">
+              <button type="button" id="menuExtra">추가기능(K)</button>
+              <div id="orderExtraPanel" class="order-menu-panel" hidden>
+                <button type="button" data-extra="wholesale">공급처에서 주문하기</button>
+                <button type="button" data-extra="dispatch">송장보내기</button>
+                <button type="button" data-extra="invoice">송장번호수정</button>
+                <button type="button" data-extra="cancel">판매취소</button>
+                <button type="button" data-extra="cs">CS메모</button>
+                <button type="button" data-extra="detail">상세내역</button>
+              </div>
+            </div>
+            <button type="button" id="menuColumns">표시항목설정(T)</button>
+            <button type="button" id="menuStats">통계(R)</button>
+            <button type="button" id="menuWorkStats">작업통계설정(G)</button>
+            <button type="button" id="menuPrint">주문서인쇄(P)</button>
+            <button type="button" id="menuExcelForm">엑셀양식설정(M)</button>
+            <button type="button" id="menuExcel">엑셀파일생성(E)</button>
+          </div>
+          <div class="order-menu-row">
+            <button type="button" id="menuHold">보류처리(D)</button>
+            <button type="button" id="menuRelease">보류해제(V)</button>
+            <label class="inline-label">작업상태지정
+              <select id="menuWorkStatus"></select>
+            </label>
+            <button type="button" id="menuApplyWork">적용</button>
+          </div>
+          <div class="order-menu-row">
+            <label class="inline-label">주문필터
+              <select id="menuOrderPreset">
+                <option value="all">전체</option>
+                <option value="hold">보류</option>
+                <option value="no-invoice">송장없음</option>
+                <option value="unconfirmed">미확인</option>
+              </select>
+            </label>
+            <button type="button" id="menuResetFilters">필터초기화(B)</button>
+            <label class="inline-label">발주상태
+              <select id="menuPlaceFilter">
+                <option value="all">(전체)</option>
+                <option value="none">미발주</option>
+                <option value="ok">발주완료</option>
+              </select>
+            </label>
+            <label class="inline-label">작업상태
+              <select id="menuWorkFilter"></select>
+            </label>
+            <label class="inline-label">연결상태
+              <select id="menuLinkFilter">
+                <option value="all">(전체)</option>
+                <option value="linked">연결</option>
+                <option value="none">미연결</option>
+              </select>
+            </label>
+            <label class="inline-label">도서산간
+              <select id="menuRemoteFilter">
+                <option value="all">(전체)</option>
+                <option value="normal">보통지역</option>
+                <option value="remote">제주도서산간</option>
+              </select>
+            </label>
+            <label class="inline-label">쇼핑몰선택
+              <select id="menuStoreFilter"><option value="all">(전체)</option></select>
+            </label>
+            <label class="inline-label">상품/클레임
+              <select id="menuClaimFilter">
+                <option value="all">(전체)</option>
+                <option value="claim">클레임진행</option>
+                <option value="none">정상</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <div class="order-work-actions">
+          <button type="button" id="confirmOrdersButton">주문확인</button>
+          <button type="button" id="placeWholesaleButton" hidden>공급처에서 주문하기</button>
+          <button type="button" id="collectInvoiceButton" hidden>송장수집</button>
+          <button type="button" id="dispatchInvoiceButton" hidden>송장보내기</button>
+          <button type="button" id="updateInvoiceButton" hidden>송장번호수정(S)</button>
+          <button type="button" id="orderStopJobButton" class="stop-job" disabled hidden>작업중단</button>
+          <label class="inline-label" id="orderWholesalerLabel" hidden>공급처
+            <select id="orderWholesaler"></select>
+          </label>
+          <span class="order-filter-side">
+            <span>수집 결과 검색</span>
+            <input id="orderSearch" type="search" placeholder="검색어" />
+            <button type="button" id="orderSearchButton" class="order-search-go">검색하기</button>
+          </span>
+        </div>
+        </div>
+        <div id="csWorkBar" class="cs-work-bar" hidden>
+          <p class="hint">조회/ 수정/ 삭제 할 수 있는 목록입니다.</p>
+          <div class="order-filters">
+            <select id="csDateBasis" title="날짜 기준">
+              <option value="order">등록일</option>
+              <option value="paid">주문일</option>
+            </select>
+            <input id="csDateFrom" type="date" />
+            <span>~</span>
+            <input id="csDateTo" type="date" />
+            <select id="csPeriod" title="기간지정"></select>
+            <select id="csMallFilter" title="쇼핑몰">
+              <option value="all">(전체)</option>
+            </select>
+            <span>처리상태</span>
+            <select id="csMemoFilter" title="처리상태">
+              <option value="all">(전체)</option>
+              <option value="미처리">미처리</option>
+              <option value="처리완료">처리완료</option>
+              <option value="준비">준비</option>
+            </select>
+            <input id="csSearch" type="search" placeholder="검색어" />
+            <button type="button" id="csSearchButton" class="inquiry-collect">검색(S)</button>
+          </div>
+          <div class="cs-work-actions">
+            <button type="button" id="csMarkOpenButton">미처리(N)</button>
+            <button type="button" id="csDeleteRowsButton">삭제(D)</button>
+            <button type="button" id="csExcelButton">엑셀다운</button>
+          </div>
+        </div>
+      </div>
+      <div id="excelFormPage" class="excel-form-page" hidden>
+        <h3>엑셀 양식 설정</h3>
+        <p class="hint">사용자 정의 엑셀 양식을 추가, 수정, 삭제할 수 있습니다.</p>
+        <div class="excel-form-tools">
+          <button type="button" id="excelFormAdd" class="excel-add">엑셀 양식 추가(A)</button>
+          <button type="button" id="excelFormDelete" class="excel-delete">삭제(D)</button>
+          <button type="button" id="excelFormRefresh">새로고침(R)</button>
+          <button type="button" id="excelFormExport">양식 내보내기</button>
+          <button type="button" id="excelFormImport">양식 불러오기</button>
+          <input id="excelFormFile" type="file" accept="application/json,.json" hidden />
+          <button type="button" id="excelFormRestore">엑셀 샘플양식 복원</button>
+        </div>
+        <div class="orders-wrap grid-wrap">
+          <table class="grid" id="excelFormGrid">
+            <thead>
+              <tr>
+                <th><input id="excelFormCheckAll" type="checkbox" /></th>
+                <th>No.</th>
+                <th>엑셀 양식 이름</th>
+                <th>수정</th>
+                <th>복사</th>
+                <th>사용여부</th>
+                <th>등록자</th>
+                <th>등록일</th>
+                <th>수정자</th>
+                <th>수정일</th>
+              </tr>
+            </thead>
+            <tbody id="excelFormTable">
+              <tr><td colspan="10">양식을 불러오는 중입니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="order-body">
+      <div class="orders-wrap grid-wrap" id="orderGridWrap">
+        <table class="grid" id="orderGrid">
+          <colgroup>
+            <col data-col="check" style="width:36px" />
+            <col data-col="omarket" style="width:110px" />
+            <col data-col="odate" style="width:120px" />
+            <col data-col="ono" style="width:140px" />
+            <col data-col="ocancel" style="width:96px" />
+            <col data-col="opno" style="width:120px" />
+            <col data-col="oname" style="width:220px" />
+            <col data-col="oopt" style="width:140px" />
+            <col data-col="oqty" style="width:50px" />
+            <col data-col="oreceiver" style="width:90px" />
+            <col data-col="ostatus" style="width:80px" />
+            <col data-col="owholesale" style="width:90px" />
+            <col data-col="ocourier" style="width:110px" />
+            <col data-col="oinvoice" style="width:130px" />
+            <col data-col="oship" style="width:70px" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th><input id="orderCheckAll" type="checkbox" /></th>
+              <th>마켓</th>
+              <th>주문일</th>
+              <th>주문번호</th>
+              <th>판매취소</th>
+              <th>상품번호</th>
+              <th>상품</th>
+              <th>옵션</th>
+              <th>수량</th>
+              <th>수령인</th>
+              <th>상태</th>
+              <th>공급처</th>
+              <th>택배사</th>
+              <th>송장번호</th>
+              <th>발송</th>
+              <th data-cs-col hidden>CS메모</th>
+            </tr>
+          </thead>
+          <tbody id="orderTable">
+            <tr><td colspan="16">주문이 없습니다.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div id="orderDetailResizer" class="pane-resizer" hidden title="좌우로 끌어 상세내역 너비를 조절합니다"></div>
+      <aside id="orderDetail" class="order-detail" hidden>
+        <div class="order-detail-head">
+          <span>상세내역</span>
+          <button type="button" id="orderDetailClose">끄기</button>
+        </div>
+        <div id="orderDetailBody" class="order-detail-body"></div>
+      </aside>
+      </div>
+      <div id="orderSummary" class="order-summary"></div>
+    </div>
+  </section>
+
+  <section id="viewInquiries" class="app-view" hidden>
+    <div class="inquiry-page">
+      <div class="inquiry-card inquiry-head">
+        <div class="inquiry-head-top">
+          <h3>긴급/문의관리</h3>
+        </div>
+        <div class="inquiry-notice">
+          <select id="inquiryNotice" title="안내" disabled>
+            <option>일부 쇼핑몰의 특정 문의 유형은 지원되지 않습니다</option>
+          </select>
+        </div>
+        <div class="inquiry-filters">
+          <span class="inquiry-date-label">문의 접수일</span>
+          <input id="inquiryDateFrom" type="date" />
+          <span>~</span>
+          <input id="inquiryDateTo" type="date" />
+          <select id="inquiryPeriod"></select>
+          <span class="inquiry-filter-right">
+            <select id="inquiryChannelFilter" title="쇼핑몰선택"></select>
+            <select id="inquiryStoreFilter" title="쇼핑몰ID선택"></select>
+            <select id="inquiryStatusFilter">
+              <option value="unanswered" selected>미답변</option>
+              <option value="answered">답변완료</option>
+              <option value="all">전체</option>
+            </select>
+          </span>
+        </div>
+        <div class="inquiry-periods" id="inquiryQuickPeriods">
+          <button type="button" data-inquiry-period="today">오늘</button>
+          <button type="button" data-inquiry-period="yesterday">어제</button>
+          <button type="button" data-inquiry-period="3days">3일</button>
+          <button type="button" data-inquiry-period="week">1주일</button>
+          <button type="button" data-inquiry-period="month">1개월</button>
+          <button type="button" data-inquiry-period="3months">3개월</button>
+          <button type="button" data-inquiry-period="halfYear">6개월</button>
+          <button type="button" data-inquiry-period="year">1년</button>
+        </div>
+        <div class="inquiry-actions">
+          <button type="button" id="resetInquiriesButton" class="inquiry-reset">초기화</button>
+          <button type="button" id="loadInquiriesButton" class="inquiry-collect-outline">수집(F5)</button>
+          <span class="inquiry-warn" title="일부 쇼핑몰의 특정 문의 유형은 지원되지 않습니다">!</span>
+        </div>
+      </div>
+      <div class="inquiry-card inquiry-results">
+        <div class="inquiry-result-bar">
+          <span>조회 결과: <strong id="inquiryFilterCount">0건</strong></span>
+          <span>선택 주문: <strong id="inquirySelectedCount">0건</strong></span>
+          <button type="button" id="inquiryExcelButton" class="inquiry-excel">엑셀 파일 생성</button>
+        </div>
+        <div class="inquiry-result-filters">
+          <select id="inquiryResultChannel" title="쇼핑몰선택"></select>
+          <select id="inquiryResultStore" title="전체"></select>
+          <span id="inquiryUpdatedAt" class="inquiry-updated">최근 업데이트 -</span>
+        </div>
+        <div class="orders-wrap grid-wrap">
+          <table class="grid" id="inquiryGrid">
+            <colgroup>
+              <col data-col="icheck" style="width:36px" />
+              <col data-col="ino" style="width:48px" />
+              <col data-col="imall" style="width:130px" />
+              <col data-col="imallid" style="width:150px" />
+              <col data-col="istore" style="width:140px" />
+              <col data-col="ialias" style="width:140px" />
+              <col data-col="imemo" style="width:140px" />
+              <col data-col="iorder" style="width:130px" />
+              <col data-col="iproductno" style="width:120px" />
+              <col data-col="iname" style="width:220px" />
+              <col data-col="idate" style="width:120px" />
+              <col data-col="iwriter" style="width:90px" />
+              <col data-col="ititle" style="width:180px" />
+              <col data-col="istatus" style="width:80px" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="check-head"><input id="inquiryCheckAll" type="checkbox" title="전체 선택" /></th>
+                <th>No.</th>
+                <th>쇼핑몰</th>
+                <th>쇼핑몰ID</th>
+                <th>스토어명</th>
+                <th>별칭(쇼핑몰계정)</th>
+                <th>메모(쇼핑몰계정)</th>
+                <th>주문번호</th>
+                <th>상품번호</th>
+                <th>상품명</th>
+                <th>문의일</th>
+                <th>작성자</th>
+                <th>제목</th>
+                <th>상태</th>
+              </tr>
+            </thead>
+            <tbody id="inquiryTable">
+              <tr><td colspan="14">문의가 없습니다.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <section id="inquiryDetail" class="inquiry-detail" hidden>
+          <div class="inquiry-detail-tabs">
+            <button type="button" data-inquiry-pane="basic" class="active">기본 입력</button>
+            <button type="button" data-inquiry-pane="batch">일괄 입력</button>
+          </div>
+          <div id="inquiryPaneBasic" class="inquiry-sheet">
+            <table class="inquiry-form">
+              <tbody>
+                <tr>
+                  <th>쇼핑몰</th>
+                  <td id="inquiryMall"></td>
+                  <th>쇼핑몰ID</th>
+                  <td id="inquiryMallId"></td>
+                </tr>
+                <tr>
+                  <th>처리상태</th>
+                  <td id="inquiryState"></td>
+                  <th>문의일</th>
+                  <td id="inquiryWhen"></td>
+                </tr>
+                <tr>
+                  <th>회원이름</th>
+                  <td id="inquiryWriter"></td>
+                  <th>상품번호</th>
+                  <td id="inquiryProductNo"></td>
+                </tr>
+                <tr>
+                  <th>상품명</th>
+                  <td id="inquiryProductName" colspan="3"></td>
+                </tr>
+                <tr>
+                  <th>문의제목</th>
+                  <td id="inquiryTitle" colspan="3"></td>
+                </tr>
+                <tr>
+                  <th>문의내용</th>
+                  <td colspan="3"><textarea id="inquiryContent" readonly></textarea></td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="inquiry-old">
+              <label>답변내용<textarea id="inquiryAnswerView" readonly></textarea></label>
+              <label>답변일<input id="inquiryAnswerAt" readonly /></label>
+            </div>
+            <div class="inquiry-new">
+              <label>새 답변 제목<input id="inquiryAnswerTitle" /></label>
+              <label>새 답변 내용<textarea id="inquiryAnswerDraft"></textarea></label>
+            </div>
+          </div>
+          <div id="inquiryPaneBatch" class="inquiry-batch" hidden>
+            <p>선택한 <strong id="inquiryBatchCount">0</strong>건에 같은 답변을 보냅니다.</p>
+            <label>새 답변 제목<input id="inquiryBatchTitle" /></label>
+            <label>새 답변 내용<textarea id="inquiryBatchBody"></textarea></label>
+          </div>
+          <div class="inquiry-detail-foot">
+            <select id="inquiryTemplate" title="답변 템플릿">
+              <option value="">사용 방법 및 안내 사항</option>
+            </select>
+            <button type="button" id="inquiryAnswerButton" accesskey="s">답변 전송(S)</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <section id="viewSettings" class="app-view" hidden>
+    <nav class="toolbar">
+      <span class="settings-tabs">
+        <button type="button" id="settingsTabApi" class="tab active">AI API</button>
+        <button type="button" id="settingsTabMarkets" class="tab">마켓관리</button>
+      </span>
+    </nav>
+    <div class="settings-page">
+      <div class="settings-card" id="setup-theme">
+        <h3>화면 색상</h3>
+        <p class="hint">프로그램 배경색을 고릅니다. 고르면 바로 적용되고, 이 브라우저에 남습니다.</p>
+        <div class="theme-choices" id="themeChoices">
+          <label><input type="radio" name="appTheme" value="light" checked /> 밝은 배경</label>
+          <label><input type="radio" name="appTheme" value="dark" /> 어두운 배경</label>
+        </div>
+      </div>
+      <form id="settingsForm">
+        <div id="settingsPaneApi" class="settings-pane">
+          <h3>AI API</h3>
+          <p class="hint">상품명, 태그, 속성 생성에 쓰는 AI 키입니다. 마켓 API는 마켓관리에 넣습니다. 키는 이 컴퓨터에만 저장됩니다.</p>
+          <div class="settings-card" id="setup-gemini">
+            <div class="settings-card-head">
+              <h3>AI</h3>
+              <button type="button" class="setup-help-link" data-setup-help="gemini">도움말</button>
+            </div>
+            <div class="form-grid">
+              <label>사용할 AI
+                <select name="ai_provider" id="aiProvider">
+                  <option value="gemini">Gemini</option>
+                  <option value="openai">ChatGPT</option>
+                  <option value="claude">Claude</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-grid" data-ai-provider="gemini">
+              <label>Gemini API 키<input name="gemini_api_key" type="password" autocomplete="new-password" data-placeholder="Gemini API 키" /></label>
+              <label>Gemini 모델<input name="gemini_model" /></label>
+            </div>
+            <div class="form-grid" data-ai-provider="openai" hidden>
+              <label>ChatGPT API 키<input name="openai_api_key" type="password" autocomplete="new-password" data-placeholder="ChatGPT API 키" /></label>
+              <label>ChatGPT 모델<input name="openai_model" /></label>
+            </div>
+            <div class="form-grid" data-ai-provider="claude" hidden>
+              <label>Claude API 키<input name="anthropic_api_key" type="password" autocomplete="new-password" data-placeholder="Claude API 키" /></label>
+              <label>Claude 모델<input name="anthropic_model" /></label>
+            </div>
+            <div class="settings-actions">
+              <button type="button" id="testAiConnection">연결 테스트</button>
+            </div>
+            <p id="aiTestMessage" class="hint"></p>
+          </div>
+          <div class="settings-card" id="setup-searchad">
+            <div class="settings-card-head">
+              <h3>네이버 검색광고 API</h3>
+              <button type="button" class="setup-help-link" data-setup-help="searchad">도움말</button>
+            </div>
+            <p class="hint">상품명을 만들 때 네이버 월간 검색수와 경쟁강도를 가져옵니다.</p>
+            <div class="form-grid">
+              <label>CUSTOMER_ID<input name="searchad_customer_id" autocomplete="off" /></label>
+              <label>액세스라이선스<input name="searchad_access_license" type="password" autocomplete="new-password" data-placeholder="액세스라이선스" /></label>
+              <label>비밀키<input name="searchad_secret_key" type="password" autocomplete="new-password" data-placeholder="비밀키" /></label>
+            </div>
+            <div class="settings-actions">
+              <button type="button" id="testSearchadConnection">연결 테스트</button>
+            </div>
+            <p id="searchadTestMessage" class="hint"></p>
+          </div>
+          <div class="settings-actions">
+            <button type="submit">API 저장</button>
+          </div>
+        </div>
+        <p id="settingsMessage" class="hint"></p>
+      </form>
+
+      <form id="marketForm" class="settings-pane" hidden>
+        <h3>마켓관리</h3>
+        <div class="delivery-table-wrap">
+          <table class="delivery-table" id="marketAccountTable">
+            <thead>
+              <tr>
+                <th>마켓</th>
+                <th>스토어명</th>
+                <th>아이디</th>
+                <th>패스워드</th>
+                <th>아이디키</th>
+                <th>시크릿키</th>
+                <th>업체코드</th>
+                <th>ESM ID</th>
+              </tr>
+            </thead>
+            <tbody id="marketTableBody"></tbody>
+          </table>
+        </div>
+        <input type="hidden" name="id" />
+        <div class="delivery-row">
+          <span class="dl">마켓</span>
+          <span class="market-channel-row span3">
+            <select name="channel" id="marketChannel"></select>
+            <button type="button" id="marketSetupHelp" class="setup-help-link">설정 도움말</button>
+          </span>
+        </div>
+        <div class="delivery-row">
+          <span class="dl">스토어명</span>
+          <input name="name" class="span3" />
+        </div>
+        <div class="delivery-row" id="marketUrlRow">
+          <span class="dl">스토어 주소</span>
+          <input name="url" class="span3" />
+        </div>
+        <div class="delivery-row" id="marketLoginIdRow">
+          <span class="dl">아이디</span>
+          <input name="login_id" class="span3" autocomplete="username" />
+        </div>
+        <div class="delivery-row" id="marketLoginPwRow">
+          <span class="dl">패스워드</span>
+          <input name="login_password" class="span3" type="password" autocomplete="new-password" />
+        </div>
+        <div class="delivery-row" id="marketEsmRow" hidden>
+          <span class="dl">ESM ID</span>
+          <input name="esm_id" class="span3" />
+        </div>
+        <div class="delivery-row" id="marketApiKeyRow">
+          <span class="dl" id="marketApiKeyLabel">아이디키</span>
+          <input name="api_key" class="span3" />
+        </div>
+        <div class="delivery-row" id="marketApiSecretRow">
+          <span class="dl" id="marketApiSecretLabel">시크릿키</span>
+          <input name="api_secret" class="span3" type="password" autocomplete="new-password" />
+        </div>
+        <div class="delivery-row" id="marketVendorRow" hidden>
+          <span class="dl" id="marketVendorLabel">업체코드</span>
+          <input name="vendor_code" class="span3" />
+        </div>
+        <div class="delivery-row" id="marketApiAccountRow">
+          <span class="dl">판매자 account_id</span>
+          <input name="naver_account_id" class="span3" />
+        </div>
+        <p id="marketApiHint" class="hint"></p>
+        <label class="check"><input name="is_default" type="checkbox" /> 기본 마켓</label>
+        <p id="marketMessage" class="hint"></p>
+        <div class="settings-actions">
+          <button type="button" id="addMarket">새 마켓</button>
+          <button type="submit">저장</button>
+          <button type="button" id="testMarketButton">연동 테스트</button>
+          <button type="button" id="deleteMarket">삭제</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="viewHelp" class="app-view" hidden>
+    <div class="help-page">
+      <aside class="help-side">
+        <label class="help-search">
+          <input id="helpSearch" type="search" placeholder="도움말 검색" autocomplete="off" />
+        </label>
+        <p id="helpSearchStatus" class="help-search-status" hidden></p>
+        <div id="helpSearchResults" class="help-search-results" hidden></div>
+      <nav id="helpNav" class="help-nav">
+        <button type="button" data-help="help-overview" class="active">프로그램 개요</button>
+        <button type="button" data-help="help-products">상품관리</button>
+        <button type="button" data-help="help-product-fields">상품 정보</button>
+        <button type="button" data-help="help-orders">주문관리</button>
+        <button type="button" data-help="help-excel">주문 엑셀</button>
+        <button type="button" data-help="help-inquiries">문의관리</button>
+        <button type="button" data-help="help-wholesale">공급처</button>
+        <button type="button" data-help="help-collect">상품담기</button>
+        <button type="button" data-help="help-settings">설정</button>
+        <button type="button" data-help="help-data">저장 위치</button>
+      </nav>
+      </aside>
+      <article id="helpBody" class="help-body">
+        <section class="help-panel" id="help-overview" data-help-panel="help-overview">
+          <h2>프로그램 개요</h2>
+          <p>모두모두는 도매 상품을 정리해 스마트스토어에 올리고, 주문과 문의를 이 컴퓨터에서 처리하는 프로그램입니다. 바탕화면 아이콘을 누르면 브라우저에서 열립니다. 이미 켜져 있으면 그 화면만 다시 엽니다.</p>
+          <div id="helpShare"></div>
+          <p>다른 컴퓨터는 같은 공유기나 같은 와이파이에 연결한 뒤 위 주소를 브라우저에 넣으면 됩니다. 이 컴퓨터에서 프로그램이 켜져 있어야 하고, 상품과 설정은 이 컴퓨터에 있습니다.</p>
+          <h3>위쪽 메뉴</h3>
+          <ul>
+            <li>상품관리: 상품을 가져오고, 고치고, 마켓에 등록합니다.</li>
+            <li>주문관리: 주문을 수집하고, 확인·발주·송장·엑셀을 처리합니다.</li>
+            <li>문의관리: 쇼핑몰 문의를 모아 답변합니다.</li>
+            <li>상품담기: 오너클랜 등 공급사 상품을 검색해 상품관리로 담습니다.</li>
+            <li>공급처: 공급사 로그인·사이트 정보만 등록합니다.</li>
+            <li>설정: AI 키, 네이버 검색광고 키, 마켓 계정을 넣습니다.</li>
+            <li>도움말: 왼쪽 메뉴를 누르면 그 화면 설명만 보입니다.</li>
+          </ul>
+          <p>상품등록은 스마트스토어로 합니다. 다른 마켓 계정은 설정에 저장해 두고, 주문·문의 수집에 사용합니다.</p>
+          <p>화면 아래에서 작업이 진행되면 상태 막대에 진행이 보입니다. 상품, 주문, 문의, 공급처, 오너클랜 작업은 같이 돌아갑니다. 작업중단은 지금 보고 있는 화면의 작업만 멈춥니다.</p>
+          <p>배포용과 마스터 실행 파일을 켤 때 새 버전이 있으면 안내창이 나옵니다. 동의하면 파일을 받은 뒤 프로그램이 다시 실행되고, data 폴더의 설정과 상품은 그대로 둡니다. 배포용은 배포용으로, 마스터는 마스터로 유지됩니다. 프로그램을 끝낼 때는 위쪽의 종료를 누릅니다.</p>
+        </section>
+
+        <section class="help-panel" id="help-products" data-help-panel="help-products" hidden>
+          <h2>상품관리</h2>
+          <p>왼쪽 마켓선택에서 마스터상품과 마켓으로 보낸 상품을 나눠 봅니다. 마스터상품은 공급처에서 가져온 원본이라 목록에서 직접 고칠 수 없습니다. 상품명, 가격, 이미지, 옵션은 마켓으로 보낸 상품에서 수정합니다. 목록에서 오른쪽 버튼을 누르면 같은 기능이 메뉴로 나옵니다.</p>
+          <h3>가져오기·갱신</h3>
+          <ul>
+            <li id="helpUrlCollect">상품 URL을 넣고 상품수집을 누르면 그 상품 페이지만 가져옵니다. 대표 이미지와 그 아래 작은 이미지도 함께 가져옵니다. URL 상품수집은 왼쪽에서 마스터상품을 골랐을 때만 보입니다.</li>
+            <li>등록·대기·오류 숫자: 마스터상품과 원본상품에는 없습니다. 각 마켓에서만 보입니다. URL 상품수집은 마스터상품에서만 보입니다.</li>
+            <li>정보업데이트: 원본상품을 고르면 그 상품만, 고르지 않으면 지금 보이는 원본상품을 갱신합니다. 전체, 가격, 이미지, 옵션 중에서 고릅니다. 전체는 이름과 상세설명까지 다시 받습니다.</li>
+            <li>판매정보업데이트: 대기 상품은 업데이트할까요를 한 번 물어본 뒤 이름, 가격, 이미지, 상세설명을 공급처에서 다시 받습니다. 등록 상품은 업데이트 적용할까요를 물어보고, 가격과 옵션 중에서 고른 항목만 스마트스토어에 반영합니다.</li>
+            <li>상품검색: 전체, 상품명, 카테고리, 브랜드, 제조사 중에서 고릅니다.</li>
+            <li>공급처 목록: 등록한 공급처와 오너클랜이 들어갑니다. 항목을 고르면 그 공급처 상품만 보입니다.</li>
+            <li>품절/재판매: 고른 상품의 공급처 재고를 확인한 뒤, 품절로 바꾸기 또는 재판매로 바꾸기를 누릅니다.</li>
+            <li>수집상품보기: 고른 상품의 공급처 페이지를 엽니다.</li>
+            <li>등록상품보기: 스마트스토어에 등록된 그 상품 페이지를 엽니다.</li>
+          </ul>
+          <h3>수정·등록</h3>
+          <p>목록은 상품목록과 옵션/속성 두 화면입니다. 수집일, 품절, 상품명, 판매가, 카테고리, 브랜드, 제조사, 원산지 제목을 누르면 그 열로 정렬되고, 한 번 더 누르면 순서가 바뀝니다. 수집일은 처음 누르면 최신순입니다. 목록의 그림을 누르면 아래 미리보기에 보입니다.</p>
+          <ul>
+            <li>상품수정: 목록에서 고친 내용을 저장합니다.</li>
+            <li>상품명바꾸기: 이름을 직접 고치거나, 기존처럼과 월간검색어 기반으로 10단어 이름을 만듭니다. 만든 이름은 칸에만 들어가고, 저장을 눌러야 상품에 반영됩니다. 월간검색어 기반은 검색수가 많은 단어부터 앞에 넣고, 쓴 검색어와 월간 검색수를 아래에 보여 줍니다. 경쟁강도 낮음 단어는 뺍니다. Claude 키가 있으면 상품명은 Claude로 만들고, 없으면 설정에서 고른 AI를 씁니다.</li>
+            <li>상품명AI: 고른 상품의 이름을 한 번에 바꿉니다. 기존처럼은 카테고리 규칙만 쓰고, 월간검색어 기반은 검색광고 검색수를 씁니다.</li>
+            <li>태그바꾸기, 태그AI: 태그는 최대 10개입니다. 직접 넣거나 AI 채우기로 만듭니다. 카테고리, 브랜드, 판매자명이 들어간 태그는 등록되지 않습니다.</li>
+            <li>속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다. 수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다. 상품표의 속성·상품태그를 더블클릭해도 같은 창이 열립니다. 등록 오류에 N번째 속성이 있으면 그 칸으로 바로 갑니다.</li>
+            <li>AI가공: 월간검색어 기준 상품명, 태그, 속성값을 한 번에 만듭니다. 상품명은 Claude 키가 있으면 Claude를 쓰고, 태그와 속성은 설정에서 고른 AI를 씁니다. 카테고리가 없는 상품은 AI가공 전에 카테고리매핑 창을 열어 먼저 지정하도록 안내합니다.</li>
+            <li>옵션등록: 고른 상품의 옵션명, 옵션값, 옵션가, 재고를 고칩니다.</li>
+            <li>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다. 대표이미지 글씨제거는 첫 번째 대표 이미지의 홍보 문구만 지우고, 브랜드 로고와 다른 이미지는 남깁니다.</li>
+            <li>카테고리바꾸기: 고른 상품의 카테고리를 바꿉니다.</li>
+            <li>상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다.</li>
+            <li>상세페이지추가글: 상품명과 상세페이지 스펙을 읽어 상세 위에 주요 포인트 5~10줄을 만듭니다. 이모지도 붙입니다. 다시 누르면 이전 추가글만 바꿉니다.</li>
+            <li>선택상품명 키워드 섞기: 오른쪽 버튼 메뉴입니다. 전체섞기부터 앞쪽 몇 단어를 남기고 나머지를 섞습니다.</li>
+            <li>되돌리기, 재실행: 바로 직전 작업 1개만 되돌리거나 다시 적용합니다. AI가공처럼 여러 상품을 한 번에 처리한 경우에도 그 작업 묶음 하나만 되돌립니다.</li>
+            <li>마켓으로 보내기: 고른 마스터상품을 스마트스토어, 쿠팡, 옥션처럼 고른 마켓 계정으로 복사합니다. 보낼 때 카테고리가 비어 있으면 상품명·원본분류로 네이버 카테고리를 자동으로 넣습니다. 마스터상품은 그 계정으로 보낸 뒤 등록합니다.</li>
+            <li>상품등록: 고른 마켓 상품을 스마트스토어에 등록합니다.</li>
+            <li>선택삭제: 고른 상품을 이 프로그램 목록에서 지웁니다.</li>
+            <li>배송/가격: 배송템플릿과 가격세트관리가 있습니다. 배송템플릿은 등록할 때 쓰는 배송 정보입니다. 마켓에서 가져오기는 주소록(API)과 판매자센터 템플릿을 읽습니다. 템플릿은 프로그램이 연 Chrome에 판매자센터 로그인이 있어야 합니다. 평소 Chrome에 로그인돼 있어도 그 창에는 따로 로그인해야 합니다. 가격세트는 원가에 마진, 할인, 포인트, 추가금액을 넣어 판매가를 만듭니다.</li>
+            <li>구매/리뷰 혜택, 즉시할인, 공지사항: 등록할 때 함께 쓰는 공통 값입니다.</li>
+            <li>등록금지키워드: 상품명에서 빼야 하는 말을 등록합니다. 등록한 말이 그대로 들어 있을 때만 빠지고, 그 말의 일부는 남습니다.</li>
+            <li>작업중단: 상품관리에서 돌아가는 작업만 멈춥니다.</li>
+          </ul>
+        </section>
+
+        <section class="help-panel" id="help-product-fields" data-help-panel="help-product-fields" hidden>
+          <h2>상품 정보</h2>
+          <p>상품관리 목록에 채워지는 기본 값의 규칙입니다.</p>
+          <ul>
+            <li>상품명: 공급처 상품명 그대로입니다. 상품명바꾸기와 상품명AI로 바꾼 뒤에는 그 이름이 저장됩니다.</li>
+            <li>브랜드: 상품명에 있는 브랜드입니다. 상품명에 브랜드가 없으면 비워 둡니다.</li>
+            <li>제조사: 상품명에 회사명이 있으면 그 이름입니다. 없으면 브랜드와 같습니다.</li>
+            <li>원산지: 상품명에 국산이 있는 상품만 국산입니다. 도매 상세에서 나라 이름이 확인된 상품은 그 나라로 둡니다. 국산인지 애매하면 상세설명참조입니다.</li>
+            <li>판매가: 가격세트의 간편전송을 누르면 원가, 마진, 추가금액으로 다시 계산됩니다. 원가가 없는 상품은 건너뜁니다.</li>
+          </ul>
+          <p>이미지와 상세설명도 상품과 함께 이 컴퓨터에 저장됩니다.</p>
+        </section>
+
+        <section class="help-panel" id="help-orders" data-help-panel="help-orders" hidden>
+          <h2>주문관리</h2>
+          <p>왼쪽 마켓선택에서 주문을 볼 마켓을 고릅니다. 수집하기(F5)를 눌러야 주문 목록이 들어옵니다. 그 전에는 목록이 비어 있습니다. 신규주문, 취소, 반품, 교환, 상품문의가 오면 화면 알림과 탭 숫자가 먼저 뜹니다.</p>
+          <ul>
+            <li>날짜 기준은 결제일시, 주문일, 발송일시입니다. 배송중과 배송완료로 가면 발송일시로 바뀝니다. 기간, 쇼핑몰계정그룹, 쇼핑몰을 고른 뒤 수집합니다. 수집하기는 지금 보고 있는 탭의 주문만 가져옵니다. 통합주문관리는 기간 안에 바뀐 주문을 모두 가져옵니다. 주문 수집, 주문확인, 송장 작업은 서로 막지 않습니다. 작업중단은 보고 있는 탭만 멈춥니다.</li>
+            <li>위 탭은 신규주문, 발송대기, 배송중, 배송완료, 구매확정, 취소주문, 반품주문, 교환주문, 통합주문관리, CS메모관리, 긴급/문의관리, 엑셀양식설정입니다.</li>
+            <li>주문확인: 신규주문을 확인 처리합니다.</li>
+            <li>바꾸기설정: 신규주문과 발송대기에서 상품명, 선택사항, 추가구성, 배송구분, 판매자상품코드의 문구를 다른 문구로 바꾸거나 지웁니다. 규칙은 위에서부터 순서대로 적용됩니다.</li>
+            <li>추가기능: 공급처에서 주문하기, 송장보내기, 송장번호수정, 판매취소, CS메모, 상세내역입니다. 판매취소는 한 건씩 합니다. 상세내역은 오른쪽에서 열고, 경계를 끌어 너비를 조절합니다.</li>
+            <li>발송대기: 공급처에서 주문하기, 송장수집, 송장보내기를 합니다. 공급처에서 주문하기는 Chrome에 주문서를 열고, 결제는 직접 합니다. 택배사와 송장번호를 넣은 뒤 송장보내기를 누르면 스마트스토어로 전달됩니다. 택배사에서 직접전달을 고르면 송장번호 없이 보냅니다. 공급처 선택도 이 탭에 있습니다.</li>
+            <li>배송중: 송장번호수정을 합니다.</li>
+            <li>표시항목설정: 주문 목록에 보일 칸을 고르고 저장합니다.</li>
+            <li>통계: 지금 보이는 주문의 건수를 보여 줍니다. 작업통계설정은 작업상태 이름을 한 줄에 하나씩 저장하고, 그 상태별 건수를 보여 줍니다.</li>
+            <li>주문서인쇄: 체크한 주문을 인쇄합니다. 체크가 없으면 지금 보이는 주문을 인쇄합니다.</li>
+            <li>수집 결과 검색과 검색하기는 주문 탭마다 있습니다.</li>
+            <li>보류처리, 보류해제, 작업상태지정으로 주문 상태를 바꿉니다.</li>
+            <li>주문필터, 발주상태, 작업상태, 연결상태, 도서산간, 쇼핑몰선택, 상품/클레임으로 목록을 좁힙니다. 필터초기화는 그 조건을 풉니다.</li>
+            <li>CS메모관리: 등록일 또는 주문일, 기간, 쇼핑몰, 처리상태, 검색어로 메모를 찾습니다. 미처리, 삭제, 엑셀다운이 있습니다.</li>
+            <li>긴급/문의관리: 문의관리와 같은 문의를 주문 화면에서 봅니다.</li>
+          </ul>
+        </section>
+
+        <section class="help-panel" id="help-excel" data-help-panel="help-excel" hidden>
+          <h2>주문 엑셀</h2>
+          <p>주문관리의 엑셀양식설정과 엑셀파일생성에 대한 설명입니다.</p>
+          <p>엑셀양식설정에서 공급처별 주문 양식을 추가, 수정, 복사, 삭제합니다. 사용으로 켜 둔 양식만 파일 생성에 나옵니다. 양식을 추가할 때는 컬럼 제목, 주문 값, 구분자를 넣습니다. 양식 내보내기와 양식 불러오기로 양식 파일을 옮기고, 엑셀 샘플양식 복원으로 기본 양식을 되돌립니다.</p>
+          <p>엑셀파일생성은 검색 결과 전체 또는 체크한 주문만 파일로 만듭니다. 양식을 여러 개 고르면 양식마다 파일이 하나씩 생깁니다. 파일 이름은 만들기 전에 바꿀 수 있고, 자동 저장을 켜면 고른 폴더에 저장됩니다.</p>
+        </section>
+
+        <section class="help-panel" id="help-inquiries" data-help-panel="help-inquiries" hidden>
+          <h2>문의관리</h2>
+          <p>문의 접수일, 오늘·어제·3일·1주일·1개월·3개월·6개월·1년, 쇼핑몰, 미답변/답변완료/전체를 고르고 수집(F5)을 누릅니다. 초기화는 그 조건을 풉니다. 조회 결과는 쇼핑몰과 계정으로 다시 좁히고, 엑셀 파일로 만들 수 있습니다.</p>
+          <p>목록에서 문의를 고르면 아래에 내용이 나옵니다. 기본 입력은 한 건의 답변이고, 일괄 입력은 고른 여러 건에 같은 답변을 보냅니다. 답변 템플릿을 고르면 그 문구가 답변에 들어갑니다. 답변 전송으로 쇼핑몰에 보냅니다.</p>
+        </section>
+
+        <section class="help-panel" id="help-wholesale" data-help-panel="help-wholesale" hidden>
+          <h2>공급처</h2>
+          <p>공급사 로그인 정보만 관리합니다. 신규로 빈 칸을 열고, 이름, 사이트 주소, 연동 유형, 로그인 아이디와 비밀번호, 사용, 메모를 넣은 뒤 저장합니다. 연동 유형은 카페24·고도몰·아임웹·기타(직접입력)·오너클랜입니다. 사이트 주소를 넣으면 유형을 자동으로 맞추기도 합니다. 상품 검색·담기는 <strong>상품담기</strong> 메뉴에서 합니다.</p>
+          <ul>
+            <li>공급처로그인: 그 사이트에 로그인합니다. 가격처럼 로그인해야 보이는 값을 읽을 때 필요합니다.</li>
+            <li>상품담기로: 상품담기 화면으로 이동합니다.</li>
+            <li>삭제는 고른 공급처를 목록에서 지웁니다.</li>
+          </ul>
+        </section>
+
+        <section class="help-panel" id="help-collect" data-help-panel="help-collect" hidden>
+          <h2>상품담기</h2>
+          <p>왼쪽에서 공급사를 고릅니다. 오너클랜은 검색 화면이, 카페24·고도몰·아임웹·기타는 분류·목록 화면이 열립니다. 로그인 정보는 공급처 메뉴에 둡니다.</p>
+          <h3>오너클랜</h3>
+          <p>왼쪽 대분류를 고르면 오른쪽에 오너클랜 검색 화면과 같은 분류가 나옵니다. 티셔츠, 브라처럼 더 이상 나뉘지 않는 소분류를 누르면 상품이 한 페이지에 60개, 한 줄에 12개씩 나옵니다. 페이지 번호는 1부터 10까지 보입니다. 번호나 이전, 다음으로 페이지를 넘깁니다.</p>
+          <ul>
+            <li>좁히기: 과세/면세, 배송지, 배송비, 판매타입, 반품가능, 반품접수, 상품가격, 결과내 재검색입니다. 배송지는 국내배송이 기본입니다. 반품접수는 공급사 반품접수와 원운송장 반품접수입니다. 결과내 재검색은 포함 또는 제외입니다.</li>
+            <li>정렬: 기본은 낮은가격순입니다. 높은가격순, 신상품순, 오너클랜랭킹순으로 바꿉니다.</li>
+            <li>검색조건 저장: 체크하면 그 조건이 남고, 체크를 끄면 다음부터는 적용되지 않습니다.</li>
+            <li>검색: 통합검색이 기본입니다. 상품명/키워드, 상품코드, 공급사코드로 바꿀 수 있습니다.</li>
+            <li>제외 공급사코드: 쉼표나 공백으로 구분해서 넣고 제외코드 저장을 누르면 이 컴퓨터에 남습니다. 그 공급사 상품은 검색 결과에서 빠집니다.</li>
+            <li>상품관리로 보내기: 상품을 하나씩 고르거나 전체선택한 뒤 누르면 상품관리에 넣고 그 화면으로 이동합니다.</li>
+            <li>상품 이미지: 누르면 오너클랜 상품 페이지가 새 창으로 열립니다. 목록의 가격은 그 상품 페이지의 빨간 가격이고, 그 옆에 배송비도 나옵니다.</li>
+            <li>BAD: 이미지에 BAD가 붙은 공급사 상품은 검색 결과에서 빠지고, 그 자리는 다음 상품으로 채워 한 페이지는 60개를 유지합니다.</li>
+            <li>최저가 가져오기: 그 상품이 속한 2차 카테고리 안에서만 찾습니다. 티셔츠는 여성의류, 인덕션은 주방가전처럼 2차 분류만 검색합니다. 그 안에서 목록 이미지가 같은 것을 먼저 찾습니다. 좌우로 뒤집힌 같은 사진도 같은 이미지로 봅니다. 더 싼 같은 이미지가 없으면 상품명이 같은 것 중에서 가장 싼 상품을 가져옵니다. 한 번에 60개까지입니다.</li>
+          </ul>
+          <h3>카페24·고도몰·아임웹·기타</h3>
+          <ul>
+            <li>공급처에서 연동 유형을 고른 뒤, 상품담기 왼쪽에서 그 공급사를 엽니다.</li>
+            <li>오너클랜처럼 위쪽에 대분류·소분류가 펼쳐집니다. 소분류를 누르면 그 분류 상품만 불러옵니다.</li>
+            <li>검색·품절 숨김으로 이 분류 목록을 좁힌 뒤, 고른 상품을 상품관리로 보냅니다. 한 번에 60개까지입니다.</li>
+            <li>안담은 상품만 보기(기본 꺼짐): 목록을 먼저 보여 주고, 켜면 이미 상품관리에 담은 상품만 숨깁니다. 담은 상품에는 ‘담김’이 붙습니다.</li>
+            <li>정렬: 낮은가격순(기본)·높은가격순. 정렬·품절숨김·안담은만 보기는 이 컴퓨터에 남습니다.</li>
+            <li>회원공개 가격: 공급처에서 로그인한 뒤 분류를 다시 고르면 가격이 채워집니다.</li>
+            <li>새상품만: 상점 전체에서 아직 안 담은 상품만 상품관리에 넣습니다.</li>
+            <li>아임웹·기타는 사이트 메뉴 구조에 따라 분류가 다르게 보일 수 있습니다. 안 맞으면 유형을 기타로 두고 주소만 맞게 넣으세요.</li>
+          </ul>
+        </section>
+
+        <section class="help-panel" id="help-settings" data-help-panel="help-settings" hidden>
+          <h2>설정</h2>
+          <p>설정 &gt; 화면 색상에서 밝은 배경과 어두운 배경을 고릅니다. 고르면 바로 적용되고, 이 브라우저에 남습니다.</p>
+          <p>AI API에서 Gemini, ChatGPT, Claude 중 사용할 서비스를 고르고 그 키와 모델만 넣습니다. 태그AI, 속성AI, AI가공은 고른 서비스를 씁니다. 상품명바꾸기와 상품명AI는 Claude 키가 있으면 Claude를 쓰고, 없으면 고른 서비스를 씁니다. 연결 테스트로 키가 되는지 확인한 뒤 API 저장을 누릅니다.</p>
+          <p>네이버 검색광고 API에는 CUSTOMER_ID, 액세스라이선스, 비밀키를 넣습니다. 상품명의 월간검색어 기반이 이 키로 월간 검색수와 경쟁강도를 가져옵니다. 연결 테스트로 확인합니다.</p>
+          <p>마켓관리에는 쇼핑몰 계정을 등록합니다. 새 마켓으로 칸을 열고, 마켓, 스토어명, 스토어 주소, 아이디, 패스워드, 아이디키, 시크릿키, 업체코드, ESM ID, 판매자 account_id 중에서 그 마켓에 나오는 칸을 채웁니다. 기본 마켓으로 지정할 수 있습니다. 설정 도움말은 키를 받는 사이트와 이 프로그램의 입력칸으로 바로 갑니다. 저장 후 연동 테스트를 누릅니다. 삭제는 그 계정을 이 프로그램에서 지웁니다.</p>
+        </section>
+
+        <section class="help-panel" id="help-data" data-help-panel="help-data" hidden>
+          <h2>저장 위치</h2>
+          <p>상품 목록, 상품 내용, 이미지, 주문, 엑셀 양식, 가격세트, 설정은 이 컴퓨터의 프로그램 폴더 안 data에 저장됩니다. 프로그램을 다시 열어도 그 내용이 그대로 있습니다. 설정에 넣은 키와 공급처 비밀번호도 이 컴퓨터에만 있습니다. 주문 목록의 칸 너비, 작업상태 이름, 오너클랜 검색조건은 이 브라우저에 남습니다.</p>
+        </section>
+      </article>
+    </div>
+  </section>
+
+  <p id="warningBox" class="warnings" hidden></p>
+  <p id="resultBox" class="result-box" hidden></p>
+
+  <nav id="contextMenu" class="context-menu" hidden>
+    <button type="button" data-action="view-collected">수집상품보기</button>
+    <button type="button" data-action="view-registered">등록상품보기</button>
+    <hr />
+    <button type="button" data-action="category" data-master-edit="1">카테고리바꾸기</button>
+    <button type="button" data-action="options" data-master-edit="1">옵션등록</button>
+    <button type="button" data-action="attributes" data-master-edit="1">속성바꾸기</button>
+    <button type="button" data-action="unit" data-master-edit="1">단위가격수정</button>
+    <button type="button" data-action="tags" data-master-edit="1">태그바꾸기</button>
+    <button type="button" data-action="images" data-master-edit="1">이미지바꾸기</button>
+    <button type="button" data-action="detail" data-master-edit="1">상세페이지 바꾸기</button>
+    <button type="button" data-action="detail-intro" data-master-edit="1">상세페이지추가글</button>
+    <button type="button" data-action="ai-name" data-master-edit="1">상품명AI</button>
+    <button type="button" data-action="ai-tags" data-master-edit="1">태그AI</button>
+    <button type="button" data-action="ai-attributes" data-master-edit="1">속성AI</button>
+    <div class="context-submenu" data-master-edit="1">
+      <button type="button">선택상품명 키워드 섞기</button>
+      <div class="context-submenu-panel">
+        <button type="button" data-action="shuffle-0">전체섞기</button>
+        <button type="button" data-action="shuffle-1">1번까지제외섞기</button>
+        <button type="button" data-action="shuffle-2">2번까지제외섞기</button>
+        <button type="button" data-action="shuffle-3">3번까지제외섞기</button>
+        <button type="button" data-action="shuffle-4">4번까지제외섞기</button>
+        <button type="button" data-action="shuffle-5">5번까지제외섞기</button>
+      </div>
+    </div>
+    <hr />
+    <button type="button" data-action="check">선택상품 체크</button>
+    <button type="button" data-action="uncheck">선택상품 해제</button>
+    <hr />
+    <button type="button" data-action="save" data-master-edit="1">상품수정</button>
+    <button type="button" data-action="send-market">마켓으로 보내기</button>
+    <button type="button" data-action="refresh-original" data-source-only="1">정보업데이트</button>
+    <button type="button" data-action="refresh-market" data-market-only="1">판매정보업데이트</button>
+    <button type="button" data-action="register">상품등록</button>
+    <button type="button" data-action="delete">선택삭제</button>
+    <button type="button" data-action="undo" data-smartstore-only="1">되돌리기</button>
+    <button type="button" data-action="redo" data-smartstore-only="1">재실행</button>
+    <button type="button" data-action="change-name" data-smartstore-only="1">상품명바꾸기</button>
+    <button type="button" data-action="change-category" data-smartstore-only="1">카테고리바꾸기</button>
+    <button type="button" data-action="change-attributes" data-smartstore-only="1">속성바꾸기</button>
+    <button type="button" data-action="change-tags" data-smartstore-only="1">태그바꾸기</button>
+    <button type="button" data-action="ai" data-smartstore-only="1">AI가공</button>
+    <button type="button" data-action="stop-job" data-smartstore-only="1">작업중단</button>
+  </nav>
+
+  <dialog id="detailDialog">
+    <form id="detailForm">
+      <header>
+        <h2>상세페이지 바꾸기</h2>
+        <button type="button" id="closeDetail">닫기</button>
+      </header>
+      <div class="image-add-row">
+        <input id="detailImageUrl" placeholder="이미지 URL을 넣거나 비워 두고 파일을 선택하세요" />
+        <input id="detailImageFile" type="file" accept="image/*" multiple hidden />
+        <button type="button" id="addDetailImage">이미지추가</button>
+        <button type="button" id="detailIntroAi" class="secondary">추가글 AI</button>
+      </div>
+      <div id="detailToolbar" class="detail-toolbar">
+        <select id="detailFontName" title="글꼴">
+          <option value="돋움">돋움</option>
+          <option value="돋움체">돋움체</option>
+          <option value="굴림">굴림</option>
+          <option value="굴림체">굴림체</option>
+          <option value="바탕">바탕</option>
+          <option value="궁서">궁서</option>
+          <option value="맑은 고딕">맑은 고딕</option>
+          <option value="Arial">Arial</option>
+        </select>
+        <div class="detail-size" id="detailFontSizeWrap">
+          <button type="button" id="detailFontSizeBtn" title="글자 크기">9pt</button>
+          <div class="detail-size-menu" id="detailFontSizeMenu" hidden>
+            <button type="button" data-pt="7" style="font-size:7pt">가나다라마바사 (7pt)</button>
+            <button type="button" data-pt="8" style="font-size:8pt">가나다라마바사 (8pt)</button>
+            <button type="button" data-pt="9" style="font-size:9pt">가나다라마바사 (9pt)</button>
+            <button type="button" data-pt="10" style="font-size:10pt">가나다라마바사 (10pt)</button>
+            <button type="button" data-pt="11" style="font-size:11pt">가나다라마바사 (11pt)</button>
+            <button type="button" data-pt="12" style="font-size:12pt">가나다라마바사 (12pt)</button>
+            <button type="button" data-pt="14" style="font-size:14pt">가나다라마바사 (14pt)</button>
+            <button type="button" data-pt="18" style="font-size:18pt">가나다라마바사 (18pt)</button>
+            <button type="button" data-pt="24" style="font-size:24pt">가나다라마바사 (24pt)</button>
+            <button type="button" data-pt="36" style="font-size:36pt">가나다라마바사 (36pt)</button>
+          </div>
+        </div>
+        <span class="detail-sep"></span>
+        <button type="button" data-cmd="bold" title="굵게"><b>가</b></button>
+        <button type="button" data-cmd="italic" title="기울임"><i>가</i></button>
+        <button type="button" data-cmd="underline" title="밑줄"><u>가</u></button>
+        <button type="button" data-cmd="strikeThrough" title="취소선"><s>가</s></button>
+        <label class="detail-color" title="글자 색">가<input type="color" id="detailForeColor" value="#ff0000" /></label>
+        <label class="detail-color detail-bg" title="배경 색">가<input type="color" id="detailBackColor" value="#ffff00" /></label>
+        <span class="detail-sep"></span>
+        <button type="button" data-cmd="insertUnorderedList" title="글머리 기호">•</button>
+        <button type="button" data-cmd="insertOrderedList" title="번호 매기기">1.</button>
+        <button type="button" data-cmd="outdent" title="내어쓰기">⇤</button>
+        <button type="button" data-cmd="indent" title="들여쓰기">⇥</button>
+        <select id="detailAlign" title="정렬">
+          <option value="justifyLeft">왼쪽</option>
+          <option value="justifyCenter">가운데</option>
+          <option value="justifyRight">오른쪽</option>
+          <option value="justifyFull">양쪽</option>
+        </select>
+        <button type="button" data-cmd="quote" title="인용">”</button>
+        <span class="detail-sep"></span>
+        <button type="button" id="detailLink" title="링크">URL</button>
+        <select id="detailSpecial" title="특수문자">
+          <option value="">※</option>
+          <option value="※">※</option>
+          <option value="★">★</option>
+          <option value="☆">☆</option>
+          <option value="●">●</option>
+          <option value="○">○</option>
+          <option value="■">■</option>
+          <option value="□">□</option>
+          <option value="→">→</option>
+          <option value="←">←</option>
+          <option value="↑">↑</option>
+          <option value="↓">↓</option>
+          <option value="①">①</option>
+          <option value="②">②</option>
+          <option value="③">③</option>
+          <option value="©">©</option>
+          <option value="®">®</option>
+        </select>
+        <button type="button" id="detailFind" title="찾기">⌕</button>
+      </div>
+      <div id="detailVisual" class="detail-visual" contenteditable="true"></div>
+      <textarea id="detailHtml" class="detail-source" hidden placeholder="HTML을 직접 수정하세요"></textarea>
+      <textarea id="detailText" class="detail-source" hidden placeholder="텍스트만 수정하세요"></textarea>
+      <div class="detail-modes">
+        <button type="button" class="tab active" data-detail-mode="editor">에디터</button>
+        <button type="button" class="tab" data-detail-mode="html">HTML</button>
+        <button type="button" class="tab" data-detail-mode="text">TEXT</button>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit" class="btn-apply">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="optionDialog">
+    <form id="optionForm">
+      <header>
+        <h2>옵션등록</h2>
+        <button type="button" id="closeOption">닫기</button>
+      </header>
+      <div class="option-field">
+        <span class="option-label">선택형</span>
+        <div class="option-toggle">
+          <button type="button" id="optionOn" class="active">설정함</button>
+          <button type="button" id="optionOff">설정안함</button>
+        </div>
+      </div>
+      <div id="optionSettings">
+        <div class="option-field">
+          <span class="option-label">옵션 구성타입</span>
+          <div class="option-inline">
+            <label class="check"><input type="radio" name="optionType" value="SIMPLE" /> 단독형</label>
+            <label class="check"><input type="radio" name="optionType" value="COMBINATION" checked /> 조합형</label>
+          </div>
+        </div>
+        <div class="option-field">
+          <span class="option-label">옵션명개수</span>
+          <select id="optionGroupCount">
+            <option value="1">1개</option>
+            <option value="2">2개</option>
+            <option value="3">3개</option>
+          </select>
+        </div>
+        <div class="option-field">
+          <span class="option-label">옵션입력</span>
+          <div id="optionEditor"></div>
+        </div>
+        <div class="dialog-actions">
+          <button type="button" id="applyOptionList" class="btn-apply">옵션목록으로 적용</button>
+        </div>
+        <div class="option-list-head">
+          <strong>옵션목록</strong>
+          <p class="hint">옵션가에 +, - 금액을 넣을 수 있습니다. 기본 판매가에서 더하거나 빼는 금액입니다.</p>
+        </div>
+        <div class="option-list-toolbar">
+          <button type="button" id="deleteSelectedCombos">선택삭제</button>
+          <label>옵션가
+            <span class="option-price-cell">
+              <select id="bulkPriceSign"><option value="+">+</option><option value="-">-</option></select>
+              <input id="bulkPrice" type="number" step="10" value="0" />
+            </span>
+          </label>
+          <label>재고수량<input id="bulkStock" type="number" value="9999" /></label>
+          <label>사용여부
+            <select id="bulkUsable">
+              <option value="true">Y</option>
+              <option value="false">N</option>
+            </select>
+          </label>
+          <button type="button" id="applyBulkOptions">선택목록 일괄수정</button>
+        </div>
+        <div class="option-list-wrap">
+          <table class="option-list-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="selectAllCombos" /></th>
+                <th>옵션명</th>
+                <th>옵션가</th>
+                <th>재고수량</th>
+                <th>판매상태</th>
+                <th>관리코드</th>
+                <th>사용여부</th>
+                <th>삭제</th>
+              </tr>
+            </thead>
+            <tbody id="optionComboTable"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit">옵션 저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="imageDialog">
+    <form id="imageForm">
+      <header>
+        <h2>이미지바꾸기</h2>
+        <button type="button" id="closeImage">닫기</button>
+      </header>
+      <div id="imageDrop" class="image-drop">
+        <div id="imageThumbs" class="image-thumbs"></div>
+        <p class="hint">화면은 1/4 크기이고, 저장 이미지는 500×500입니다. 파일을 여러 장 선택하거나 한꺼번에 끌어다 놓으세요. 최대 10장입니다.</p>
+      </div>
+      <div class="image-add-row">
+        <input id="imageUrl" placeholder="이미지 URL을 여러 개 넣거나, 비워 두고 파일을 여러 장 선택하세요" />
+        <input id="imageFile" type="file" accept="image/*" multiple hidden />
+        <button type="button" id="addImageButton">이미지추가</button>
+        <button type="button" id="removeImageTextButton" class="secondary">대표이미지 글씨제거</button>
+      </div>
+      <p id="imageTextJobStatus" class="hint image-text-job" hidden></p>
+      <p class="hint">대표이미지 글씨제거는 첫 번째 대표 이미지의 홍보 문구만 지웁니다. 브랜드 로고와 다른 상품 이미지는 그대로 둡니다.</p>
+      <div class="option-list-wrap">
+        <table class="option-list-table">
+          <thead>
+            <tr>
+              <th>번호</th>
+              <th>이미지</th>
+              <th>삭제</th>
+            </tr>
+          </thead>
+          <tbody id="imageUrlTable"></tbody>
+        </table>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit" class="btn-apply">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="nameDialog">
+    <form id="nameForm">
+      <header>
+        <h2>상품명바꾸기</h2>
+        <button type="button" id="closeName">닫기</button>
+      </header>
+      <label>상품명
+        <textarea id="nameInput" rows="4"></textarea>
+      </label>
+      <div class="name-suggest-actions">
+        <button type="button" class="secondary" data-name-mode="category">1. 기존처럼</button>
+        <button type="button" class="secondary" data-name-mode="search">2. 월간검색어 기반</button>
+        <span class="hint">AI가 10단어 상품명을 만들어 위 칸에 넣습니다. 확인 후 저장하세요.</span>
+      </div>
+      <div id="nameSuggestKeywords" class="name-suggest-keywords" hidden></div>
+      <div class="dialog-actions">
+        <button type="submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="tagDialog">
+    <form id="tagForm">
+      <header>
+        <h2>태그바꾸기</h2>
+        <button type="button" id="closeTag">닫기</button>
+      </header>
+      <div class="option-field">
+        <span class="option-label">태그</span>
+        <div>
+          <label class="check"><input type="checkbox" id="tagDirect" checked /> 직접 입력하기(최대 10개)</label>
+          <div id="tagEditor">
+            <input id="tagInput" maxlength="10" placeholder="태그를 입력해 주세요." />
+            <p class="hint" id="tagCount">0/10</p>
+            <div id="tagChips"></div>
+          </div>
+          <p class="hint tag-help">입력한 태그는 내부 검색 조건에 바로 반영되지 않을 수 있습니다.</p>
+          <p class="hint tag-help">카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다.</p>
+          <p class="hint tag-help">판매 상품과 직접 관련 없는 키워드를 입력하면 판매자 제재를 받을 수 있습니다.</p>
+          <p class="hint tag-help">공백 없이 한글 또는 영문/숫자 10자 이내로 넣어 주세요.</p>
+          <p class="tag-search-row">입력한 태그가 검색에 적용되는지 궁금하다면? <button type="button" id="tagSearchCheck" class="tag-search-link">검색에 적용되는 태그확인</button></p>
+          <div id="tagSearchResult" class="tag-search-result" hidden></div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="tagFillAi">AI 채우기</button>
+        <button type="submit">태그 저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="attributeDialog">
+    <form id="attributeForm">
+      <header class="attribute-head">
+        <h2>속성바꾸기</h2>
+        <button type="button" id="closeAttribute" title="닫기">×</button>
+      </header>
+      <p id="attributeCategory" class="attribute-title"></p>
+      <p class="attribute-help">무관한 속성을 선택하거나 과도하게 많은 속성을 선택하는 경우 네이버쇼핑 검색에 정상 노출이 되지 않습니다. 주요한 속성 위주로 정확하게 입력해 주세요. 상품에 맞는 속성이 없거나 중요한 속성이 누락되었다면 고객센터 1:1문의로 남겨주세요.</p>
+      <p id="attributeMessage" class="hint"></p>
+      <div id="attributeFields" class="attribute-fields"></div>
+      <div class="dialog-actions">
+        <button type="button" id="attributeFillCollected">수집값 채우기</button>
+        <button type="button" id="attributeFillAi">AI 채우기</button>
+        <button type="submit" class="btn-apply">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="deliveryDialog">
+    <form id="deliveryForm">
+      <header>
+        <h2>배송/가격</h2>
+        <button type="button" id="closeDelivery">닫기</button>
+      </header>
+      <div class="delivery-mode-tabs">
+        <button type="button" id="deliveryTabShipping" class="tab active">배송템플릿</button>
+        <button type="button" id="deliveryTabPrice" class="tab">가격세트관리</button>
+      </div>
+      <div id="deliveryPane">
+      <p class="hint">스마트스토어 상품관리의 배송정보 관리·템플릿 관리를 그대로 가져옵니다.</p>
+      <div class="delivery-table-wrap">
+        <table class="delivery-table">
+          <thead>
+            <tr>
+              <th class="delivery-code">배송템플릿코드</th>
+              <th>제목</th>
+            </tr>
+          </thead>
+          <tbody id="deliveryTemplateBody"></tbody>
+        </table>
+      </div>
+      <input type="hidden" name="id" />
+      <input type="hidden" name="code" />
+      <div class="delivery-row">
+        <span class="dl">제목</span>
+        <input name="name" maxlength="40" class="span3" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">배송타입</span>
+        <select name="delivery_type">
+          <option value="DELIVERY">택배/소포/등기</option>
+          <option value="DIRECT">직접전달</option>
+          <option value="DIRECT_VISIT">방문수령</option>
+          <option value="QUICK">퀵서비스</option>
+          <option value="NOTHING">없음</option>
+        </select>
+        <span class="dl">배송속성</span>
+        <select name="delivery_attribute_type">
+          <option value="NORMAL">일반배송</option>
+          <option value="TODAY">오늘출발</option>
+          <option value="HOPE">희망일배송</option>
+          <option value="TODAY_ARRIVAL">오늘도착</option>
+          <option value="DAWN_ARRIVAL">새벽배송</option>
+        </select>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">무료타입</span>
+        <select name="delivery_fee_type" id="deliveryFeeType">
+          <option value="FREE">무료배송</option>
+          <option value="PAID">유료배송</option>
+          <option value="CONDITIONAL_FREE">조건부무료</option>
+          <option value="UNIT_QUANTITY_PAID">수량별부과</option>
+        </select>
+        <span class="dl">기본배송비</span>
+        <input name="base_fee" type="number" min="0" step="10" value="0" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">무료조건금액</span>
+        <input name="free_conditional_amount" type="number" min="0" step="10" value="0" />
+        <span class="dl">반복부과수량</span>
+        <input name="repeat_quantity" type="number" min="0" step="1" value="0" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">지정택배사</span>
+        <select name="delivery_company">
+          <option value="CJGLS">CJ대한통운</option>
+          <option value="HYUNDAI">롯데택배</option>
+          <option value="HANJIN">한진택배</option>
+          <option value="EPOST">우체국택배</option>
+          <option value="KGB">로젠택배</option>
+          <option value="KDEXP">경동택배</option>
+          <option value="DAESIN">대신택배</option>
+          <option value="ILYANG">일양로지스</option>
+          <option value="CHUNIL">천일택배</option>
+        </select>
+        <span class="dl">결제방식</span>
+        <select name="delivery_fee_pay_type">
+          <option value="COLLECT_OR_PREPAID">착불 또는 선결제</option>
+          <option value="PREPAID">선결제</option>
+          <option value="COLLECT">착불</option>
+        </select>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">묶음배송</span>
+        <select name="bundle_usable" id="deliveryBundleUsable">
+          <option value="false">묶음불가</option>
+          <option value="true">묶음가능</option>
+        </select>
+        <span class="dl">묶음배송코드</span>
+        <div class="delivery-inline">
+          <select id="deliveryBundleAddress">
+            <option value="">선택없음</option>
+          </select>
+          <input type="hidden" name="bundle_group_id" id="deliveryBundleGroup" />
+          <button type="button" id="loadDeliveryCatalog">마켓에서 가져오기</button>
+        </div>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">퀵서비스</span>
+        <div class="delivery-quick">
+          <input name="quick_service" id="deliveryQuickService" />
+          <button type="button" id="openQuickRegions">지역선택</button>
+          <div id="quickRegionPop" class="delivery-pop" hidden>
+            <div id="quickRegionList" class="delivery-regions"></div>
+            <div class="delivery-pop-actions">
+              <button type="button" id="applyQuickRegions">확인</button>
+              <button type="button" id="closeQuickRegions">닫기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">출고지</span>
+        <select name="shipping_address_id" id="deliveryShippingAddress" required></select>
+        <span class="dl">반품지</span>
+        <select name="return_address_id" id="deliveryReturnAddress" required></select>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">방문수령지</span>
+        <select name="visit_address_id" id="deliveryVisitAddress"></select>
+        <span class="dl">배송권역</span>
+        <select name="area_type" id="deliveryAreaType">
+          <option value="">사용안함</option>
+          <option value="AREA_2">2권역</option>
+          <option value="AREA_3">3권역</option>
+        </select>
+      </div>
+      <div class="delivery-row" id="deliveryAreaFeeRow">
+        <span class="dl">제주추가</span>
+        <input name="area2_extra_fee" type="number" min="0" step="10" value="0" />
+        <span class="dl">도서산간추가</span>
+        <input name="area3_extra_fee" type="number" min="0" step="10" value="0" />
+      </div>
+      <p class="hint" id="deliveryAreaFeeHint" hidden>묶음배송코드를 쓰면 제주·도서산간 추가는 판매자센터 묶음그룹 설정을 따릅니다. 상품 등록 값에는 넣지 않습니다.</p>
+      <div class="delivery-row">
+        <span class="dl">반품배송비</span>
+        <input name="return_fee" type="number" min="0" step="10" value="0" />
+        <span class="dl">교환배송비</span>
+        <input name="exchange_fee" type="number" min="0" step="10" value="0" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">과세설정</span>
+        <select name="tax_type">
+          <option value="TAX">과세상품</option>
+          <option value="DUTYFREE">면세상품</option>
+          <option value="SMALL">영세상품</option>
+        </select>
+        <span class="dl">미성년자구매</span>
+        <select name="minor_purchasable">
+          <option value="true">구매가능</option>
+          <option value="false">구매불가</option>
+        </select>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">A/S 안내</span>
+        <input name="as_guide" class="span3" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">A/S 번호</span>
+        <input name="as_phone" />
+        <span class="dl">판매유형</span>
+        <select name="sale_type">
+          <option value="NEW">새상품</option>
+          <option value="OLD">중고상품</option>
+          <option value="REFURBISH">리퍼</option>
+          <option value="DISPLAY">전시</option>
+        </select>
+      </div>
+      <div class="delivery-row">
+        <input name="top_notice_urls" class="span4" placeholder="상단 공지사항 이미지 URL / 여러개일 경우 , 구분하여 입력" />
+      </div>
+      <div class="delivery-row">
+        <input name="bottom_notice_urls" class="span4" placeholder="하단 공지사항 이미지 URL / 여러개일 경우 , 구분하여 입력" />
+      </div>
+      <p id="deliveryMessage" class="hint"></p>
+      <div class="delivery-actions">
+        <button type="button" id="addDeliveryTemplate">📄 배송정보신규등록</button>
+        <button type="submit">💾 배송정보저장</button>
+        <button type="button" id="deliveryRegisterButton" class="delivery-register" hidden>이 주소로 등록</button>
+        <button type="button" id="deleteDeliveryTemplate" class="delivery-delete">❌ 배송정보삭제</button>
+      </div>
+      </div>
+      <section id="priceSetPane" class="price-set-page" hidden>
+        <div class="price-set-block">
+          <div class="price-set-head">
+            <h3>필수 가격세트</h3>
+            <button type="button" id="addRequiredPriceSet">필수 세트 추가</button>
+          </div>
+          <div class="delivery-table-wrap">
+            <table class="delivery-table">
+              <thead>
+                <tr>
+                  <th>이름</th>
+                  <th>요약</th>
+                  <th class="col-manage">관리</th>
+                </tr>
+              </thead>
+              <tbody id="requiredPriceBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="price-set-block">
+          <div class="price-set-head">
+            <h3>마켓별 가격세트</h3>
+            <button type="button" id="addMarketPriceSet">마켓 세트 추가</button>
+          </div>
+          <div class="delivery-table-wrap">
+            <table class="delivery-table">
+              <thead>
+                <tr>
+                  <th>마켓계정</th>
+                  <th>이름</th>
+                  <th>요약</th>
+                  <th class="col-manage">관리</th>
+                </tr>
+              </thead>
+              <tbody id="marketPriceBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </form>
+  </dialog>
+
+  <dialog id="benefitDialog">
+    <form id="benefitForm">
+      <header>
+        <h2>구매/리뷰 혜택 조건</h2>
+        <button type="button" id="closeBenefit">닫기</button>
+      </header>
+      <p class="hint">스마트스토어 상품등록의 구매/리뷰 혜택 조건입니다. 저장한 값이 상품등록에 들어갑니다.</p>
+      <input type="hidden" name="multi_discount_enabled" value="false" />
+      <div class="delivery-row">
+        <span class="dl">최소구매수량</span>
+        <input name="min_purchase_qty" type="number" min="0" step="1" placeholder="비우면 1개" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">최대구매수량</span>
+        <div class="benefit-checks span3">
+          <label class="check"><input name="max_per_order" type="checkbox" /> 1회 구매시 최대</label>
+          <input name="max_per_order_qty" type="number" min="0" step="1" placeholder="개" />
+          <label class="check"><input name="max_per_id" type="checkbox" /> 1인 구매시 최대</label>
+          <input name="max_per_id_qty" type="number" min="0" step="1" placeholder="개" />
+        </div>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">복수구매할인</span>
+        <div class="option-toggle span3" data-toggle="multi_discount_enabled">
+          <button type="button" data-value="true">설정함</button>
+          <button type="button" data-value="false">설정안함</button>
+        </div>
+      </div>
+      <div id="benefitMultiFields">
+        <div class="delivery-row">
+          <span class="dl"></span>
+          <div class="benefit-multi span3">
+            <select name="multi_discount_basis">
+              <option value="AMOUNT">주문금액(판매가기준)</option>
+              <option value="QUANTITY">수량</option>
+            </select>
+            <input name="multi_discount_order_value" type="number" min="0" step="1" />
+            <span id="benefitMultiOrderUnit" class="benefit-suffix">원</span>
+            <span class="benefit-suffix">이상 구매 시</span>
+          </div>
+        </div>
+        <div class="delivery-row">
+          <span class="dl"></span>
+          <div class="benefit-multi span3">
+            <span class="benefit-suffix">판매가에서</span>
+            <input name="multi_discount_value" type="number" min="0" step="1" />
+            <select name="multi_discount_unit" class="benefit-unit">
+              <option value="WON">원</option>
+              <option value="PERCENT">%</option>
+            </select>
+            <span class="benefit-suffix">할인</span>
+          </div>
+        </div>
+        <div class="delivery-row">
+          <span class="dl"></span>
+          <label class="check span3"><input name="multi_discount_period_only" type="checkbox" /> 특정 기간만 할인</label>
+        </div>
+        <div class="delivery-row" id="benefitMultiPeriodRow" hidden>
+          <span class="dl">할인 시작</span>
+          <input name="multi_discount_start" type="date" />
+          <span class="dl">할인 종료</span>
+          <input name="multi_discount_end" type="date" />
+        </div>
+        <p class="hint benefit-note">주문금액은 판매가 기준입니다. 수량이 아닌 주문금액으로 설정해도 구매된 수량만큼 할인이 적용됩니다.</p>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">포인트</span>
+        <div class="delivery-inline span3">
+          <label class="check"><input name="purchase_point_enabled" type="checkbox" /> 상품 구매 시 지급</label>
+          <input name="purchase_point_value" type="number" min="0" step="1" placeholder="포인트" />
+          <select name="purchase_point_unit" class="benefit-unit">
+            <option value="WON">원</option>
+            <option value="PERCENT">%</option>
+          </select>
+        </div>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">상품리뷰</span>
+        <label class="check span3"><input name="review_point_enabled" type="checkbox" /> 상품리뷰 작성시 지급</label>
+      </div>
+      <div id="benefitReviewFields">
+        <div class="delivery-row">
+          <span class="dl">텍스트 리뷰</span>
+          <input name="text_review_point" type="number" min="0" step="10" value="300" />
+          <span class="dl">포토/영상 리뷰</span>
+          <input name="photo_review_point" type="number" min="0" step="10" value="350" />
+        </div>
+        <div class="delivery-row">
+          <span class="dl">한달사용 텍스트</span>
+          <input name="after_text_review_point" type="number" min="0" step="10" value="300" />
+          <span class="dl">한달사용 포토/영상</span>
+          <input name="after_photo_review_point" type="number" min="0" step="10" value="350" />
+        </div>
+        <div class="delivery-row">
+          <span class="dl">알림동의 추가</span>
+          <input name="notify_review_point" type="number" min="0" step="10" value="100" />
+          <span class="dl">특정기간만</span>
+          <label class="check"><input name="review_point_period_only" type="checkbox" /> 특정 기간만 지급</label>
+        </div>
+        <div class="delivery-row" id="benefitReviewPeriodRow" hidden>
+          <span class="dl">지급 시작</span>
+          <input name="review_point_start" type="date" />
+          <span class="dl">지급 종료</span>
+          <input name="review_point_end" type="date" />
+        </div>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">무이자할부</span>
+        <select name="free_interest_enabled">
+          <option value="false">설정안함</option>
+          <option value="true">설정함</option>
+        </select>
+        <span class="dl">할부 개월</span>
+        <input name="free_interest_months" type="number" min="0" step="1" placeholder="예: 12" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">사은품</span>
+        <input name="gift_text" class="span3" maxlength="100" placeholder="리뷰 포인트 추가적립!" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">이벤트</span>
+        <input name="event_text" class="span3" maxlength="50" placeholder="예: 20만원 이상 12개월 무이자" />
+      </div>
+      <p id="benefitMessage" class="hint"></p>
+      <div class="delivery-actions">
+        <button type="submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="noticeDialog">
+    <form id="noticeForm">
+      <header>
+        <h2>공지사항관리</h2>
+        <button type="button" id="closeNotice">닫기</button>
+      </header>
+      <p class="hint">스마트스토어에서 가져오거나, 이 프로그램에서 직접 만든 공지를 상품 상세 상단에 넣습니다.</p>
+      <div class="dialog-actions">
+        <button type="button" id="importNotices">스마트스토어에서 가져오기</button>
+        <button type="button" id="openNoticeCreate">공지사항만들기</button>
+      </div>
+      <div id="noticeList" class="notice-list"></div>
+      <p id="noticeMessage" class="hint"></p>
+      <div class="dialog-actions">
+        <button type="button" id="applyNoticesSelected">선택상품 상단에 넣기</button>
+        <button type="button" id="applyNoticeDefaults">새로 가져오는 상품 기본값</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="noticeCreateDialog">
+    <form id="noticeCreateForm">
+      <header>
+        <h2>공지사항만들기</h2>
+        <button type="button" id="closeNoticeCreate">닫기</button>
+      </header>
+      <p class="hint">분류는 일반입니다. 제목과 이미지, 텍스트를 넣어 상품 상세 상단 공지를 만듭니다.</p>
+      <label>분류
+        <select id="noticeCategory">
+          <option value="일반" selected>일반</option>
+        </select>
+      </label>
+      <label>제목
+        <input id="noticeTitle" placeholder="제목을 입력해 주세요." maxlength="80" />
+      </label>
+      <label>공지 이미지
+        <input id="noticeImageUrl" placeholder="이미지 URL을 넣거나 비워 두고 파일을 선택하세요" />
+      </label>
+      <div class="image-add-row">
+        <input id="noticeImageFile" type="file" accept="image/*" multiple />
+      </div>
+      <div class="notice-body-label">내용</div>
+      <div id="noticeTextToolbar" class="detail-toolbar">
+        <select id="noticeFontName" title="글꼴">
+          <option value="돋움">돋움</option>
+          <option value="맑은 고딕">맑은 고딕</option>
+          <option value="굴림">굴림</option>
+          <option value="Arial">Arial</option>
+        </select>
+        <select id="noticeFontSize" title="글자 크기">
+          <option value="2">10pt</option>
+          <option value="3" selected>12pt</option>
+          <option value="4">14pt</option>
+          <option value="5">18pt</option>
+          <option value="6">24pt</option>
+          <option value="7">36pt</option>
+        </select>
+        <span class="detail-sep"></span>
+        <button type="button" data-notice-cmd="bold" title="굵게"><b>가</b></button>
+        <button type="button" data-notice-cmd="italic" title="기울임"><i>가</i></button>
+        <button type="button" data-notice-cmd="underline" title="밑줄"><u>가</u></button>
+        <button type="button" data-notice-cmd="strikeThrough" title="취소선"><s>가</s></button>
+        <label class="detail-color" title="글자 색">가<input type="color" id="noticeForeColor" value="#111111" /></label>
+        <span class="detail-sep"></span>
+        <button type="button" data-notice-cmd="justifyLeft" title="왼쪽">왼쪽</button>
+        <button type="button" data-notice-cmd="justifyCenter" title="가운데">가운데</button>
+        <button type="button" data-notice-cmd="justifyRight" title="오른쪽">오른쪽</button>
+        <button type="button" data-notice-cmd="insertUnorderedList" title="글머리 기호">•</button>
+        <button type="button" id="noticeLink" title="링크">링크</button>
+      </div>
+      <div id="noticeText" class="notice-text" contenteditable="true" data-placeholder="내용을 입력하세요."></div>
+      <p id="noticeCreateMessage" class="hint"></p>
+      <div class="dialog-actions">
+        <button type="button" id="saveNoticeCreate">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="setupHelpDialog">
+    <form id="setupHelpForm">
+      <header>
+        <h2 id="setupHelpTitle">설정 도움말</h2>
+        <button type="button" id="closeSetupHelp">닫기</button>
+      </header>
+      <div id="setupHelpBody" class="setup-help-body"></div>
+    </form>
+  </dialog>
+
+  <dialog id="nameKeywordDialog">
+    <form id="nameKeywordForm">
+      <header>
+        <h2>등록금지키워드</h2>
+        <button type="button" id="closeNameKeywords">닫기</button>
+      </header>
+      <div class="delivery-row">
+        <span class="dl">키워드</span>
+        <input id="nameKeywordInput" class="span3" maxlength="30" />
+        <button type="button" id="addNameKeyword">추가</button>
+      </div>
+      <div id="nameKeywordList" class="name-keyword-list"></div>
+      <p id="nameKeywordMessage" class="hint"></p>
+      <div class="dialog-actions">
+        <button type="submit">저장</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="discountDialog">
+    <form id="discountForm">
+      <header>
+        <h2>즉시할인</h2>
+        <button type="button" id="closeDiscount">닫기</button>
+      </header>
+      <p class="hint">선택한 상품에 적용됩니다. 상품등록 때 스마트스토어 즉시할인으로 들어갑니다.</p>
+      <input type="hidden" name="discount_enabled" id="discountEnabled" value="false" />
+      <div class="delivery-row">
+        <span class="dl">즉시할인</span>
+        <div class="option-toggle span3" data-toggle="discount_enabled">
+          <button type="button" data-value="true">설정함</button>
+          <button type="button" data-value="false">설정안함</button>
+        </div>
+      </div>
+      <div id="saleDiscountFields">
+        <div class="delivery-row">
+          <span class="dl"></span>
+          <div class="benefit-multi span3">
+            <span class="benefit-suffix">판매가에서</span>
+            <input id="discountPriceValue" name="discount_price" type="number" min="0" step="1" value="0" />
+            <select id="discountUnitValue" name="discount_unit" class="benefit-unit">
+              <option value="WON">원</option>
+              <option value="PERCENT">%</option>
+            </select>
+            <span class="benefit-suffix">할인</span>
+          </div>
+        </div>
+      </div>
+      <p id="discountMessage" class="hint"></p>
+      <div class="delivery-actions">
+        <button type="submit">선택상품에 적용</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="nameModeDialog" class="order-menu-dialog">
+    <h3>상품명AI</h3>
+    <p class="hint">어떤 방식으로 10단어 상품명을 만들까요?</p>
+    <div class="name-mode-choices">
+      <button type="button" data-name-ai-mode="category">1. 기존처럼<span>카테고리 규칙으로 만듭니다. 월간검색어는 쓰지 않습니다.</span></button>
+      <button type="button" data-name-ai-mode="search">2. 월간검색어 기반<span>네이버 검색광고 월간검색수가 많은 단어부터 씁니다. 경쟁강도 낮음 단어는 뺍니다.</span></button>
+    </div>
+    <div class="settings-actions">
+      <button type="button" id="nameModeCancel">닫기</button>
+    </div>
+  </dialog>
+
+  <dialog id="originalRefreshDialog" class="order-menu-dialog">
+    <h3>정보업데이트</h3>
+    <p id="originalRefreshNote" class="hint">원본상품을 어떤 항목으로 업데이트할까요?</p>
+    <div class="replace-options">
+      <label><input type="checkbox" id="originalRefreshAll" checked /> 전체</label>
+      <label><input type="checkbox" id="originalRefreshPrice" checked /> 가격</label>
+      <label><input type="checkbox" id="originalRefreshImages" checked /> 이미지</label>
+      <label><input type="checkbox" id="originalRefreshOptions" checked /> 옵션</label>
+    </div>
+    <div class="settings-actions">
+      <button type="button" id="originalRefreshOk">업데이트</button>
+      <button type="button" id="originalRefreshCancel">닫기</button>
+    </div>
+  </dialog>
+
+  <dialog id="marketApplyDialog" class="order-menu-dialog">
+    <h3>업데이트 적용할까요?</h3>
+    <p id="marketApplyNote" class="hint">등록 상품에 업데이트 적용할까요?</p>
+    <div class="replace-options">
+      <label><input type="checkbox" id="marketApplyPrice" checked /> 가격</label>
+      <label><input type="checkbox" id="marketApplyOption" checked /> 옵션</label>
+    </div>
+    <div class="settings-actions">
+      <button type="button" id="marketApplyOk">적용</button>
+      <button type="button" id="marketApplyCancel">닫기</button>
+    </div>
+  </dialog>
+
+  <dialog id="stockDialog">
+    <form id="stockForm">
+      <header>
+        <h2 id="stockTitle">품절/재판매</h2>
+        <button type="button" id="closeStock">닫기</button>
+      </header>
+      <p id="stockSupplier" class="hint"></p>
+      <div class="stock-status">
+        <span id="stockPhase">대기</span>
+        <span id="stockStep"></span>
+      </div>
+      <progress id="stockProgress" max="100" value="0"></progress>
+      <p id="stockChecked" class="hint"></p>
+      <div class="stock-row" id="stockRowSoldout">
+        <span class="dl">품절</span>
+        <span id="stockSoldoutText">품절상품 0개</span>
+        <button type="button" id="stockApplySoldout" disabled>품절로 바꾸기</button>
+      </div>
+      <div class="stock-row" id="stockRowResale">
+        <span class="dl">재판매</span>
+        <span id="stockResaleText">재판매 가능 0개</span>
+        <button type="button" id="stockApplyResale" disabled>재판매로 바꾸기</button>
+      </div>
+      <p id="stockMessage" class="hint"></p>
+      <div class="delivery-actions">
+        <button type="button" id="stockStop" class="stop-job" disabled>작업중지</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="sendMarketDialog">
+    <form id="sendMarketForm">
+      <header>
+        <h2>마켓으로 보내기</h2>
+        <button type="button" id="closeSendMarket">닫기</button>
+      </header>
+      <p class="hint">선택한 마스터상품을 스마트스토어, 쿠팡, 옥션 등 고른 마켓 계정으로 복사합니다. 카테고리가 없으면 보낼 때 자동으로 맞춥니다. 보낸 뒤 그 마켓에서 가공하고 등록하세요.</p>
+      <label>보낼 마켓
+        <select id="sendMarketSelect"></select>
+      </label>
+      <p id="sendMarketMessage" class="hint"></p>
+      <div class="dialog-actions">
+        <button type="submit">보내기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="categoryDialog">
+    <form id="categoryForm">
+      <header>
+        <h2>카테고리바꾸기</h2>
+        <button type="button" id="closeCategory">닫기</button>
+      </header>
+      <label>카테고리 검색<input id="categoryQuery" placeholder="예: 전기요" /></label>
+      <ul id="categoryResults" class="pick-list"></ul>
+      <p id="categoryMessage" class="hint"></p>
+    </form>
+  </dialog>
+
+  <dialog id="priceSetDialog">
+    <form id="priceSetForm" autocomplete="off">
+      <header>
+        <h2 id="priceSetDialogTitle">마켓별 가격세트 추가</h2>
+        <button type="button" id="priceSetCancel">닫기</button>
+      </header>
+      <input type="hidden" name="id" />
+      <input type="hidden" name="kind" value="market" />
+      <div class="delivery-row" id="priceSetMarketRow">
+        <span class="dl">마켓 계정</span>
+        <select name="market_id" class="span3">
+          <option value="">마켓 계정을 선택하세요</option>
+        </select>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">이름</span>
+        <input name="name" class="span3" placeholder="예: 30% 마진 할인율 10%" />
+      </div>
+      <div class="delivery-row">
+        <span class="dl">마진</span>
+        <span class="price-affix span3">
+          <input name="margin" inputmode="decimal" placeholder="예: 30" />
+          <span class="price-suffix">%</span>
+        </span>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">할인</span>
+        <span class="price-affix span3">
+          <input name="discount_value" inputmode="decimal" placeholder="예: 3" />
+          <select name="discount_unit" aria-label="할인 단위">
+            <option value="PERCENT">%</option>
+            <option value="WON">원</option>
+          </select>
+        </span>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">포인트</span>
+        <span class="price-affix span3">
+          <input name="point_value" inputmode="decimal" placeholder="예: 3" />
+          <select name="point_unit" aria-label="포인트 단위">
+            <option value="PERCENT">%</option>
+            <option value="WON">원</option>
+          </select>
+        </span>
+      </div>
+      <div class="delivery-row">
+        <span class="dl">추가금액</span>
+        <span class="price-affix span3">
+          <input name="extra_amount" inputmode="numeric" placeholder="예: 200" />
+          <span class="price-suffix">원</span>
+        </span>
+      </div>
+      <div class="delivery-row" id="priceSetPromoRow" hidden>
+        <span class="dl">홍보문구</span>
+        <input name="promo" class="span3" placeholder="구매감사합니다 (최대 80byte)" />
+      </div>
+      <p id="priceSetMessage" class="hint"></p>
+      <div class="delivery-actions">
+        <button type="submit" id="priceSetSubmit">추가하기</button>
+      </div>
+    </form>
+  </dialog>
+
+  <section id="globalStatusLog" class="status-log status-log-global" hidden>
+    <h3>작업상태</h3>
+    <div class="job-status">
+      <div class="job-status-text" data-job-status-text>대기</div>
+    </div>
+    <ul class="job-log"></ul>
+  </section>
+  <div id="arrivalNotice" class="arrival-notice" hidden>
+    <strong>새 알림</strong>
+    <p id="arrivalNoticeText"></p>
+    <div class="arrival-notice-actions">
+      <button type="button" id="arrivalNoticeOpen">보러 가기</button>
+      <button type="button" id="arrivalNoticeClose">닫기</button>
+    </div>
+  </div>
+  <div id="jobSpinner" class="job-spinner" hidden>
+    <div class="job-spinner-ring" aria-hidden="true"></div>
+    <p data-job-spinner-text>작업 중</p>
+  </div>
+  <dialog id="excelFormDialog" class="excel-edit-dialog">
+    <header class="excel-add-head">
+      <div>
+        <h3 id="excelFormDialogTitle">엑셀 양식 추가</h3>
+        <p>조회된 자료를 설정한 양식대로 엑셀파일로 생성합니다.</p>
+      </div>
+      <button type="button" id="excelFormClose">닫기</button>
+    </header>
+    <p class="excel-add-note">안내: 선택사항에는 지마켓, 옥션의 추가구성이 포함될 수 있습니다. [선택사항][추가구성]을 선택하셔야 추가구성이 제외됩니다.</p>
+    <div class="excel-add-fields">
+      <label>양식 이름<input id="excelFormName" placeholder="예: 기본양식_출고용" /></label>
+      <label>사용 여부
+        <select id="excelFormUse">
+          <option value="1">사용</option>
+          <option value="0">미사용</option>
+        </select>
+      </label>
+    </div>
+    <h4 class="excel-add-label">구분자 설정</h4>
+    <div class="excel-separator-row" id="excelSeparators"></div>
+    <div class="excel-column-head">
+      <h4>컬럼 설정</h4>
+      <input id="excelValueSearch" class="excel-value-search" placeholder="주문 값 검색" />
+    </div>
+    <div class="excel-column-layout">
+      <div class="orders-wrap excel-column-wrap">
+        <table class="grid" id="excelColumnGrid">
+          <thead>
+            <tr><th>열</th><th>컬럼 제목</th><th>주문 값</th><th>메모</th><th></th></tr>
+          </thead>
+          <tbody id="excelColumnTable"></tbody>
+        </table>
+      </div>
+      <div class="excel-row-move">
+        <button type="button" id="excelRowUp" title="위로">∧</button>
+        <button type="button" id="excelRowDown" title="아래로">∨</button>
+      </div>
+    </div>
+    <footer class="excel-add-foot">
+      <button type="button" id="excelColumnAdd">열 추가</button>
+      <button type="button" id="excelFormSave">저장(S)</button>
+      <button type="button" id="excelFormCancel">닫기(C)</button>
+    </footer>
+  </dialog>
+  <dialog id="excelExportDialog" class="excel-export-dialog">
+    <header class="excel-export-head">
+      <div class="excel-export-brand">
+        <span class="excel-export-icon" aria-hidden="true">표</span>
+        <div>
+          <div class="excel-export-kicker">ORDER EXPORT</div>
+          <h3>엑셀 파일 생성</h3>
+          <p>주문 목록에서 필요한 양식과 출력 옵션을 선택하세요.</p>
+        </div>
+      </div>
+      <div class="excel-export-tools">
+        <label class="excel-autosave"><input type="checkbox" id="excelAutoSave" /> 자동 저장</label>
+        <button type="button" id="excelExportHelp">도움말</button>
+        <button type="button" id="excelExportClose">닫기</button>
+      </div>
+    </header>
+    <p id="excelExportHelpText" class="excel-export-help" hidden>검색 결과 전체는 지금 목록에 나온 주문을 담고, 선택한 주문만은 체크한 주문만 담습니다. 양식은 엑셀양식설정에서 사용으로 켜 둔 양식입니다. 복수 선택을 켜면 양식마다 파일이 하나씩 만들어집니다. 파일 이름은 생성 전에 바꿀 수 있고, 저장 경로를 누르면 폴더를 고릅니다.</p>
+    <div class="excel-export-body">
+      <div class="excel-export-main">
+        <section class="excel-card">
+          <h4>엑셀 생성 대상</h4>
+          <div class="excel-target-row">
+            <button type="button" class="excel-target active" data-excel-target="all">
+              <span>검색 결과 전체</span>
+              <strong id="excelTargetAllCount">0건</strong>
+              <small>현재 검색된 주문</small>
+            </button>
+            <button type="button" class="excel-target" data-excel-target="selected">
+              <span>선택한 주문만</span>
+              <strong id="excelTargetSelectedCount">0건</strong>
+              <small>목록에서 체크한 주문</small>
+            </button>
+          </div>
+          <p class="hint">하나를 선택하세요</p>
+        </section>
+        <section class="excel-card">
+          <div class="excel-card-head">
+            <h4>엑셀 양식</h4>
+            <button type="button" id="excelExportOpenForms" class="excel-form-link">양식 설정</button>
+          </div>
+          <div class="excel-form-pick">
+            <select id="excelExportSelect"></select>
+            <label class="excel-multi"><input type="checkbox" id="excelExportMulti" /> 복수 선택</label>
+          </div>
+          <div id="excelExportChecks" class="excel-export-checks" hidden></div>
+          <p class="excel-form-picked" id="excelFormPicked">양식을 선택하세요</p>
+        </section>
+      </div>
+      <aside class="excel-preview">
+        <h4>생성 미리보기</h4>
+        <label class="excel-file-label">파일 이름 <span>직접 수정 가능</span>
+          <span class="excel-file-name">
+            <input id="excelExportFileName" />
+            <em>.xlsx</em>
+          </span>
+        </label>
+        <dl class="excel-preview-list">
+          <dt>생성 대상</dt><dd id="excelPreviewTarget">검색 결과 전체</dd>
+          <dt>주문 수</dt><dd id="excelPreviewCount">0건</dd>
+          <dt>사용 양식</dt><dd id="excelPreviewForm">-</dd>
+          <dt>파일 형식</dt><dd>xlsx</dd>
+          <dt>저장 경로</dt><dd><button type="button" id="excelExportPath" class="excel-path">다운로드 폴더</button></dd>
+        </dl>
+        <p class="excel-file-note">파일명은 생성 전에 자유롭게 바꿀 수 있습니다.</p>
+      </aside>
+    </div>
+    <footer class="excel-export-foot">
+      <button type="button" id="excelExportRun">엑셀 생성</button>
+      <button type="button" id="excelExportCancel">닫기</button>
+    </footer>
+  </dialog>
+  <dialog id="orderColumnDialog" class="order-menu-dialog">
+    <h3>표시항목설정</h3>
+    <div id="orderColumnList" class="order-check-list"></div>
+    <div class="settings-actions">
+      <button type="button" id="orderColumnAll">전체선택</button>
+      <button type="button" id="orderColumnSave">저장</button>
+      <button type="button" id="orderColumnClose">닫기</button>
+    </div>
+  </dialog>
+  <dialog id="orderExcelDialog" class="order-menu-dialog">
+    <h3>엑셀양식설정</h3>
+    <div id="orderExcelList" class="order-check-list"></div>
+    <div class="settings-actions">
+      <button type="button" id="orderExcelAll">전체선택</button>
+      <button type="button" id="orderExcelSave">저장</button>
+      <button type="button" id="orderExcelClose">닫기</button>
+    </div>
+  </dialog>
+  <dialog id="orderStatsDialog" class="order-menu-dialog">
+    <h3>통계</h3>
+    <pre id="orderStatsBody" class="order-stats-body"></pre>
+    <div class="settings-actions"><button type="button" id="orderStatsClose">닫기</button></div>
+  </dialog>
+  <dialog id="orderWorkStatsDialog" class="order-menu-dialog">
+    <h3>작업통계설정</h3>
+    <p class="hint">한 줄에 작업상태 하나씩 적습니다. 숫자는 지금 보이는 주문입니다.</p>
+    <textarea id="orderWorkStatusText" rows="6"></textarea>
+    <pre id="orderWorkStatsBody" class="order-stats-body"></pre>
+    <div class="settings-actions">
+      <button type="button" id="orderWorkStatsSave">저장</button>
+      <button type="button" id="orderWorkStatsClose">닫기</button>
+    </div>
+  </dialog>
+  <dialog id="replaceDialog" class="order-menu-dialog replace-dialog">
+    <h3>바꾸기설정</h3>
+    <p class="hint">주문목록에서 상품명, 선택사항, 추가구성, 배송구분, 판매자상품코드의 특정 문구를 다른 문구로 바꾸거나 지웁니다.</p>
+    <p class="replace-warn">바꾸기 설정은 위에서부터 순서대로 적용됩니다. 첫 규칙으로 바뀐 내용에 다음 규칙이 다시 적용됩니다.</p>
+    <div class="replace-options">
+      <span class="replace-name">금액제거</span>
+      <input type="checkbox" id="replaceStripMoney" />
+      <span class="replace-desc">선택사항, 추가구성에서 옵션추가금액 및 추가구성 금액을 제거합니다.</span>
+      <span class="replace-name">수량제거</span>
+      <input type="checkbox" id="replaceStripQty" />
+      <span class="replace-desc">선택사항에서 수량을 제거합니다. 추가구성의 수량은 제거되지 않습니다.</span>
+      <span class="replace-name">상품명제거</span>
+      <input type="checkbox" id="replaceStripName" />
+      <span class="replace-desc">선택사항이 있으면 상품명을 제거합니다.</span>
+      <span class="replace-name">판매자상품코드대체</span>
+      <input type="checkbox" id="replaceUseSellerCode" />
+      <span class="replace-desc">판매자상품코드가 있으면 상품명을 그 코드로 바꿉니다.</span>
+      <span class="replace-name">동일(주소+수령자), 동일 연락처</span>
+      <input type="checkbox" id="replaceSameContact" />
+      <span class="replace-desc">주소와 수령자가 같으면 같은 전화번호로 보여 줍니다.</span>
+    </div>
+    <div class="replace-use">
+      <span class="replace-name">바꾸기설정 사용여부</span>
+      <label><input type="radio" name="replaceUse" value="on" checked /> 사용</label>
+      <label><input type="radio" name="replaceUse" value="off" /> 미사용</label>
+    </div>
+    <div class="replace-tools">
+      <button type="button" id="replaceDelete">삭제</button>
+      <button type="button" id="replaceClear">전체삭제</button>
+      <button type="button" id="replaceInsert">삽입</button>
+      <button type="button" id="replaceUp" title="위로">↑</button>
+      <button type="button" id="replaceDown" title="아래로">↓</button>
+      <span class="replace-tools-side">
+        <button type="button" id="replaceImport">바꾸기설정일괄등록</button>
+        <button type="button" id="replaceExport">엑셀내보내기</button>
+        <input id="replaceFile" type="file" accept=".csv,text/csv" hidden />
+      </span>
+    </div>
+    <div class="replace-table-wrap">
+      <table class="grid replace-table" id="replaceRuleTable">
+        <thead>
+          <tr><th>No.</th><th>찾을 내용</th><th>바꿀 내용</th><th>적용대상</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="settings-actions">
+      <button type="button" id="replaceSave">저장</button>
+      <button type="button" id="replaceClose">닫기</button>
+    </div>
+  </dialog>
+  <dialog id="orderConfirmDialog" class="order-confirm-dialog">
+    <div class="order-confirm-body">
+      <svg class="order-confirm-icon" viewBox="0 0 48 48" aria-hidden="true">
+        <path fill="#f5c518" d="M24 4 2 44h44L24 4z"/>
+        <rect x="22" y="16" width="4" height="14" fill="#333"/>
+        <circle cx="24" cy="36" r="2.2" fill="#333"/>
+      </svg>
+      <p id="orderConfirmMessage"></p>
+    </div>
+    <div class="order-confirm-actions">
+      <button type="button" id="orderConfirmYes">예(Y)</button>
+      <button type="button" id="orderConfirmNo">아니오(N)</button>
+    </div>
+  </dialog>
+  <dialog id="orderCancelDialog" class="order-info-dialog">
+    <header class="order-info-title">
+      <h3>판매취소</h3>
+      <button type="button" id="closeOrderCancelX" aria-label="닫기">×</button>
+    </header>
+    <form id="orderCancelForm" class="order-cancel-form">
+      <p id="orderCancelSummary"></p>
+      <label>취소사유
+        <select id="orderCancelReason" required></select>
+      </label>
+      <label>상세사유
+        <textarea id="orderCancelDetail" rows="3"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" id="closeOrderCancel">닫기</button>
+        <button type="submit" id="orderCancelSubmit">판매취소</button>
+      </div>
+    </form>
+  </dialog>
+  <section id="csMemoPanel" class="cs-memo-panel" hidden>
+    <header class="cs-memo-title">
+      <strong id="csMemoTitle">CS메모</strong>
+      <span class="cs-memo-tools">
+        <button type="button" id="csMemoSave">저장(S)</button>
+        <button type="button" id="csMemoClose">닫기(X)</button>
+        <button type="button" id="csMemoDone">처리완료(C)</button>
+        <button type="button" id="csMemoOpen">미처리(N)</button>
+        <button type="button" id="csMemoDelete">삭제(D)</button>
+        <button type="button" id="csMemoReady">준비</button>
+      </span>
+    </header>
+    <textarea id="csMemoText" rows="8" placeholder="CS메모"></textarea>
+    <footer id="csMemoStatus" class="cs-memo-status">CS메모 없음.</footer>
+  </section>
+  <dialog id="orderInfoDialog" class="order-info-dialog">
+    <div id="orderInfoAccount" class="order-info-account"></div>
+    <header class="order-info-title">
+      <h3>상품주문정보 조회</h3>
+      <button type="button" id="closeOrderInfoX" aria-label="닫기">×</button>
+    </header>
+    <div id="orderInfoBody" class="order-info-body"></div>
+    <div class="order-info-foot">
+      <button type="button" id="closeOrderInfo">닫기</button>
+    </div>
+  </dialog>
+  <div id="toast" role="status"></div>
+  <script src="/static/app.js?v=bundle294"></script>
+</body>
+</html>

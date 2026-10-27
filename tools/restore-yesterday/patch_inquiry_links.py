@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.3"
+SCREEN_VERSION = "2026.10.28.4"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -613,6 +613,285 @@ SIMPLE3_CSS = """
 .inquiry-simple .inquiry-form th,
 .inquiry-simple .inquiry-new label { font-size: 13.2px; }
 """
+MARGIN_JS = r"""
+/* product-margin1 */
+(function () {
+  const version = "2026.10.28.4";
+  function num(value) {
+    const text = String(value ?? "").replace(/,/g, "").replace(/%/g, "").trim();
+    if (!text) return 0;
+    const number = Number(text);
+    return Number.isFinite(number) ? number : 0;
+  }
+  function rateNumber(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return 0;
+    const number = num(text);
+    if (!(number > 0)) return 0;
+    if (text.includes("%") || number > 1) return number / 100;
+    return number;
+  }
+  function isMaster(item) {
+    if (typeof isMasterProduct === "function") return Boolean(isMasterProduct(item));
+    return !(item && (item.master_id || item.market_id));
+  }
+  function rowPrice(item, row) {
+    const input = row && row.querySelector ? row.querySelector("[data-field='price']") : null;
+    if (input && String(input.value).trim() !== "") return num(input.value);
+    return num(item && item.price);
+  }
+  function supplyCost(item, row) {
+    const input = row && row.querySelector ? row.querySelector("[data-field='cost']") : null;
+    let cost = input && String(input.value).trim() !== "" ? num(input.value) : num(item && item.cost);
+    if (cost > 0 || !item || !item.master_id || typeof products === "undefined") return cost;
+    const master = products.find((rowItem) => rowItem && rowItem.id === item.master_id);
+    const masterCost = num(master && master.cost);
+    return masterCost > 0 ? masterCost : cost;
+  }
+  function productShip(item) {
+    if (!item) return null;
+    const keys = ["parcel_fee", "courier_fee", "shipping_fee", "delivery_fee", "shipping"];
+    for (const key of keys) {
+      if (item[key] == null || item[key] === "") continue;
+      const amount = num(item[key]);
+      if (amount < 0) continue;
+      if (key === "shipping") {
+        const type = String(item.shipping_type || "").toUpperCase();
+        if (type === "F" || type === "C") return 0;
+      }
+      return amount;
+    }
+    return null;
+  }
+  function templateFee() {
+    const list = typeof deliveryTemplates !== "undefined" && Array.isArray(deliveryTemplates) ? deliveryTemplates : [];
+    const template = list.find((item) => item && item.is_default) || list[0];
+    if (!template) return 0;
+    if (String(template.delivery_fee_type || "") === "FREE") return 0;
+    const amount = num(template.base_fee);
+    return amount > 0 ? amount : 0;
+  }
+  function shippingCost(item) {
+    const own = productShip(item);
+    return own == null ? templateFee() : own;
+  }
+  function marketFeeRate(item) {
+    if (!item || isMaster(item)) return 0;
+    const market = typeof markets !== "undefined" && Array.isArray(markets)
+      ? markets.find((row) => row && row.id === item.market_id)
+      : null;
+    const candidates = [
+      item.fee_rate, item.commission_rate, item.market_fee_rate, item.fee_percent,
+      market && market.fee_rate, market && market.commission_rate, market && market.fee_percent, market && market.market_fee_rate,
+    ];
+    for (const value of candidates) {
+      const rate = rateNumber(value);
+      if (rate > 0 && rate < 1) return rate;
+    }
+    const known = feeOrders();
+    if (!known.length || !item.market_id) return 0;
+    let fee = 0;
+    let gross = 0;
+    known.forEach((order) => {
+      if (!order || String(order.market_id || "") !== String(item.market_id)) return;
+      const commission = num(order.commission);
+      let base = typeof orderGrossAmount === "function" ? num(orderGrossAmount(order)) : 0;
+      if (!(base > 0)) base = num(order.payment_amount || order.total_payment_amount || order.order_amount);
+      if (commission > 0 && base > 0) {
+        fee += commission;
+        gross += base;
+      }
+    });
+    if (!(gross > 0)) return 0;
+    const rate = fee / gross;
+    return rate > 0 && rate < 1 ? rate : 0;
+  }
+  function marginNumber(item, row) {
+    const price = rowPrice(item, row);
+    if (!(price > 0)) return NaN;
+    const cost = supplyCost(item, row);
+    const ship = shippingCost(item);
+    const fee = price * marketFeeRate(item);
+    return (price - fee - cost - ship) / price * 100;
+  }
+  function marginTip(item, row) {
+    const price = rowPrice(item, row);
+    const cost = supplyCost(item, row);
+    const ship = shippingCost(item);
+    const rate = marketFeeRate(item);
+    const fee = Math.round(price * rate);
+    if (isMaster(item)) return "마스터 (판매가 " + price + " - 공급가 " + cost + " - 택배비 " + ship + ") / 판매가";
+    return "마켓 (판매가 " + price + " - 수수료 " + fee + " - 공급가 " + cost + " - 배송비 " + ship + ") / 판매가";
+  }
+  function productTableEl() {
+    return document.getElementById("productGrid")
+      || (document.getElementById("productTable") && document.getElementById("productTable").closest("table"));
+  }
+  function ensureHeader() {
+    const table = productTableEl();
+    if (!table || table.querySelector("thead th[data-margin-col='1']")) return;
+    const priceTh = [...table.querySelectorAll("thead th")].find((th) => {
+      return th.dataset.sort === "price" || th.textContent.replace(/\s+/g, "") === "판매가";
+    });
+    if (!priceTh) return;
+    const th = document.createElement("th");
+    th.dataset.marginCol = "1";
+    th.dataset.sort = "margin";
+    th.className = "sortable";
+    th.title = "마스터는 (판매가-공급가-택배비)/판매가, 마켓은 (판매가-수수료-공급가-배송비)/판매가";
+    th.textContent = "마진율";
+    priceTh.after(th);
+    const priceCol = table.querySelector("col[data-col='price']");
+    if (priceCol && !table.querySelector("col[data-col='margin']")) {
+      const col = document.createElement("col");
+      col.dataset.col = "margin";
+      col.style.width = "84px";
+      priceCol.after(col);
+    }
+  }
+  function itemForRow(row, index) {
+    const list = typeof visibleProducts === "function" ? visibleProducts() : [];
+    if (list[index]) return list[index];
+    if (typeof products === "undefined" || !row) return null;
+    return products.find((item) => item && String(item.id) === String(row.dataset.id)) || null;
+  }
+  function paintRow(row, item) {
+    if (!row) return;
+    const priceInput = row.querySelector("[data-field='price']");
+    let priceCell = priceInput ? priceInput.closest("td") : null;
+    if (!priceCell) {
+      const table = productTableEl();
+      const ths = table ? [...table.querySelectorAll("thead th")] : [];
+      const priceAt = ths.findIndex((th) => th.dataset.sort === "price" || th.textContent.replace(/\s+/g, "") === "판매가");
+      if (priceAt >= 0) priceCell = row.children[priceAt] || null;
+    }
+    if (!priceCell) return;
+    let cell = priceCell.nextElementSibling;
+    if (!cell || cell.dataset.margin !== "1") {
+      cell = document.createElement("td");
+      cell.dataset.margin = "1";
+      priceCell.after(cell);
+    }
+    const value = marginNumber(item, row);
+    const price = rowPrice(item, row);
+    cell.textContent = price > 0 && Number.isFinite(value) ? value.toFixed(2) + "%" : "";
+    cell.title = marginTip(item, row);
+    cell.classList.toggle("margin-neg", Number.isFinite(value) && value < 0);
+  }
+  function paintRows() {
+    ensureHeader();
+    const body = document.getElementById("productTable");
+    if (!body) return;
+    [...body.querySelectorAll("tr")].forEach((row, index) => paintRow(row, itemForRow(row, index)));
+  }
+  function listenEdits() {
+    const body = document.getElementById("productTable");
+    if (!body || body.dataset.marginListen === "1") return;
+    body.dataset.marginListen = "1";
+    const onEdit = (event) => {
+      const field = event.target && event.target.dataset ? event.target.dataset.field : "";
+      if (field !== "price" && field !== "cost") return;
+      const row = event.target.closest("tr");
+      if (!row) return;
+      const rows = [...body.querySelectorAll("tr")];
+      paintRow(row, itemForRow(row, rows.indexOf(row)));
+    };
+    body.addEventListener("input", onEdit);
+    body.addEventListener("change", onEdit);
+  }
+  let templateAsked = false;
+  let marketFeeOrders = null;
+  function feeOrders() {
+    if (typeof orders !== "undefined" && Array.isArray(orders) && orders.length) return orders;
+    return Array.isArray(marketFeeOrders) ? marketFeeOrders : [];
+  }
+  function warmTemplate() {
+    if (templateAsked || typeof currentDeliveryTemplate !== "function") return;
+    templateAsked = true;
+    Promise.resolve(currentDeliveryTemplate()).then(() => paintRows()).catch(() => {});
+  }
+  function warmFeeOrders() {
+    if (marketFeeOrders || typeof api !== "function") return;
+    if (typeof orders !== "undefined" && orders.length) return;
+    marketFeeOrders = [];
+    api("/api/orders", { quiet: true }).then((rows) => {
+      if (Array.isArray(rows)) marketFeeOrders = rows;
+      paintRows();
+    }).catch(() => {});
+  }
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function hook() {
+    ensureHeader();
+    showVersion();
+    if (typeof renderProductSheet === "function" && !renderProductSheet.marginCol) {
+      const inner = renderProductSheet;
+      function wrapped() {
+        ensureHeader();
+        const result = inner.apply(this, arguments);
+        paintRows();
+        return result;
+      }
+      wrapped.marginCol = true;
+      renderProductSheet = wrapped;
+    }
+    if (typeof productSortValue === "function" && !productSortValue.marginSort) {
+      const inner = productSortValue;
+      function wrapped(item, key) {
+        if (key === "margin") {
+          const value = marginNumber(item, null);
+          return Number.isFinite(value) ? value : 0;
+        }
+        return inner.call(this, item, key);
+      }
+      wrapped.marginSort = true;
+      productSortValue = wrapped;
+    }
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion4) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      applyEdition = wrapped;
+    }
+    listenEdits();
+    paintRows();
+    warmTemplate();
+    warmFeeOrders();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 120);
+  setTimeout(showVersion, 600);
+})();
+"""
+MARGIN_CSS = """
+/* product-margin1 */
+#productGrid td[data-margin="1"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-right: 8px;
+}
+#productGrid td[data-margin="1"].margin-neg { color: #c2410c; }
+html[data-theme="dark"] #productGrid td[data-margin="1"].margin-neg { color: #fb923c; }
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -683,8 +962,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "inquiry-simple3")
-    return bump_asset(text, "app.js", "inquiry-simple3")
+    text = bump_asset(text, "styles.css", "margin1")
+    return bump_asset(text, "app.js", "margin1")
 
 
 def patch_answer(text: str) -> str:
@@ -700,22 +979,28 @@ def patch_answer(text: str) -> str:
             text = text.rstrip() + "\n" + ANSWER_JS
     if "/* inquiry-simple3 */" not in text:
         text = text.rstrip() + "\n" + SIMPLE3_JS
+    if "/* product-margin1 */" not in text:
+        text = text.rstrip() + "\n" + MARGIN_JS
     return text
 
 
 def patch_css(text: str) -> str:
-    if "/* inquiry-simple3 */" in text:
-        return text
     extra = ""
-    if "inquiry-send-under-date" not in text:
-        extra += ANSWER_CSS
-    if "inquiry-answer-place2" not in text:
-        extra += ANSWER_CSS2
-    if "/* inquiry-simple1 */" not in text:
-        extra += SIMPLE_CSS
-    if "/* inquiry-simple2 */" not in text:
-        extra += SIMPLE_CSS2
-    return text.rstrip() + "\n" + extra + SIMPLE3_CSS
+    if "/* inquiry-simple3 */" not in text:
+        if "inquiry-send-under-date" not in text:
+            extra += ANSWER_CSS
+        if "inquiry-answer-place2" not in text:
+            extra += ANSWER_CSS2
+        if "/* inquiry-simple1 */" not in text:
+            extra += SIMPLE_CSS
+        if "/* inquiry-simple2 */" not in text:
+            extra += SIMPLE_CSS2
+        extra += SIMPLE3_CSS
+    if "/* product-margin1 */" not in text:
+        extra += MARGIN_CSS
+    if not extra:
+        return text
+    return text.rstrip() + "\n" + extra
 
 
 def write_screen_version(root: Path) -> bool:

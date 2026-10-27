@@ -1598,7 +1598,7 @@ function productFromRow(row, product) {
 
 async function loadProducts() {
   const previous = current?.id;
-  products = await api("/api/products?full=1");
+  products = await fetchProductList();
   selectedIds = new Set([...selectedIds].filter((id) => products.some((item) => item.id === id)));
   if (previous && products.some((item) => item.id === previous)) {
     current = products.find((item) => item.id === previous);
@@ -1761,8 +1761,139 @@ function bindRowSelection(row, id) {
   });
 }
 
+const PRODUCT_CACHE_DB = "modumodu-product-cache";
+const PRODUCT_CACHE_STORE = "products";
+const PRODUCT_FULL_RELOAD_LIMIT = 150;
+const productCache = new Map();
+let productCacheReady = null;
+
+function openProductCacheDb() {
+  return new Promise((resolve) => {
+    if (!window.indexedDB) {
+      resolve(null);
+      return;
+    }
+    let request;
+    try {
+      request = indexedDB.open(PRODUCT_CACHE_DB, 1);
+    } catch {
+      resolve(null);
+      return;
+    }
+    request.onupgradeneeded = () => request.result.createObjectStore(PRODUCT_CACHE_STORE);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+    request.onblocked = () => resolve(null);
+  });
+}
+
+async function readProductCache() {
+  const db = await openProductCacheDb();
+  if (!db) return;
+  await new Promise((resolve) => {
+    const tx = db.transaction(PRODUCT_CACHE_STORE, "readonly");
+    const request = tx.objectStore(PRODUCT_CACHE_STORE).openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) return;
+      if (cursor.value?.product) productCache.set(cursor.key, cursor.value);
+      cursor.continue();
+    };
+    tx.oncomplete = resolve;
+    tx.onerror = resolve;
+    tx.onabort = resolve;
+  });
+  db.close();
+}
+
+async function writeProductCache(changedIds, removedIds) {
+  if (!changedIds.length && !removedIds.length) return;
+  const db = await openProductCacheDb();
+  if (!db) return;
+  await new Promise((resolve) => {
+    const tx = db.transaction(PRODUCT_CACHE_STORE, "readwrite");
+    const store = tx.objectStore(PRODUCT_CACHE_STORE);
+    changedIds.forEach((id) => {
+      const entry = productCache.get(id);
+      if (entry) store.put(entry, id);
+    });
+    removedIds.forEach((id) => store.delete(id));
+    tx.oncomplete = resolve;
+    tx.onerror = resolve;
+    tx.onabort = resolve;
+  });
+  db.close();
+}
+
+async function runLimited(items, limit, worker) {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await worker(item);
+    }
+  });
+  await Promise.all(lanes);
+}
+
+// /api/products?full=1 re-reads every product file on each call; reuse full copies whose summary row is unchanged.
+async function fetchProductList() {
+  const summaries = await api("/api/products");
+  if (!Array.isArray(summaries)) return api("/api/products?full=1");
+  if (!productCacheReady) productCacheReady = readProductCache().catch(() => {});
+  await productCacheReady;
+  const sigs = new Map(summaries.map((item) => [item.id, JSON.stringify(item)]));
+  const stale = summaries.filter((item) => productCache.get(item.id)?.sig !== sigs.get(item.id)).map((item) => item.id);
+  const changed = [];
+  if (stale.length > PRODUCT_FULL_RELOAD_LIMIT) {
+    const full = await api("/api/products?full=1");
+    full.forEach((product) => {
+      if (!sigs.has(product.id)) return;
+      productCache.set(product.id, { sig: sigs.get(product.id), product });
+      changed.push(product.id);
+    });
+  } else {
+    await runLimited(stale, 6, async (id) => {
+      try {
+        const product = await api(`/api/products/${id}`, { quiet: true });
+        productCache.set(id, { sig: sigs.get(id), product });
+        changed.push(id);
+      } catch {
+        productCache.delete(id);
+      }
+    });
+  }
+  const removed = [...productCache.keys()].filter((id) => !sigs.has(id));
+  removed.forEach((id) => productCache.delete(id));
+  writeProductCache(changed, removed).catch(() => {});
+  return summaries
+    .filter((item) => productCache.has(item.id))
+    .map((item) => structuredClone(productCache.get(item.id).product));
+}
+
+async function refreshCachedProduct(id) {
+  const entry = productCache.get(id);
+  if (!entry) return;
+  let fresh;
+  try {
+    fresh = await api(`/api/products/${id}`, { quiet: true });
+  } catch {
+    return;
+  }
+  if (JSON.stringify(fresh) === JSON.stringify(entry.product)) return;
+  productCache.set(id, { sig: entry.sig, product: fresh });
+  writeProductCache([id], []).catch(() => {});
+  const index = products.findIndex((item) => item.id === id);
+  if (index >= 0) products[index] = structuredClone(fresh);
+  if (current?.id === id) {
+    current = products[index] || structuredClone(fresh);
+    fillPreview();
+  }
+}
+
 async function selectProduct(id, rerender = true, additive = false) {
   current = products.find((item) => item.id === id) || await api(`/api/products/${id}`);
+  refreshCachedProduct(id);
   if (!additive) selectedIds.clear();
   selectedIds.add(id);
   if (rerender) renderSheets();

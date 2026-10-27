@@ -122,8 +122,12 @@ ROW_NEW = (
 )
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
-ANSWER_MARKER = "/* inquiry-simple1 */"
-SCREEN_VERSION = "2026.10.28.1"
+ANSWER_MARKER = "/* inquiry-simple2 */"
+SCREEN_VERSION = "2026.10.28.2"
+SIMPLE1_RE = re.compile(
+    r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
+    re.S,
+)
 OLD_ANSWER_RE = re.compile(
     r"/\* inquiry-answer-place \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -133,7 +137,7 @@ PLACE2_RE = re.compile(
     re.S,
 )
 ANSWER_JS = r"""
-/* inquiry-simple1 */
+/* inquiry-simple2 */
 (function () {
   const fieldIds = ["inquiryAnswerDraft", "inquiryAnswerTitle", "inquiryBatchBody", "inquiryBatchTitle"];
   function unlock(field) {
@@ -206,10 +210,43 @@ ANSWER_JS = r"""
       if (String(node.textContent || "").includes("일괄 입력")) node.hidden = true;
     });
     document.querySelector(".inquiry-page")?.classList.add("inquiry-simple");
+    const reset = document.getElementById("resetInquiriesButton");
+    if (reset) reset.hidden = true;
+    const title = document.getElementById("inquiryAnswerTitle");
+    const titleLabel = title ? (title.closest("label") || title) : null;
+    if (titleLabel) titleLabel.hidden = true;
+    simplifyPeriods();
     hideMiddleColumn();
   }
+  function simplifyPeriods() {
+    const select = document.getElementById("inquiryPeriod");
+    if (!select) return;
+    const keep = [
+      ["custom", "기간지정"],
+      ["today", "오늘"],
+      ["yesterday", "어제"],
+      ["week", "1주일"],
+      ["month", "1개월"],
+      ["3months", "3개월"],
+      ["year", "1년"],
+    ];
+    const current = select.value;
+    select.innerHTML = "";
+    keep.forEach(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    });
+    const known = keep.some((item) => item[0] === current);
+    select.value = known ? current : "month";
+    document.querySelectorAll("[data-inquiry-period]").forEach((button) => {
+      button.hidden = !["today", "yesterday", "week", "month"].includes(button.dataset.inquiryPeriod);
+    });
+    if (!known && typeof setInquiryPeriod === "function") setInquiryPeriod("month");
+  }
   function showScreenVersion() {
-    const version = "2026.10.28.1";
+    const version = "2026.10.28.2";
     const label = document.getElementById("appVersion");
     if (label) {
       label.hidden = false;
@@ -262,10 +299,22 @@ ANSWER_JS = r"""
     wrapped.inquiryVersion = true;
     applyEdition = wrapped;
   }
+  function hookPeriods() {
+    if (typeof fillPeriodSelect !== "function" || fillPeriodSelect.inquirySimple) return;
+    const inner = fillPeriodSelect;
+    function wrapped(select, selected) {
+      const result = inner.apply(this, arguments);
+      if (select && select.id === "inquiryPeriod") simplifyPeriods();
+      return result;
+    }
+    wrapped.inquirySimple = true;
+    fillPeriodSelect = wrapped;
+  }
   function start() {
     openTyping();
     hookFill();
     hookEdition();
+    hookPeriods();
     watchIdleReload();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
@@ -462,6 +511,24 @@ html[data-theme="dark"] .inquiry-simple #inquiryAnswerButton {
   color: #1c1917;
 }
 """
+SIMPLE_CSS2 = """
+/* inquiry-simple2 */
+.inquiry-simple .inquiry-reset,
+.inquiry-simple #resetInquiriesButton { display: none !important; }
+.inquiry-simple .inquiry-new label:has(#inquiryAnswerTitle) { display: none !important; }
+.inquiry-simple [data-inquiry-period="3days"],
+.inquiry-simple [data-inquiry-period="3months"],
+.inquiry-simple [data-inquiry-period="halfYear"],
+.inquiry-simple [data-inquiry-period="year"] { display: none !important; }
+.inquiry-simple .inquiry-sheet,
+.inquiry-simple .inquiry-sheet.inquiry-no-old {
+  grid-template-columns: minmax(280px, 0.8fr) minmax(460px, 1.4fr) !important;
+}
+.inquiry-simple #inquiryAnswerDraft {
+  width: 100%;
+  min-height: 220px;
+}
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -526,14 +593,14 @@ def bump_asset(text: str, name: str, version: str) -> str:
 
 
 def patch_html(text: str) -> str:
-    text = bump_asset(text, "styles.css", "inquiry-simple1")
-    return bump_asset(text, "app.js", "inquiry-simple1")
+    text = bump_asset(text, "styles.css", "inquiry-simple2")
+    return bump_asset(text, "app.js", "inquiry-simple2")
 
 
 def patch_answer(text: str) -> str:
     if ANSWER_MARKER in text:
         return text
-    for pattern in (PLACE2_RE, OLD_ANSWER_RE):
+    for pattern in (SIMPLE1_RE, PLACE2_RE, OLD_ANSWER_RE):
         updated, count = pattern.subn(ANSWER_JS.strip() + "\n", text, count=1)
         if count == 1:
             return updated
@@ -541,14 +608,16 @@ def patch_answer(text: str) -> str:
 
 
 def patch_css(text: str) -> str:
-    if "/* inquiry-simple1 */" in text:
+    if "/* inquiry-simple2 */" in text:
         return text
     extra = ""
     if "inquiry-send-under-date" not in text:
         extra += ANSWER_CSS
     if "inquiry-answer-place2" not in text:
         extra += ANSWER_CSS2
-    return text.rstrip() + "\n" + extra + SIMPLE_CSS
+    if "/* inquiry-simple1 */" not in text:
+        extra += SIMPLE_CSS
+    return text.rstrip() + "\n" + extra + SIMPLE_CSS2
 
 
 def write_screen_version(root: Path) -> bool:

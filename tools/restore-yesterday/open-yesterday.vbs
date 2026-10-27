@@ -76,8 +76,8 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "일괄 입력을 뺐고, 고객문의 화면을 다듬었습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.1 입니다.", 64, "모두모두AI"
+  MsgBox "새 답변 제목과 초기화 버튼을 뺐습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.2 입니다.", 64, "모두모두AI"
 End If
 
 Function ReadyArg()

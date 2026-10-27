@@ -122,7 +122,106 @@ ROW_NEW = (
 )
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
-SCRIPT_RE = re.compile(r'(app\.js)(?:\?v=[^"\']*)?')
+ANSWER_MARKER = "/* inquiry-answer-place */"
+ANSWER_JS = r"""
+/* inquiry-answer-place */
+(function () {
+  const fieldIds = ["inquiryAnswerDraft", "inquiryAnswerTitle", "inquiryBatchBody", "inquiryBatchTitle"];
+  function unlock(field) {
+    if (!field) return;
+    field.readOnly = false;
+    field.disabled = false;
+    field.removeAttribute("readonly");
+    field.removeAttribute("disabled");
+    field.style.pointerEvents = "auto";
+    field.style.userSelect = "text";
+  }
+  function typingTarget(node) {
+    if (!node || !node.closest) return null;
+    return node.closest("#inquiryAnswerDraft, #inquiryAnswerTitle, #inquiryBatchBody, #inquiryBatchTitle");
+  }
+  function arm(field) {
+    if (!field || field.dataset.inquiryKeys === "1") return;
+    field.dataset.inquiryKeys = "1";
+    unlock(field);
+    const stop = (event) => event.stopPropagation();
+    field.addEventListener("keydown", stop, true);
+    field.addEventListener("keypress", stop, true);
+    field.addEventListener("keyup", stop, true);
+    field.addEventListener("beforeinput", stop, true);
+  }
+  window.addEventListener("keydown", (event) => {
+    if (!typingTarget(event.target)) return;
+    event.stopPropagation();
+  }, true);
+  function placeButton() {
+    const button = document.getElementById("inquiryAnswerButton");
+    const date = document.getElementById("inquiryAnswerAt");
+    if (!button || !date) return;
+    const anchor = date.closest("label") || date;
+    if (button.previousElementSibling !== anchor) anchor.insertAdjacentElement("afterend", button);
+    button.classList.add("inquiry-send-under-date");
+    button.style.display = "block";
+    button.style.width = "fit-content";
+    button.style.maxWidth = "100%";
+    button.style.margin = "8px auto 0";
+    button.style.alignSelf = "center";
+  }
+  function openTyping() {
+    fieldIds.forEach((id) => arm(document.getElementById(id)));
+    const view = document.getElementById("inquiryAnswerView");
+    const draft = document.getElementById("inquiryAnswerDraft");
+    if (view && draft && view.dataset.inquiryRedirect !== "1") {
+      view.dataset.inquiryRedirect = "1";
+      const jump = (event) => {
+        unlock(draft);
+        if (event && event.type === "mousedown") event.preventDefault();
+        draft.focus();
+      };
+      view.addEventListener("mousedown", jump);
+      view.addEventListener("focus", jump);
+    }
+    placeButton();
+  }
+  function hookFill() {
+    if (typeof fillInquiryDetail !== "function" || fillInquiryDetail.inquiryAnswerHook) return;
+    const inner = fillInquiryDetail;
+    function wrapped(item) {
+      const result = inner.apply(this, arguments);
+      openTyping();
+      requestAnimationFrame(openTyping);
+      return result;
+    }
+    wrapped.inquiryAnswerHook = true;
+    fillInquiryDetail = wrapped;
+  }
+  function start() {
+    openTyping();
+    hookFill();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+  else start();
+  setTimeout(start, 0);
+})();
+"""
+ANSWER_CSS = """
+/* inquiry-answer-place */
+#inquiryAnswerButton.inquiry-send-under-date {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 8px auto 0;
+  align-self: center;
+}
+#inquiryAnswerDraft,
+#inquiryAnswerTitle,
+#inquiryBatchBody,
+#inquiryBatchTitle {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -178,13 +277,29 @@ def patch_js(text: str) -> str:
     return text
 
 
-def patch_html(text: str) -> str:
-    if "app.js?v=inquiry-links1" in text:
-        return text
-    updated, count = SCRIPT_RE.subn(r"\1?v=inquiry-links1", text, count=1)
-    if count != 1:
+def bump_asset(text: str, name: str, version: str) -> str:
+    pattern = re.compile(rf"({re.escape(name)})(?:\?v=[^\"']*)?")
+    updated, count = pattern.subn(lambda match: f"{match.group(1)}?v={version}", text, count=1)
+    if count != 1 and name == "app.js":
         raise SystemExit("app.js script tag not found")
     return updated
+
+
+def patch_html(text: str) -> str:
+    text = bump_asset(text, "styles.css", "inquiry-answer1")
+    return bump_asset(text, "app.js", "inquiry-answer1")
+
+
+def patch_answer(text: str) -> str:
+    if ANSWER_MARKER in text:
+        return text
+    return text.rstrip() + "\n" + ANSWER_JS
+
+
+def patch_css(text: str) -> str:
+    if "inquiry-send-under-date" in text:
+        return text
+    return text.rstrip() + "\n" + ANSWER_CSS
 
 
 def main() -> None:
@@ -192,21 +307,33 @@ def main() -> None:
     static = root / "app" / "static"
     js_path = static / "app.js"
     html_path = static / "index.html"
+    css_path = static / "styles.css"
     if not js_path.is_file() or not html_path.is_file():
         raise SystemExit(f"static files not found: {static}")
     js, js_nl = read_text(js_path)
     html, html_nl = read_text(html_path)
-    new_js = patch_js(js)
+    css, css_nl = read_text(css_path) if css_path.is_file() else ("", "\n")
+    try:
+        new_js = patch_js(js)
+    except SystemExit as exc:
+        print(exc)
+        new_js = js
+    new_js = patch_answer(new_js)
     new_html = patch_html(html)
-    if new_js == js and new_html == html:
+    new_css = patch_css(css) if css else css
+    if new_js == js and new_html == html and new_css == css:
         print("already linked")
         return
-    for path in (js_path, html_path):
+    for path in (js_path, html_path, css_path):
+        if not path.is_file():
+            continue
         backup = path.with_name(path.name + ".bak-inquiry-links")
         if not backup.exists():
             backup.write_bytes(path.read_bytes())
     write_text(js_path, new_js, js_nl)
     write_text(html_path, new_html, html_nl)
+    if css_path.is_file():
+        write_text(css_path, new_css, css_nl)
     print("inquiry links on")
     raise SystemExit(10)
 

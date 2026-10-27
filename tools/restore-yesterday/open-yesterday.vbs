@@ -73,7 +73,8 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "고객문의의 주문번호와 상품번호를 눌러 열 수 있습니다." & vbCrLf & _
+  MsgBox "답변에 글을 넣을 수 있습니다. 답변 보내기는 답변일 아래에 있습니다." & vbCrLf & _
+    "주문번호와 상품번호도 눌러 열 수 있습니다." & vbCrLf & _
     "화면 버전은 v2026.10.22.8 입니다.", 64, "모두모두AI"
 End If
 

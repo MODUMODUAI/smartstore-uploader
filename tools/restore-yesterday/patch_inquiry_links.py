@@ -122,13 +122,18 @@ ROW_NEW = (
 )
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
-ANSWER_MARKER = "/* inquiry-answer-place2 */"
+ANSWER_MARKER = "/* inquiry-simple1 */"
+SCREEN_VERSION = "2026.10.28.1"
 OLD_ANSWER_RE = re.compile(
     r"/\* inquiry-answer-place \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
 )
+PLACE2_RE = re.compile(
+    r"/\* inquiry-answer-place2 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
+    re.S,
+)
 ANSWER_JS = r"""
-/* inquiry-answer-place2 */
+/* inquiry-simple1 */
 (function () {
   const fieldIds = ["inquiryAnswerDraft", "inquiryAnswerTitle", "inquiryBatchBody", "inquiryBatchTitle"];
   function unlock(field) {
@@ -191,9 +196,48 @@ ANSWER_JS = r"""
     if (box) box.hidden = true;
     document.querySelectorAll(".inquiry-sheet").forEach((sheet) => sheet.classList.add("inquiry-no-old"));
   }
+  function simplifyInquiry() {
+    document.querySelectorAll("[data-inquiry-pane='batch']").forEach((el) => { el.hidden = true; });
+    const batch = document.getElementById("inquiryPaneBatch");
+    if (batch) batch.hidden = true;
+    const basic = document.getElementById("inquiryPaneBasic");
+    if (basic) basic.hidden = false;
+    document.querySelectorAll("#viewInquiries p, .inquiry-page p").forEach((node) => {
+      if (String(node.textContent || "").includes("일괄 입력")) node.hidden = true;
+    });
+    document.querySelector(".inquiry-page")?.classList.add("inquiry-simple");
+    hideMiddleColumn();
+  }
+  function showScreenVersion() {
+    const version = "2026.10.28.1";
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = `v${version}`;
+      label.title = `버전 ${version}`;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = `모두모두AI ${test ? "배포용" : "마스터"} v${version}`;
+  }
+  function watchIdleReload() {
+    if (window.__inquiryIdleWatch) return;
+    window.__inquiryIdleWatch = true;
+    let last = Date.now();
+    let hiddenAt = 0;
+    const mark = () => { last = Date.now(); };
+    ["pointerdown", "keydown", "input"].forEach((type) => document.addEventListener(type, mark, true));
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) hiddenAt = Date.now();
+      else if (hiddenAt && Date.now() - hiddenAt >= 60 * 60 * 1000) location.reload();
+    });
+    setInterval(() => {
+      if (Date.now() - last >= 60 * 60 * 1000) location.reload();
+    }, 60 * 1000);
+  }
   function openTyping() {
     fieldIds.forEach((id) => arm(document.getElementById(id)));
-    hideMiddleColumn();
+    simplifyInquiry();
+    showScreenVersion();
   }
   function hookFill() {
     if (typeof fillInquiryDetail !== "function" || fillInquiryDetail.inquiryAnswerHook2) return;
@@ -207,9 +251,22 @@ ANSWER_JS = r"""
     wrapped.inquiryAnswerHook2 = true;
     fillInquiryDetail = wrapped;
   }
+  function hookEdition() {
+    if (typeof applyEdition !== "function" || applyEdition.inquiryVersion) return;
+    const inner = applyEdition;
+    function wrapped(edition, version) {
+      const result = inner.apply(this, arguments);
+      showScreenVersion();
+      return result;
+    }
+    wrapped.inquiryVersion = true;
+    applyEdition = wrapped;
+  }
   function start() {
     openTyping();
     hookFill();
+    hookEdition();
+    watchIdleReload();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
   else start();
@@ -244,6 +301,165 @@ ANSWER_CSS2 = """
 }
 .inquiry-detail-foot {
   justify-content: center !important;
+}
+"""
+SIMPLE_CSS = """
+/* inquiry-simple1 */
+.inquiry-page.inquiry-simple {
+  background: #f6f4f0;
+  gap: 14px;
+  padding: 16px 18px 18px;
+}
+.inquiry-simple .inquiry-card {
+  border: 1px solid #e8e2d8;
+  border-radius: 18px;
+  box-shadow: 0 12px 32px rgba(48, 38, 22, 0.04);
+}
+.inquiry-simple .inquiry-head { padding: 16px 18px 14px; }
+.inquiry-simple .inquiry-head h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #1c1917;
+}
+.inquiry-simple .inquiry-notice select {
+  color: #8a8175;
+  background: transparent;
+  border: 0;
+  padding-left: 0;
+  margin-bottom: 6px;
+}
+.inquiry-simple .inquiry-filters input,
+.inquiry-simple .inquiry-filters select,
+.inquiry-simple .inquiry-result-filters select {
+  border: 1px solid #e4ddd2;
+  border-radius: 9px;
+  background: #fff;
+  color: #1c1917;
+}
+.inquiry-simple .inquiry-periods { margin: 10px 0 0; gap: 6px; }
+.inquiry-simple .inquiry-periods button {
+  border-radius: 999px;
+  border: 1px solid #e4ddd2;
+  background: transparent;
+  color: #5f584e;
+  padding: 4px 11px;
+}
+.inquiry-simple .inquiry-periods button.active {
+  background: #1c1917;
+  border-color: #1c1917;
+  color: #f7f4ee;
+  font-weight: 600;
+}
+.inquiry-simple .inquiry-reset,
+.inquiry-simple .inquiry-collect-outline {
+  border-radius: 999px;
+  background: #fff;
+  color: #1c1917;
+  border: 1px solid #d9d2c6;
+  font-weight: 600;
+}
+.inquiry-simple .inquiry-warn { display: none; }
+.inquiry-simple .inquiry-excel {
+  border-radius: 999px;
+  background: #fff;
+  color: #1c1917;
+  border: 1px solid #d9d2c6;
+}
+.inquiry-simple .inquiry-results .grid-wrap { border-top: 0; }
+.inquiry-simple .inquiry-detail {
+  border-top: 1px solid #eeeae3;
+  background: transparent;
+  padding: 14px 6px 16px;
+}
+.inquiry-simple .inquiry-detail-tabs,
+.inquiry-simple [data-inquiry-pane="batch"],
+.inquiry-simple #inquiryPaneBatch { display: none !important; }
+.inquiry-simple .inquiry-sheet,
+.inquiry-simple .inquiry-sheet.inquiry-no-old {
+  grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.8fr) !important;
+  gap: 18px;
+}
+.inquiry-simple .inquiry-form th,
+.inquiry-simple .inquiry-form td {
+  border: 0;
+  border-bottom: 1px solid #efeae3;
+  background: transparent;
+  padding: 8px 10px;
+}
+.inquiry-simple .inquiry-form th {
+  width: 72px;
+  color: #8d867b;
+  font-size: 12px;
+  font-weight: 500;
+}
+.inquiry-simple .inquiry-form textarea,
+.inquiry-simple .inquiry-new textarea,
+.inquiry-simple .inquiry-new input {
+  border: 1px solid #e6e0d6;
+  border-radius: 12px;
+  background: #fcfbf9;
+  color: #1c1917;
+}
+.inquiry-simple .inquiry-new {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.inquiry-simple .inquiry-new label {
+  color: #8d867b;
+  font-size: 12px;
+}
+.inquiry-simple #inquiryAnswerButton {
+  background: #1f3a32;
+  color: #f6f3ee;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 22px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+html[data-theme="dark"] .inquiry-page.inquiry-simple { background: #141414; }
+html[data-theme="dark"] .inquiry-simple .inquiry-card {
+  background: #1c1c1c;
+  border-color: #2c2c2c;
+  box-shadow: none;
+}
+html[data-theme="dark"] .inquiry-simple .inquiry-head h3,
+html[data-theme="dark"] .inquiry-simple .inquiry-form td,
+html[data-theme="dark"] .inquiry-simple .inquiry-new textarea,
+html[data-theme="dark"] .inquiry-simple .inquiry-new input { color: #f3f0ea; }
+html[data-theme="dark"] .inquiry-simple .inquiry-notice select,
+html[data-theme="dark"] .inquiry-simple .inquiry-form th,
+html[data-theme="dark"] .inquiry-simple .inquiry-new label { color: #a39b90; }
+html[data-theme="dark"] .inquiry-simple .inquiry-filters input,
+html[data-theme="dark"] .inquiry-simple .inquiry-filters select,
+html[data-theme="dark"] .inquiry-simple .inquiry-result-filters select,
+html[data-theme="dark"] .inquiry-simple .inquiry-form textarea,
+html[data-theme="dark"] .inquiry-simple .inquiry-new textarea,
+html[data-theme="dark"] .inquiry-simple .inquiry-new input {
+  background: #161616;
+  border-color: #333;
+  color: #f3f0ea;
+}
+html[data-theme="dark"] .inquiry-simple .inquiry-periods button,
+html[data-theme="dark"] .inquiry-simple .inquiry-reset,
+html[data-theme="dark"] .inquiry-simple .inquiry-collect-outline,
+html[data-theme="dark"] .inquiry-simple .inquiry-excel {
+  background: transparent;
+  color: #ece8e1;
+  border-color: #3a3a3a;
+}
+html[data-theme="dark"] .inquiry-simple .inquiry-periods button.active {
+  background: #f3f0ea;
+  color: #1c1917;
+  border-color: #f3f0ea;
+}
+html[data-theme="dark"] .inquiry-simple .inquiry-form td,
+html[data-theme="dark"] .inquiry-simple .inquiry-detail { border-color: #2c2c2c; }
+html[data-theme="dark"] .inquiry-simple #inquiryAnswerButton {
+  background: #d7c4a3;
+  color: #1c1917;
 }
 """
 
@@ -310,24 +526,45 @@ def bump_asset(text: str, name: str, version: str) -> str:
 
 
 def patch_html(text: str) -> str:
-    text = bump_asset(text, "styles.css", "inquiry-answer2")
-    return bump_asset(text, "app.js", "inquiry-answer2")
+    text = bump_asset(text, "styles.css", "inquiry-simple1")
+    return bump_asset(text, "app.js", "inquiry-simple1")
 
 
 def patch_answer(text: str) -> str:
     if ANSWER_MARKER in text:
         return text
-    updated, count = OLD_ANSWER_RE.subn(ANSWER_JS.strip() + "\n", text, count=1)
-    if count == 1:
-        return updated
+    for pattern in (PLACE2_RE, OLD_ANSWER_RE):
+        updated, count = pattern.subn(ANSWER_JS.strip() + "\n", text, count=1)
+        if count == 1:
+            return updated
     return text.rstrip() + "\n" + ANSWER_JS
 
 
 def patch_css(text: str) -> str:
-    if "inquiry-answer-place2" in text:
+    if "/* inquiry-simple1 */" in text:
         return text
-    extra = "" if "inquiry-send-under-date" in text else ANSWER_CSS
-    return text.rstrip() + "\n" + extra + ANSWER_CSS2
+    extra = ""
+    if "inquiry-send-under-date" not in text:
+        extra += ANSWER_CSS
+    if "inquiry-answer-place2" not in text:
+        extra += ANSWER_CSS2
+    return text.rstrip() + "\n" + extra + SIMPLE_CSS
+
+
+def write_screen_version(root: Path) -> bool:
+    targets = [root / "version.txt"]
+    app_version = root / "app" / "version.txt"
+    if app_version.is_file():
+        targets.append(app_version)
+    changed = False
+    payload = (SCREEN_VERSION + "\r\n").encode("utf-8")
+    for path in targets:
+        current = path.read_text(encoding="utf-8-sig").strip() if path.is_file() else ""
+        if current == SCREEN_VERSION:
+            continue
+        path.write_bytes(payload)
+        changed = True
+    return changed
 
 
 def main() -> None:
@@ -349,7 +586,8 @@ def main() -> None:
     new_js = patch_answer(new_js)
     new_html = patch_html(html)
     new_css = patch_css(css) if css else css
-    if new_js == js and new_html == html and new_css == css:
+    version_changed = write_screen_version(root)
+    if new_js == js and new_html == html and new_css == css and not version_changed:
         print("already linked")
         return
     for path in (js_path, html_path, css_path):

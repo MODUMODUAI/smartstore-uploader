@@ -53,6 +53,9 @@ End If
 shell.Environment("PROCESS")("UPLOADER_SKIP_UPDATE") = "1"
 shell.CurrentDirectory = root
 shell.Run """" & py & """ """ & launcher & """", 1, False
+If fso.FileExists(here & "\idle-update.vbs") Then
+  shell.Run "wscript.exe //nologo """ & here & "\idle-update.vbs"" """ & here & """ """ & root & """", 0, False
+End If
 
 On Error Resume Next
 desktop = shell.SpecialFolders("Desktop")
@@ -73,8 +76,8 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "가운데 답변내용과 답변일 칸을 뺐습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.22.8 입니다.", 64, "모두모두AI"
+  MsgBox "일괄 입력을 뺐고, 고객문의 화면을 다듬었습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.1 입니다.", 64, "모두모두AI"
 End If
 
 Function ReadyArg()

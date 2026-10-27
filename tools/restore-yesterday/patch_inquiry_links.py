@@ -110,10 +110,11 @@ function fillInquiryProductLink(item) {
 """
 
 ROW_RE = re.compile(
-    r'textCell\(item\.order_id\s*\|\|\s*["\']["\']\)\s*,\s*textCell\(item\.product_no\s*\|\|\s*["\']["\']\)\s*,'
+    r'textCell\(\s*item\.(?:order_id|orderId)\s*\|\|\s*["\']["\']\s*\)\s*,\s*'
+    r'textCell\(\s*item\.(?:product_no|productNo)\s*\|\|\s*["\']["\']\s*\)\s*,'
 )
 DETAIL_RE = re.compile(
-    r'if \(\$\("#inquiryProductNo"\)\)\s*\$\("#inquiryProductNo"\)\.textContent\s*=\s*item\.product_no\s*\|\|\s*["\']["\']\s*;'
+    r'if \(\$\("#inquiryProductNo"\)\)\s*\$\("#inquiryProductNo"\)\.textContent\s*=\s*item\.(?:product_no|productNo)\s*\|\|\s*["\']["\']\s*;'
 )
 ROW_NEW = (
     'inquiryNumberButtonCell(item.order_id || "", "order-no-link", () => openInquiryOrder(item)),\n'
@@ -136,6 +137,24 @@ def write_text(path: Path, text: str, newline: str) -> None:
     path.write_bytes(data.encode("utf-8"))
 
 
+def _patch_inquiry_function(text: str) -> tuple[str, int]:
+    start = text.find("function renderInquiryRows")
+    if start < 0:
+        return text, 0
+    end = text.find("\nfunction ", start + 1)
+    if end < 0:
+        end = len(text)
+    body = text[start:end]
+    loose = re.compile(
+        r'textCell\(\s*item\.(?:order_id|orderId)\s*(?:\|\|\s*["\']["\'])?\s*\)\s*,\s*'
+        r'textCell\(\s*item\.(?:product_no|productNo)\s*(?:\|\|\s*["\']["\'])?\s*\)\s*,'
+    )
+    body, count = loose.subn(ROW_NEW, body, count=1)
+    if count != 1:
+        return text, 0
+    return text[:start] + body + text[end:], 1
+
+
 def patch_js(text: str) -> str:
     if MARKER in text and "fillInquiryProductLink(item);" in text and "openInquiryOrder(item)" in text:
         return text
@@ -145,6 +164,8 @@ def patch_js(text: str) -> str:
         text = text.replace("function renderInquiryRows", HELPERS + "function renderInquiryRows", 1)
     if "inquiryNumberButtonCell(item.order_id" not in text:
         text, count = ROW_RE.subn(ROW_NEW, text, count=1)
+        if count != 1:
+            text, count = _patch_inquiry_function(text)
         if count != 1:
             raise SystemExit("inquiry order/product cells not found")
     if "fillInquiryProductLink(item);" not in text:

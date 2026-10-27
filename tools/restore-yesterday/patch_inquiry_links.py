@@ -122,9 +122,13 @@ ROW_NEW = (
 )
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
-ANSWER_MARKER = "/* inquiry-answer-place */"
+ANSWER_MARKER = "/* inquiry-answer-place2 */"
+OLD_ANSWER_RE = re.compile(
+    r"/\* inquiry-answer-place \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
+    re.S,
+)
 ANSWER_JS = r"""
-/* inquiry-answer-place */
+/* inquiry-answer-place2 */
 (function () {
   const fieldIds = ["inquiryAnswerDraft", "inquiryAnswerTitle", "inquiryBatchBody", "inquiryBatchTitle"];
   function unlock(field) {
@@ -154,37 +158,45 @@ ANSWER_JS = r"""
     if (!typingTarget(event.target)) return;
     event.stopPropagation();
   }, true);
-  function placeButton() {
-    const button = document.getElementById("inquiryAnswerButton");
+  function hideMiddleColumn() {
+    const view = document.getElementById("inquiryAnswerView");
     const date = document.getElementById("inquiryAnswerAt");
-    if (!button || !date) return;
-    const anchor = date.closest("label") || date;
-    if (button.previousElementSibling !== anchor) anchor.insertAdjacentElement("afterend", button);
-    button.classList.add("inquiry-send-under-date");
-    button.style.display = "block";
-    button.style.width = "fit-content";
-    button.style.maxWidth = "100%";
-    button.style.margin = "8px auto 0";
-    button.style.alignSelf = "center";
+    const draft = document.getElementById("inquiryAnswerDraft");
+    const button = document.getElementById("inquiryAnswerButton");
+    let box = (view && view.closest(".inquiry-old")) || (date && date.closest(".inquiry-old"));
+    if (!box && view) {
+      let node = view.parentElement;
+      while (node && node !== document.body) {
+        const holdsDate = !date || node.contains(date);
+        const holdsDraft = draft && node.contains(draft);
+        if (holdsDate && !holdsDraft) {
+          box = node;
+          break;
+        }
+        node = node.parentElement;
+      }
+    }
+    const foot = document.querySelector(".inquiry-detail-foot");
+    if (button) {
+      const host = foot || document.getElementById("inquiryDetail");
+      if (host && box && box.contains(button)) host.appendChild(button);
+      else if (foot && button.parentElement !== foot) foot.appendChild(button);
+      button.classList.add("inquiry-send-under-date");
+      button.style.display = "block";
+      button.style.width = "fit-content";
+      button.style.maxWidth = "100%";
+      button.style.margin = "8px auto 0";
+      button.style.alignSelf = "center";
+    }
+    if (box) box.hidden = true;
+    document.querySelectorAll(".inquiry-sheet").forEach((sheet) => sheet.classList.add("inquiry-no-old"));
   }
   function openTyping() {
     fieldIds.forEach((id) => arm(document.getElementById(id)));
-    const view = document.getElementById("inquiryAnswerView");
-    const draft = document.getElementById("inquiryAnswerDraft");
-    if (view && draft && view.dataset.inquiryRedirect !== "1") {
-      view.dataset.inquiryRedirect = "1";
-      const jump = (event) => {
-        unlock(draft);
-        if (event && event.type === "mousedown") event.preventDefault();
-        draft.focus();
-      };
-      view.addEventListener("mousedown", jump);
-      view.addEventListener("focus", jump);
-    }
-    placeButton();
+    hideMiddleColumn();
   }
   function hookFill() {
-    if (typeof fillInquiryDetail !== "function" || fillInquiryDetail.inquiryAnswerHook) return;
+    if (typeof fillInquiryDetail !== "function" || fillInquiryDetail.inquiryAnswerHook2) return;
     const inner = fillInquiryDetail;
     function wrapped(item) {
       const result = inner.apply(this, arguments);
@@ -192,7 +204,7 @@ ANSWER_JS = r"""
       requestAnimationFrame(openTyping);
       return result;
     }
-    wrapped.inquiryAnswerHook = true;
+    wrapped.inquiryAnswerHook2 = true;
     fillInquiryDetail = wrapped;
   }
   function start() {
@@ -220,6 +232,18 @@ ANSWER_CSS = """
   pointer-events: auto !important;
   user-select: text !important;
   -webkit-user-select: text !important;
+}
+"""
+ANSWER_CSS2 = """
+/* inquiry-answer-place2 */
+.inquiry-sheet.inquiry-no-old {
+  grid-template-columns: minmax(420px, 1.5fr) minmax(280px, 1fr) !important;
+}
+.inquiry-sheet.inquiry-no-old .inquiry-old {
+  display: none !important;
+}
+.inquiry-detail-foot {
+  justify-content: center !important;
 }
 """
 
@@ -286,20 +310,24 @@ def bump_asset(text: str, name: str, version: str) -> str:
 
 
 def patch_html(text: str) -> str:
-    text = bump_asset(text, "styles.css", "inquiry-answer1")
-    return bump_asset(text, "app.js", "inquiry-answer1")
+    text = bump_asset(text, "styles.css", "inquiry-answer2")
+    return bump_asset(text, "app.js", "inquiry-answer2")
 
 
 def patch_answer(text: str) -> str:
     if ANSWER_MARKER in text:
         return text
+    updated, count = OLD_ANSWER_RE.subn(ANSWER_JS.strip() + "\n", text, count=1)
+    if count == 1:
+        return updated
     return text.rstrip() + "\n" + ANSWER_JS
 
 
 def patch_css(text: str) -> str:
-    if "inquiry-send-under-date" in text:
+    if "inquiry-answer-place2" in text:
         return text
-    return text.rstrip() + "\n" + ANSWER_CSS
+    extra = "" if "inquiry-send-under-date" in text else ANSWER_CSS
+    return text.rstrip() + "\n" + extra + ANSWER_CSS2
 
 
 def main() -> None:

@@ -6,6 +6,9 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
+If Not ReadyArg() Then
+  If OfferUpdate(here) Then WScript.Quit 0
+End If
 root = FindRoot(here)
 If root = "" Then
   MsgBox "어제 프로그램을 찾지 못했습니다." & vbCrLf & "C:\smartstore uploader\launcher.py 가 없습니다.", 48, "모두모두AI"
@@ -73,6 +76,60 @@ If patched = 10 Then
   MsgBox "고객문의의 주문번호와 상품번호를 눌러 열 수 있습니다." & vbCrLf & _
     "화면 버전은 v2026.10.22.8 입니다.", 64, "모두모두AI"
 End If
+
+Function ReadyArg()
+  Dim i
+  ReadyArg = False
+  For i = 0 To WScript.Arguments.Count - 1
+    If WScript.Arguments(i) = "/ready" Then
+      ReadyArg = True
+      Exit Function
+    End If
+  Next
+End Function
+
+Function OfferUpdate(folder)
+  Dim ps1, exec, rc, offer, ts, remote, local, notes, answer, updatedExe
+  OfferUpdate = False
+  ps1 = folder & "\check-update.ps1"
+  If Not fso.FileExists(ps1) Then Exit Function
+  On Error Resume Next
+  Set exec = shell.Exec("powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & ps1 & """ -Check """ & folder & """")
+  If Err.Number <> 0 Then
+    Err.Clear
+    On Error GoTo 0
+    Exit Function
+  End If
+  Do While exec.Status = 0
+    WScript.Sleep 200
+  Loop
+  rc = exec.ExitCode
+  On Error GoTo 0
+  If rc <> 2 Then Exit Function
+  offer = folder & "\data\update-offer.txt"
+  If Not fso.FileExists(offer) Then Exit Function
+  Set ts = fso.OpenTextFile(offer, 1, False, -1)
+  remote = ts.ReadLine
+  local = ts.ReadLine
+  notes = ""
+  If Not ts.AtEndOfStream Then notes = ts.ReadAll
+  ts.Close
+  On Error Resume Next
+  fso.DeleteFile offer, True
+  On Error GoTo 0
+  answer = MsgBox("모두모두AI 새 버전이 있습니다." & vbCrLf & local & " → " & remote & vbCrLf & vbCrLf & notes & vbCrLf & vbCrLf & "지금 업데이트할까요?", 4132, "모두모두AI")
+  If answer <> 6 Then Exit Function
+  rc = shell.Run("powershell.exe -NoProfile -ExecutionPolicy Bypass -File """ & ps1 & """ -Apply """ & folder & """", 0, True)
+  If rc <> 0 Then
+    MsgBox "업데이트를 받지 못했습니다. 지금 프로그램을 그대로 엽니다.", 48, "모두모두AI"
+    Exit Function
+  End If
+  updatedExe = folder & "\MODUMODU.exe"
+  If fso.FileExists(updatedExe) Then
+    shell.Run """" & updatedExe & """", 1, False
+    OfferUpdate = True
+  End If
+End Function
 
 Sub LogLine(text)
   Dim ts

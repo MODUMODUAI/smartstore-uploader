@@ -212,7 +212,7 @@ func launchYesterday(dir string) {
 		alert("어제 프로그램을 열 파일이 없습니다.")
 		return
 	}
-	cmd := exec.Command("wscript.exe", "//nologo", script)
+	cmd := exec.Command("wscript.exe", "//nologo", script, "/ready")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		CreationFlags: 0x08000000,
 		HideWindow:    true,

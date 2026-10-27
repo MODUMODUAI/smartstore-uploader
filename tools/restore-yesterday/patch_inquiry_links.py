@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.4"
+SCREEN_VERSION = "2026.10.28.5"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -892,6 +892,289 @@ MARGIN_CSS = """
 #productGrid td[data-margin="1"].margin-neg { color: #c2410c; }
 html[data-theme="dark"] #productGrid td[data-margin="1"].margin-neg { color: #fb923c; }
 """
+IMAGE_JS = r"""
+/* image-work1 */
+(function () {
+  const version = "2026.10.28.5";
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+  function stayOnEscape(dialog) {
+    if (!dialog || dialog.dataset.stayEsc === "1") return;
+    dialog.dataset.stayEsc = "1";
+    dialog.addEventListener("cancel", (event) => event.preventDefault());
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+    });
+  }
+  function zoomBar(id, label, min, max, step, value) {
+    let bar = document.getElementById(id);
+    if (bar) return bar;
+    bar = document.createElement("div");
+    bar.id = id;
+    bar.className = "work-zoom";
+    bar.innerHTML = '<span>' + label + '</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="' + min + '" max="' + max + '" step="' + step + '" value="' + value + '" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>' + value + '%</b>';
+    return bar;
+  }
+  function bindZoom(bar, read, write, step) {
+    if (!bar || bar.dataset.bound === "1") return;
+    bar.dataset.bound = "1";
+    const range = bar.querySelector("input");
+    const label = bar.querySelector("[data-zoom-label]");
+    const paint = (value) => {
+      const next = write(value);
+      range.value = String(next);
+      label.textContent = next + "%";
+    };
+    range.addEventListener("input", () => paint(Number(range.value)));
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", () => paint(read() + Number(button.dataset.zoom) * step));
+    });
+    paint(read());
+  }
+  let detailZoom = 100;
+  let thumbZoom = 25;
+  function applyDetailZoom(value) {
+    detailZoom = clamp(Math.round(value), 50, 200);
+    const box = document.getElementById("detailVisual");
+    if (box) box.style.zoom = String(detailZoom / 100);
+    return detailZoom;
+  }
+  function applyThumbZoom(value) {
+    thumbZoom = clamp(Math.round(value), 20, 120);
+    const size = Math.round(500 * thumbZoom / 100);
+    document.documentElement.style.setProperty("--image-slot-size", size + "px");
+    return thumbZoom;
+  }
+  function mountZoom() {
+    const detail = document.getElementById("detailDialog");
+    const visual = document.getElementById("detailVisual");
+    if (detail && visual) {
+      const bar = zoomBar("detailZoomBar", "화면", 50, 200, 2, detailZoom);
+      if (!bar.isConnected) visual.before(bar);
+      bindZoom(bar, () => detailZoom, applyDetailZoom, 2);
+      if (visual.dataset.zoomWheel !== "1") {
+        visual.dataset.zoomWheel = "1";
+        visual.addEventListener("wheel", (event) => {
+          if (!event.ctrlKey && !event.metaKey) return;
+          event.preventDefault();
+          applyDetailZoom(detailZoom + (event.deltaY > 0 ? -2 : 2));
+          const range = bar.querySelector("input");
+          const label = bar.querySelector("[data-zoom-label]");
+          if (range) range.value = String(detailZoom);
+          if (label) label.textContent = detailZoom + "%";
+        }, { passive: false });
+      }
+    }
+    const image = document.getElementById("imageDialog");
+    const thumbs = document.getElementById("imageThumbs");
+    if (image && thumbs) {
+      const bar = zoomBar("imageZoomBar", "이미지", 20, 120, 1, thumbZoom);
+      const drop = document.getElementById("imageDrop") || thumbs;
+      if (!bar.isConnected) drop.before(bar);
+      bindZoom(bar, () => thumbZoom, applyThumbZoom, 1);
+      if (drop.dataset.zoomWheel !== "1") {
+        drop.dataset.zoomWheel = "1";
+        drop.addEventListener("wheel", (event) => {
+          if (!event.ctrlKey && !event.metaKey) return;
+          event.preventDefault();
+          applyThumbZoom(thumbZoom + (event.deltaY > 0 ? -1 : 1));
+          const range = bar.querySelector("input");
+          const label = bar.querySelector("[data-zoom-label]");
+          if (range) range.value = String(thumbZoom);
+          if (label) label.textContent = thumbZoom + "%";
+        }, { passive: false });
+      }
+    }
+  }
+  function watchButton(button, status) {
+    if (!button || !status || button.dataset.workWatch === "1") return;
+    button.dataset.workWatch = "1";
+    const paint = () => {
+      const text = button.textContent.replace(/\s+/g, " ").trim();
+      status.textContent = button.disabled ? text : status.dataset.idle || "";
+    };
+    new MutationObserver(paint).observe(button, { attributes: true, childList: true, characterData: true, subtree: true });
+  }
+  function polishFoot(dialogId, statusId, buttonId) {
+    const dialog = document.getElementById(dialogId);
+    if (!dialog) return;
+    const actions = dialog.querySelector(".dialog-actions");
+    if (!actions) return;
+    actions.classList.add("work-foot");
+    let status = statusId ? document.getElementById(statusId) : null;
+    if (!status) status = actions.querySelector(".work-status");
+    if (!status) {
+      status = document.createElement("p");
+      status.className = "work-status";
+    }
+    status.classList.add("work-status");
+    if (status.parentElement !== actions) actions.prepend(status);
+    if (!actions.querySelector(".work-close")) {
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "work-close";
+      close.textContent = "닫기";
+      close.addEventListener("click", () => {
+        const headerClose = dialog.querySelector("header button");
+        if (headerClose) headerClose.click();
+        else dialog.close();
+      });
+      const save = actions.querySelector("button[type='submit'], .btn-apply, button");
+      if (save) save.before(close);
+      else actions.append(close);
+      if (save) save.classList.add("work-save");
+    }
+    if (!statusId) watchButton(document.getElementById(buttonId), status);
+  }
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function hook() {
+    stayOnEscape(document.getElementById("detailDialog"));
+    stayOnEscape(document.getElementById("imageDialog"));
+    mountZoom();
+    polishFoot("detailDialog", "", "detailIntroAi");
+    polishFoot("imageDialog", "imageTextJobStatus", "removeImageTextButton");
+    showVersion();
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion5) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryVersion5 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      applyEdition = wrapped;
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 700);
+  setTimeout(showVersion, 1200);
+})();
+"""
+IMAGE_CSS = """
+/* image-work1 */
+#detailDialog,
+#imageDialog {
+  width: 100vw;
+  height: 100vh;
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  inset: 0;
+  border: 0;
+}
+#detailDialog form,
+#imageDialog form {
+  height: 100%;
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+#detailDialog .detail-visual,
+#detailDialog .detail-source {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+#imageDialog .image-drop {
+  flex: 1 1 auto;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+}
+#imageDialog .image-thumbs {
+  flex: 1 1 auto;
+  max-height: none;
+  align-content: flex-start;
+}
+#imageDialog .image-slot {
+  width: var(--image-slot-size, 125px);
+  height: var(--image-slot-size, 125px);
+  flex-basis: var(--image-slot-size, 125px);
+}
+#imageDialog .option-list-wrap {
+  flex: 0 1 28vh;
+  min-height: 96px;
+  max-height: none;
+}
+.work-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: #5c564c;
+  font-size: 12px;
+}
+.work-zoom input[type="range"] { width: 180px; accent-color: #1f6b4a; }
+.work-zoom button {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 6px;
+}
+.work-zoom b { min-width: 42px; font-weight: 650; }
+#detailDialog .work-foot,
+#imageDialog .work-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #e6e1d8;
+}
+#detailDialog .work-status,
+#imageDialog .work-status {
+  flex: 1 1 auto;
+  margin: 0 auto 0 0;
+  min-height: 1.2em;
+  color: #5c564c;
+  font-size: 13px;
+  font-weight: 600;
+}
+#detailDialog .work-close,
+#imageDialog .work-close,
+#detailDialog .work-save,
+#imageDialog .work-save {
+  min-width: 88px;
+  height: 34px;
+}
+#detailDialog .work-save,
+#imageDialog .work-save {
+  background: #1f6b4a;
+  color: #fff;
+  border-color: #1f6b4a;
+}
+html[data-theme="dark"] .work-zoom { color: #d6d3cd; }
+html[data-theme="dark"] #detailDialog .work-foot,
+html[data-theme="dark"] #imageDialog .work-foot { border-top-color: #2c2c2c; }
+html[data-theme="dark"] #detailDialog .work-status,
+html[data-theme="dark"] #imageDialog .work-status { color: #d6d3cd; }
+html[data-theme="dark"] #detailDialog .work-save,
+html[data-theme="dark"] #imageDialog .work-save {
+  background: #d7c4a3;
+  color: #1c1917;
+  border-color: #d7c4a3;
+}
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -962,8 +1245,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "margin1")
-    return bump_asset(text, "app.js", "margin1")
+    text = bump_asset(text, "styles.css", "image-work1")
+    return bump_asset(text, "app.js", "image-work1")
 
 
 def patch_answer(text: str) -> str:
@@ -981,6 +1264,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SIMPLE3_JS
     if "/* product-margin1 */" not in text:
         text = text.rstrip() + "\n" + MARGIN_JS
+    if "/* image-work1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_JS
     return text
 
 
@@ -998,6 +1283,8 @@ def patch_css(text: str) -> str:
         extra += SIMPLE3_CSS
     if "/* product-margin1 */" not in text:
         extra += MARGIN_CSS
+    if "/* image-work1 */" not in text:
+        extra += IMAGE_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

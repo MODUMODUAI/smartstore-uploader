@@ -76,8 +76,8 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "판매가 옆에 마진율 칸을 넣었습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.4 입니다.", 64, "모두모두AI"
+  MsgBox "이미지바꾸기와 상세페이지 창을 다듬었습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.5 입니다.", 64, "모두모두AI"
 End If
 
 Function ReadyArg()

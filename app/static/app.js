@@ -12198,6 +12198,7 @@ function fillInquiryDetail(item) {
   const answered = String(item.answer || "").trim();
   const oldWrap = $("#inquiryOldWrap");
   if (oldWrap) oldWrap.hidden = !answered;
+  $("#inquiryPaneBasic")?.classList.toggle("inquiry-no-old", !answered);
   if ($("#inquiryAnswerView")) {
     $("#inquiryAnswerView").value = answered;
     $("#inquiryAnswerView").readOnly = true;

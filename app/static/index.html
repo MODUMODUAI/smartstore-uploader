@@ -8,7 +8,7 @@
   </script>
   <title>모두모두AI</title>
   <link rel="icon" href="/static/favicon.svg?v=3" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/styles.css?v=bundle302" />
+  <link rel="stylesheet" href="/static/styles.css?v=bundle303" />
 </head>
 <body>
   <header class="titlebar">
@@ -832,7 +832,7 @@
             <button type="button" data-inquiry-pane="basic" class="active">기본 입력</button>
             <button type="button" data-inquiry-pane="batch">일괄 입력</button>
           </div>
-          <div id="inquiryPaneBasic" class="inquiry-sheet inquiry-sheet-stack">
+          <div id="inquiryPaneBasic" class="inquiry-sheet">
             <table class="inquiry-form">
               <tbody>
                 <tr>
@@ -867,14 +867,13 @@
                 </tr>
               </tbody>
             </table>
-            <div class="inquiry-old" id="inquiryOldWrap" hidden>
-              <label>기존 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
-              <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
-            </div>
             <div class="inquiry-new inquiry-answer-box">
-              <div class="inquiry-answer-head">답변 작성</div>
               <label>답변 제목<input id="inquiryAnswerTitle" autocomplete="off" /></label>
-              <label>답변내용<textarea id="inquiryAnswerDraft" rows="10" placeholder="여기에 답변을 입력하세요. 이 칸에 타이핑하면 됩니다."></textarea></label>
+              <label>답변내용 (여기에 입력)<textarea id="inquiryAnswerDraft" placeholder="여기에 답변을 입력하세요"></textarea></label>
+            </div>
+            <div class="inquiry-old" id="inquiryOldWrap" hidden>
+              <label>보낸 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
+              <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
             </div>
           </div>
           <div id="inquiryPaneBatch" class="inquiry-batch" hidden>
@@ -886,7 +885,7 @@
             <select id="inquiryTemplate" title="답변 템플릿">
               <option value="">사용 방법 및 안내 사항</option>
             </select>
-            <button type="button" id="inquiryAnswerButton">답변 전송</button>
+            <button type="button" id="inquiryAnswerButton" accesskey="s">답변 보내기(S)</button>
           </div>
         </section>
       </div>
@@ -2497,6 +2496,6 @@
     </div>
   </dialog>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=bundle302"></script>
+  <script src="/static/app.js?v=bundle303"></script>
 </body>
 </html>

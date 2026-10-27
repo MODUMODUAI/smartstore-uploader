@@ -1,0 +1,24 @@
+{
+ "index.html": [
+  [
+   "            <div class=\"inquiry-old\">\n              <label>답변내용<textarea id=\"inquiryAnswerView\" readonly></textarea></label>\n              <label>답변일<input id=\"inquiryAnswerAt\" readonly /></label>\n            </div>\n            <div class=\"inquiry-new\">\n              <label>새 답변 제목<input id=\"inquiryAnswerTitle\" /></label>\n              <label>새 답변 내용<textarea id=\"inquiryAnswerDraft\"></textarea></label>\n            </div>",
+   "            <div class=\"inquiry-new inquiry-answer-box\">\n              <label>답변 제목<input id=\"inquiryAnswerTitle\" autocomplete=\"off\" /></label>\n              <label>답변내용 (여기에 입력)<textarea id=\"inquiryAnswerDraft\" placeholder=\"여기에 답변을 입력하세요\"></textarea></label>\n            </div>\n            <div class=\"inquiry-old\" id=\"inquiryOldWrap\" hidden>\n              <label>보낸 답변<textarea id=\"inquiryAnswerView\" readonly tabindex=\"-1\"></textarea></label>\n              <label>답변일<input id=\"inquiryAnswerAt\" readonly tabindex=\"-1\" /></label>\n            </div>"
+  ],
+  [
+   "            <button type=\"button\" id=\"inquiryAnswerButton\" accesskey=\"s\">답변 전송(S)</button>",
+   "            <button type=\"button\" id=\"inquiryAnswerButton\" accesskey=\"s\">답변 보내기(S)</button>"
+  ]
+ ],
+ "app.js": [
+  [
+   "  if ($(\"#inquiryAnswerAt\")) $(\"#inquiryAnswerAt\").value = item.answer_at ? formatOrderDate(item.answer_at) : \"\";\n  if (!same) {\n    if ($(\"#inquiryAnswerTitle\")) $(\"#inquiryAnswerTitle\").value = \"\";\n    if ($(\"#inquiryAnswerDraft\")) $(\"#inquiryAnswerDraft\").value = \"\";\n  }",
+   "  if ($(\"#inquiryAnswerAt\")) $(\"#inquiryAnswerAt\").value = item.answer_at ? formatOrderDate(item.answer_at) : \"\";\n  const answered = Boolean(String(item.answer || \"\").trim());\n  if ($(\"#inquiryOldWrap\")) $(\"#inquiryOldWrap\").hidden = !answered;\n  $(\"#inquiryPaneBasic\")?.classList.toggle(\"inquiry-no-old\", !answered);\n  if (!same) {\n    if ($(\"#inquiryAnswerTitle\")) $(\"#inquiryAnswerTitle\").value = \"\";\n    if ($(\"#inquiryAnswerDraft\")) $(\"#inquiryAnswerDraft\").value = \"\";\n    const batch = $(\"#inquiryPaneBatch\") && !$(\"#inquiryPaneBatch\").hidden;\n    const target = batch ? $(\"#inquiryBatchBody\") : $(\"#inquiryAnswerDraft\");\n    requestAnimationFrame(() => target?.focus({ preventScroll: true }));\n  }"
+  ]
+ ],
+ "styles.css": [
+  [
+   "#inquiryTemplate { width: min(360px, 50%); }",
+   "#inquiryTemplate { width: min(360px, 100%); justify-self: start; }\n.inquiry-detail-foot { display: grid; grid-template-columns: 1fr auto 1fr; position: sticky; bottom: -10px; z-index: 2; padding: 6px 0; background: var(--surface); }\n#inquiryAnswerButton { justify-self: center; min-width: 160px; padding: 7px 28px; font-size: 14px; }\n.inquiry-old[hidden] { display: none; }\n.inquiry-sheet.inquiry-no-old { grid-template-columns: minmax(420px, 1.3fr) minmax(260px, 1.2fr); }"
+  ]
+ ]
+}

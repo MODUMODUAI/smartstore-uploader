@@ -1712,9 +1712,6 @@ tr.selected .order-cancel-link { color: #2563eb; }
   gap: 8px;
   align-items: stretch;
 }
-.inquiry-sheet-stack {
-  grid-template-columns: 1fr;
-}
 .inquiry-answer-box {
   width: 100%;
   max-width: none;
@@ -1763,7 +1760,11 @@ html[data-theme="dark"] .inquiry-answer-head { color: #8ec5ff; }
   gap: 8px;
   margin-top: 8px;
 }
-#inquiryTemplate { width: min(360px, 50%); }
+#inquiryTemplate { width: min(360px, 100%); justify-self: start; }
+.inquiry-detail-foot { display: grid; grid-template-columns: 1fr auto 1fr; position: sticky; bottom: -10px; z-index: 2; padding: 6px 0; background: var(--surface); }
+#inquiryAnswerButton { justify-self: center; min-width: 160px; padding: 7px 28px; font-size: 14px; }
+.inquiry-old[hidden] { display: none; }
+.inquiry-sheet.inquiry-no-old { grid-template-columns: minmax(420px, 1.3fr) minmax(260px, 1.2fr); }
 #inquiryAnswerButton {
   background: #16a34a;
   color: #fff;

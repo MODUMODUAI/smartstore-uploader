@@ -48,7 +48,7 @@ func main() {
 		return
 	}
 	fmt.Fprintf(logf, "started %s pid %d\n", py, cmd.Process.Pid)
-	alert("어제 이 컴퓨터에 있던 프로그램을 엽니다.\n화면 번호는 v2026.10.22.8 로 보입니다.\n10월 22일 인터넷 배포본이 아닙니다.\n\n브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요.\n문의 버튼이 답변 보내기 이면 어제 프로그램입니다.")
+	alert("어제 오후 9시 프로그램을 엽니다.\n화면 번호는 v2026.10.22.8 입니다.\n문의 버튼이 답변 보내기 이면 그 프로그램입니다.\n\n브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요.")
 }
 
 func findRoot() (string, error) {

@@ -14,8 +14,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $here 'MODUMODU.exe'))) {
 }
 
 function Get-DataSize([string]$dir) {
-  $sum = (Get-ChildItem -LiteralPath $dir -Recurse -File -Force -ErrorAction SilentlyContinue |
-    Measure-Object -Property Length -Sum).Sum
+  $sum = $null
+  try {
+    $sum = (Get-ChildItem -LiteralPath $dir -Recurse -File -Force -ErrorAction SilentlyContinue |
+      Measure-Object -Property Length -Sum).Sum
+  } catch {}
   if ($null -eq $sum) { return 0 }
   return [int64]$sum
 }
@@ -36,12 +39,14 @@ foreach ($r in @(
 
 $found = @{}
 
-$shell = New-Object -ComObject WScript.Shell
+$shell = $null
+try { $shell = New-Object -ComObject WScript.Shell } catch {}
 $lnkDirs = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('CommonDesktopDirectory'),
   [Environment]::GetFolderPath('StartMenu'), [Environment]::GetFolderPath('CommonStartMenu'))
 foreach ($d in $lnkDirs) {
-  if (-not $d -or -not (Test-Path -LiteralPath $d)) { continue }
-  Get-ChildItem -LiteralPath $d -Filter *.lnk -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
+  if (-not $shell -or -not $d -or -not (Test-Path -LiteralPath $d)) { continue }
+  try { $lnks = @(Get-ChildItem -LiteralPath $d -Filter *.lnk -Recurse -ErrorAction SilentlyContinue) } catch { $lnks = @() }
+  $lnks | ForEach-Object {
     try {
       $t = $shell.CreateShortcut($_.FullName)
       foreach ($p in @($t.WorkingDirectory, (Split-Path -Parent $t.TargetPath))) {
@@ -51,12 +56,35 @@ foreach ($d in $lnkDirs) {
   }
 }
 
+$skipNames = @('Windows', '$Recycle.Bin', 'System Volume Information', 'node_modules', '_internal',
+  'Microsoft', 'Packages', 'Temp', 'WindowsApps', 'Google', 'Mozilla', 'NVIDIA Corporation', '.git', 'data')
+
+function Find-Exe([string]$root, [int]$maxDepth) {
+  $queue = New-Object System.Collections.Generic.Queue[object]
+  $queue.Enqueue(@($root, 0))
+  while ($queue.Count -gt 0) {
+    $item = $queue.Dequeue()
+    $dir = $item[0]; $lv = $item[1]
+    try {
+      if ([System.IO.File]::Exists((Join-Path $dir 'MODUMODU.exe'))) { $found[$dir.TrimEnd('\')] = 1 }
+      if ($lv -ge $maxDepth) { continue }
+      foreach ($sub in [System.IO.Directory]::GetDirectories($dir)) {
+        try {
+          $di = New-Object System.IO.DirectoryInfo($sub)
+          if ($di.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+          if ($skipNames -contains $di.Name) { continue }
+          $queue.Enqueue(@($sub, ($lv + 1)))
+        } catch {}
+      }
+    } catch {}
+  }
+}
+
 Write-Host 'Searching for old MODUMODU folders (may take a minute)...'
 foreach ($r in $roots) {
   $depth = 5
   if ($r -match '^[A-Z]:\\$') { $depth = 3 }
-  Get-ChildItem -LiteralPath $r -Filter 'MODUMODU.exe' -Recurse -Depth $depth -File -Force -ErrorAction SilentlyContinue |
-    ForEach-Object { $found[$_.DirectoryName.TrimEnd('\')] = 1 }
+  try { Find-Exe $r $depth } catch {}
 }
 
 $cands = @()
@@ -70,8 +98,11 @@ foreach ($dir in $found.Keys) {
   if (Test-Path -LiteralPath (Join-Path $dir 'edition.txt')) { $ed = (Get-Content -LiteralPath (Join-Path $dir 'edition.txt') -Raw).Trim() }
   $ver = ''
   if (Test-Path -LiteralPath (Join-Path $dir 'version.txt')) { $ver = (Get-Content -LiteralPath (Join-Path $dir 'version.txt') -Raw).Trim() }
-  $last = (Get-ChildItem -LiteralPath $data -Recurse -File -Force -ErrorAction SilentlyContinue |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+  $last = $null
+  try {
+    $last = (Get-ChildItem -LiteralPath $data -Recurse -File -Force -ErrorAction SilentlyContinue |
+      Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
+  } catch {}
   $cands += [pscustomobject]@{ Dir = $dir; Data = $data; SizeMB = [math]::Round($size / 1MB, 1); Edition = $ed; Version = $ver; LastWrite = $last
     HasSettings = (Test-Path -LiteralPath (Join-Path $data 'settings.json')) }
 }

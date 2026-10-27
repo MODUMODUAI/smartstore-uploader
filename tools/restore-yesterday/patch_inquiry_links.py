@@ -110,7 +110,10 @@ function fillInquiryProductLink(item) {
 """
 
 ROW_RE = re.compile(
-    r'textCell\(item\.order_id \|\| ""\),\s*textCell\(item\.product_no \|\| ""\),'
+    r'textCell\(item\.order_id\s*\|\|\s*["\']["\']\)\s*,\s*textCell\(item\.product_no\s*\|\|\s*["\']["\']\)\s*,'
+)
+DETAIL_RE = re.compile(
+    r'if \(\$\("#inquiryProductNo"\)\)\s*\$\("#inquiryProductNo"\)\.textContent\s*=\s*item\.product_no\s*\|\|\s*["\']["\']\s*;'
 )
 ROW_NEW = (
     'inquiryNumberButtonCell(item.order_id || "", "order-no-link", () => openInquiryOrder(item)),\n'
@@ -145,10 +148,12 @@ def patch_js(text: str) -> str:
         if count != 1:
             raise SystemExit("inquiry order/product cells not found")
     if "fillInquiryProductLink(item);" not in text:
-        count = text.count(DETAIL_OLD)
-        if count != 1:
-            raise SystemExit("inquiry product number cell not found")
-        text = text.replace(DETAIL_OLD, DETAIL_NEW, 1)
+        if DETAIL_OLD in text:
+            text = text.replace(DETAIL_OLD, DETAIL_NEW, 1)
+        else:
+            text, count = DETAIL_RE.subn(DETAIL_NEW, text, count=1)
+            if count != 1:
+                raise SystemExit("inquiry product number cell not found")
     return text
 
 
@@ -182,6 +187,7 @@ def main() -> None:
     write_text(js_path, new_js, js_nl)
     write_text(html_path, new_html, html_nl)
     print("inquiry links on")
+    raise SystemExit(10)
 
 
 if __name__ == "__main__":

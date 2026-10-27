@@ -1,7 +1,7 @@
 Option Explicit
 
 Dim fso, shell, here, root, staticDir, marker, py, launcher, desktop, link
-Dim dataDir, bestData, bestCount, liveCount, copied
+Dim dataDir, bestData, bestCount, liveCount, copied, patched, exePath
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -41,15 +41,11 @@ If py = "" Or Not fso.FileExists(launcher) Then
   WScript.Quit 1
 End If
 LogLine "python " & py
+patched = 0
 If fso.FileExists(here & "\patch-inquiry-links.py") Then
-  shell.Run """" & py & """ """ & here & "\patch-inquiry-links.py"" """ & root & """", 0, True
-  LogLine "inquiry links patched"
+  patched = shell.Run("""" & py & """ """ & here & "\patch-inquiry-links.py"" """ & root & """", 0, True)
+  LogLine "inquiry links " & CStr(patched)
 End If
-
-On Error Resume Next
-shell.Run "taskkill /IM MODUMODU.exe /F", 0, True
-On Error GoTo 0
-WScript.Sleep 1000
 
 shell.Environment("PROCESS")("UPLOADER_SKIP_UPDATE") = "1"
 shell.CurrentDirectory = root
@@ -57,20 +53,26 @@ shell.Run """" & py & """ """ & launcher & """", 1, False
 
 On Error Resume Next
 desktop = shell.SpecialFolders("Desktop")
+exePath = here & "\MODUMODU.exe"
 Set link = shell.CreateShortcut(desktop & "\모두모두AI 마스터.lnk")
-link.TargetPath = "wscript.exe"
-link.Arguments = "//nologo """ & WScript.ScriptFullName & """"
-link.WorkingDirectory = here
-link.WindowStyle = 7
+If fso.FileExists(exePath) Then
+  link.TargetPath = exePath
+  link.Arguments = ""
+  link.WorkingDirectory = here
+Else
+  link.TargetPath = "wscript.exe"
+  link.Arguments = "//nologo """ & WScript.ScriptFullName & """"
+  link.WorkingDirectory = here
+End If
+link.WindowStyle = 1
 link.Description = "모두모두AI"
 link.Save
 On Error GoTo 0
 
-MsgBox "고객문의의 주문번호와 상품번호를 눌러 열 수 있습니다." & vbCrLf & _
-  "버전 2026.10.22.8" & vbCrLf & _
-  "상품 " & CStr(liveCount) & "개" & vbCrLf & vbCrLf & _
-  "브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요." & vbCrLf & _
-  "주소는 http://127.0.0.1:8787 입니다.", 64, "모두모두AI"
+If patched = 10 Then
+  MsgBox "고객문의의 주문번호와 상품번호를 눌러 열 수 있습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.22.8 입니다.", 64, "모두모두AI"
+End If
 
 Sub LogLine(text)
   Dim ts

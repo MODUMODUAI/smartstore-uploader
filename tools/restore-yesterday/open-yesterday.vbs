@@ -6,6 +6,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
+RepairBrokenNames here
 If Not ReadyArg() Then
   If OfferUpdate(here) Then WScript.Quit 0
 End If
@@ -76,10 +77,36 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "관리자초대를 넣었습니다." & vbCrLf & _
-    "상품관리와 주문관리를 나눠 보냅니다. 마켓과 공급사 로그인은 가립니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.6 입니다.", 64, "모두모두AI"
+  MsgBox "깨진 파일 이름을 한글로 고쳤습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.7 입니다.", 64, "모두모두AI"
 End If
+
+Sub RepairBrokenNames(folder)
+  Dim pairs, i, parts, src, dst
+  pairs = Array( _
+    "ьВмьЪйы░йы▓Х.txt|사용방법.txt", _
+    "ьВмьЪйы░йы▓Х-ызИьКдэД░.txt|사용방법-마스터.txt", _
+    "ьВмьЪйы░йы▓Х-ы░░эПмьЪй.txt|사용방법-배포용.txt", _
+    "ьДдь╣Ш.bat|설치.bat", _
+    "ьЦ┤ьаЬьШдэЫД9ьЛЬ.vbs|어제오후9시.vbs")
+  For i = 0 To UBound(pairs)
+    parts = Split(pairs(i), "|")
+    src = folder & "\" & parts(0)
+    dst = folder & "\" & parts(1)
+    If fso.FileExists(src) Then
+      On Error Resume Next
+      If Not fso.FileExists(dst) Then
+        fso.MoveFile src, dst
+      ElseIf fso.GetFile(src).Size > fso.GetFile(dst).Size Then
+        fso.DeleteFile dst, True
+        fso.MoveFile src, dst
+      Else
+        fso.DeleteFile src, True
+      End If
+      On Error GoTo 0
+    End If
+  Next
+End Sub
 
 Function ReadyArg()
   Dim i

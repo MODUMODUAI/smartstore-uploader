@@ -207,6 +207,7 @@ func httpGet(rawURL string, timeout time.Duration) ([]byte, error) {
 }
 
 func launchYesterday(dir string) {
+	repairBrokenNames(dir)
 	script := filepath.Join(dir, "어제오후9시.vbs")
 	if _, err := os.Stat(script); err != nil {
 		alert("어제 프로그램을 열 파일이 없습니다.")

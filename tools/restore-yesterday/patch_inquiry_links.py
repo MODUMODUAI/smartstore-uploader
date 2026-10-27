@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.6"
+SCREEN_VERSION = "2026.10.28.7"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1571,6 +1571,47 @@ html[data-theme="dark"] #inviteRoleBadge {
   color: #1c1917;
 }
 """
+NAME_JS = r"""
+/* name-fix1 */
+(function () {
+  const version = "2026.10.28.7";
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function hook() {
+    showVersion();
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion7) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryVersion5 = true;
+      wrapped.inquiryVersion6 = true;
+      wrapped.inquiryVersion7 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      window.applyEdition = wrapped;
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 2000);
+  setTimeout(showVersion, 2400);
+})();
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -1641,8 +1682,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "admin-invite1")
-    return bump_asset(text, "app.js", "admin-invite1")
+    text = bump_asset(text, "styles.css", "name-fix1")
+    return bump_asset(text, "app.js", "name-fix1")
 
 
 def patch_answer(text: str) -> str:
@@ -1664,6 +1705,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_JS
     if "/* admin-invite1 */" not in text:
         text = text.rstrip() + "\n" + INVITE_JS
+    if "/* name-fix1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_JS
     return text
 
 

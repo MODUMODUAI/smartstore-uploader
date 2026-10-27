@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.5"
+SCREEN_VERSION = "2026.10.28.6"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1175,6 +1175,402 @@ html[data-theme="dark"] #imageDialog .work-save {
   border-color: #d7c4a3;
 }
 """
+INVITE_JS = r"""
+/* admin-invite1 */
+(function () {
+  const version = "2026.10.28.6";
+  const roleKey = "modumodu-invite-role";
+  const state = { role: "", remote: false, owner: false, pending: false };
+  function readRole() {
+    const params = new URLSearchParams(location.search);
+    const fromUrl = params.get("role");
+    if (fromUrl === "products" || fromUrl === "orders") {
+      try { sessionStorage.setItem(roleKey, fromUrl); } catch (error) {}
+      return fromUrl;
+    }
+    try {
+      const saved = sessionStorage.getItem(roleKey);
+      if (saved === "products" || saved === "orders") return saved;
+    } catch (error) {}
+    return "";
+  }
+  function locked() {
+    return state.remote || (state.pending && !state.owner);
+  }
+  function allowed(name) {
+    if (!locked()) return name;
+    if (name === "help") return "help";
+    if (state.role === "products") {
+      if (name === "orders" || name === "inquiries") return "products";
+      return name;
+    }
+    if (state.role === "orders") {
+      if (name === "products" || name === "collect" || name === "wholesalers") return "orders";
+      return name;
+    }
+    return name;
+  }
+  function currentView() {
+    const names = [
+      ["products", "viewProducts"],
+      ["orders", "viewOrders"],
+      ["inquiries", "viewInquiries"],
+      ["collect", "viewCollect"],
+      ["wholesalers", "viewWholesalers"],
+      ["settings", "viewSettings"],
+      ["help", "viewHelp"],
+    ];
+    for (const [name, id] of names) {
+      const el = document.getElementById(id);
+      if (el && !el.hidden) return name;
+    }
+    return "products";
+  }
+  function isSecretHeader(cell) {
+    const text = (cell.textContent || "").replace(/\s+/g, "");
+    if (!text || text.length > 24) return false;
+    return /아이디|패스워드|비밀번호|아이디키|시크릿키|업체코드|ESMID|쇼핑몰ID/i.test(text);
+  }
+  function blankCell(cell) {
+    if (!cell || cell.querySelector("input, select, textarea")) return;
+    cell.classList.add("invite-secret");
+    if (state.remote && cell.textContent) cell.textContent = "";
+  }
+  function hideSecretColumns() {
+    if (!locked()) return;
+    document.querySelectorAll("table").forEach((table) => {
+      const headerRows = table.tHead ? [...table.tHead.rows] : [];
+      const secretIndex = new Set();
+      headerRows.forEach((row) => {
+        [...row.cells].forEach((cell, index) => {
+          if (!isSecretHeader(cell)) return;
+          secretIndex.add(index);
+          cell.classList.add("invite-secret");
+        });
+      });
+      if (secretIndex.size) {
+        const cols = table.querySelectorAll("colgroup col");
+        secretIndex.forEach((index) => {
+          if (cols[index]) cols[index].classList.add("invite-secret");
+        });
+        [...table.tBodies].forEach((body) => {
+          [...body.rows].forEach((row) => {
+            if (row.cells.length === 1 && row.cells[0].colSpan > 1) return;
+            secretIndex.forEach((index) => blankCell(row.cells[index]));
+          });
+        });
+      }
+      [...table.rows].forEach((row) => {
+        const cells = [...row.cells];
+        for (let index = 0; index < cells.length; index += 1) {
+          const cell = cells[index];
+          if (cell.tagName !== "TH" || !isSecretHeader(cell)) continue;
+          cell.classList.add("invite-secret");
+          const next = cells[index + 1];
+          if (next && next.tagName === "TD") blankCell(next);
+        }
+      });
+    });
+    if (!state.remote) return;
+    const secrets = new Map();
+    const lists = [];
+    if (typeof markets !== "undefined" && Array.isArray(markets)) lists.push(markets);
+    if (typeof wholesalers !== "undefined" && Array.isArray(wholesalers)) lists.push(wholesalers);
+    lists.forEach((list) => {
+      list.forEach((item) => {
+        if (!item || !item.login_id) return;
+        const secret = String(item.login_id).trim();
+        if (secret.length < 3) return;
+        const label = item.name || item.store_name || item.channel_name || "스토어";
+        secrets.set(secret, label === secret ? "스토어" : label);
+      });
+    });
+    document.querySelectorAll("option").forEach((option) => {
+      const text = option.textContent.trim();
+      if (secrets.has(text)) {
+        option.textContent = secrets.get(text);
+        return;
+      }
+      secrets.forEach((label, secret) => {
+        if (text.endsWith(" " + secret)) option.textContent = text.slice(0, text.length - secret.length) + label;
+      });
+    });
+    const account = document.getElementById("orderInfoAccount");
+    if (account) {
+      secrets.forEach((label, secret) => {
+        if (account.textContent.includes(secret)) account.textContent = account.textContent.split(secret).join(label);
+      });
+    }
+  }
+  function revealSecrets() {
+    document.querySelectorAll(".invite-secret").forEach((el) => el.classList.remove("invite-secret"));
+  }
+  function paintBadge() {
+    let badge = document.getElementById("inviteRoleBadge");
+    const show = locked() && (state.role === "products" || state.role === "orders");
+    if (!show) {
+      if (badge) badge.remove();
+      return;
+    }
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.id = "inviteRoleBadge";
+      const tabs = document.querySelector(".app-tabs");
+      if (tabs) tabs.after(badge);
+    }
+    badge.textContent = state.role === "orders" ? "주문관리" : "상품관리";
+  }
+  function withRole(link, role) {
+    try {
+      const url = new URL(link, location.href);
+      url.searchParams.set("role", role);
+      return url.toString();
+    } catch (error) {
+      return link + (link.indexOf("?") >= 0 ? "&" : "?") + "role=" + role;
+    }
+  }
+  async function copyLink(url) {
+    try {
+      if (typeof copyText === "function") await copyText(url);
+      else if (navigator.clipboard) await navigator.clipboard.writeText(url);
+      if (typeof toast === "function") toast("링크를 복사했습니다.");
+    } catch (error) {
+      if (typeof toast === "function") toast("복사에 실패했습니다.", true);
+    }
+  }
+  function paintInvitePanel() {
+    const box = document.getElementById("helpShare");
+    if (!box || !state.owner) return;
+    let panel = document.getElementById("invitePanel");
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = "invitePanel";
+      panel.className = "invite-panel";
+    }
+    panel.replaceChildren();
+    const head = document.createElement("p");
+    head.className = "share-link-head";
+    head.textContent = "상품관리와 주문관리를 나눠 보냅니다. 초대받은 화면에는 마켓과 공급사 로그인 정보가 나오지 않습니다.";
+    panel.append(head);
+    const links = (typeof cachedShareLinks !== "undefined" && cachedShareLinks) || [];
+    [["products", "상품관리 초대"], ["orders", "주문관리 초대"]].forEach(([role, title]) => {
+      const block = document.createElement("div");
+      block.className = "invite-block";
+      const label = document.createElement("p");
+      label.className = "invite-title";
+      label.textContent = title;
+      block.append(label);
+      if (!links.length) {
+        const empty = document.createElement("p");
+        empty.textContent = "공유 주소를 찾지 못했습니다.";
+        block.append(empty);
+      }
+      links.forEach((link) => {
+        const row = document.createElement("div");
+        row.className = "share-link-row";
+        const url = withRole(link, role);
+        const anchor = document.createElement("a");
+        anchor.className = "share-link-url";
+        anchor.href = url;
+        anchor.textContent = url;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "복사";
+        button.addEventListener("click", () => copyLink(url));
+        row.append(anchor, button);
+        block.append(row);
+      });
+      panel.append(block);
+    });
+    box.append(panel);
+  }
+  function watchTables() {
+    ["marketTableBody", "wholesaleTable", "orderTable", "inquiryTable", "orderDetailBody"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.inviteWatch === "1") return;
+      el.dataset.inviteWatch = "1";
+      new MutationObserver(() => {
+        if (locked()) hideSecretColumns();
+      }).observe(el, { childList: true });
+    });
+  }
+  function wrapAfter(name) {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.inviteHook) return;
+    function wrapped() {
+      const result = fn.apply(this, arguments);
+      const finish = () => { if (locked()) hideSecretColumns(); };
+      if (result && typeof result.then === "function") {
+        return result.then((value) => { finish(); return value; }, (error) => { finish(); throw error; });
+      }
+      finish();
+      return result;
+    }
+    wrapped.inviteHook = true;
+    window[name] = wrapped;
+  }
+  function wrapShow() {
+    if (typeof showAppView !== "function" || showAppView.inviteHook) return;
+    const inner = showAppView;
+    function wrapped(name) {
+      const result = inner.call(this, allowed(name));
+      if (locked()) hideSecretColumns();
+      paintBadge();
+      return result;
+    }
+    wrapped.inviteHook = true;
+    window.showAppView = wrapped;
+  }
+  function wrapShare() {
+    if (typeof loadShareLinks !== "function" || loadShareLinks.inviteHook) return;
+    const inner = loadShareLinks;
+    async function wrapped() {
+      try {
+        return await inner.apply(this, arguments);
+      } finally {
+        if (state.owner) paintInvitePanel();
+      }
+    }
+    wrapped.inviteHook = true;
+    window.loadShareLinks = wrapped;
+  }
+  function wrapMallId() {
+    if (typeof inquiryMallId !== "function" || inquiryMallId.inviteHook) return;
+    const inner = inquiryMallId;
+    function wrapped(item) {
+      if (state.remote) return "";
+      return inner.apply(this, arguments);
+    }
+    wrapped.inviteHook = true;
+    window.inquiryMallId = wrapped;
+  }
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function apply() {
+    const on = locked();
+    document.body.classList.toggle("invite-remote", on);
+    document.body.classList.toggle("invite-products", on && state.role === "products");
+    document.body.classList.toggle("invite-orders", on && state.role === "orders");
+    document.body.classList.toggle("invite-locked", on && (state.role === "products" || state.role === "orders"));
+    document.body.dataset.inviteState = state.remote ? "remote" : state.owner ? "owner" : state.pending ? "pending" : "open";
+    if (on) hideSecretColumns();
+    else revealSecrets();
+    paintBadge();
+    if (state.owner) paintInvitePanel();
+    const next = allowed(currentView());
+    if (next !== currentView() && typeof showAppView === "function") showAppView(next);
+  }
+  async function detect() {
+    if (typeof api !== "function") {
+      state.pending = false;
+      apply();
+      return;
+    }
+    try {
+      await api("/api/share-link", { quiet: true });
+      state.owner = true;
+      state.remote = false;
+    } catch (error) {
+      const message = String(error && error.message || "");
+      if (/이 컴퓨터에서만|공유 주소/.test(message)) {
+        state.remote = true;
+        state.owner = false;
+      }
+    }
+    state.pending = false;
+    apply();
+    watchTables();
+  }
+  function hook() {
+    wrapShow();
+    wrapShare();
+    wrapMallId();
+    ["fillMarketTable", "renderWholesalerSheet", "renderOrders", "renderInquiryRows", "renderOrderDetail"].forEach(wrapAfter);
+    showVersion();
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion6) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryVersion5 = true;
+      wrapped.inquiryVersion6 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      window.applyEdition = wrapped;
+    }
+    state.role = readRole();
+    if (!state.owner && !state.remote) state.pending = Boolean(state.role);
+    apply();
+    watchTables();
+    if (!state.owner && !state.remote) detect();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 1400);
+  setTimeout(showVersion, 1800);
+})();
+"""
+INVITE_CSS = """
+/* admin-invite1 */
+body.invite-products #appTabOrders,
+body.invite-products #appTabInquiries,
+body.invite-products #viewOrders,
+body.invite-products #viewInquiries,
+body.invite-orders #appTabProducts,
+body.invite-orders #appTabCollect,
+body.invite-orders #appTabWholesalers,
+body.invite-orders #viewProducts,
+body.invite-orders #viewCollect,
+body.invite-orders #viewWholesalers,
+body.invite-remote #marketLoginIdRow,
+body.invite-remote #marketLoginPwRow,
+body.invite-remote #marketApiKeyRow,
+body.invite-remote #marketApiSecretRow,
+body.invite-remote #marketVendorRow,
+body.invite-remote #marketEsmRow,
+body.invite-remote #marketApiAccountRow,
+body.invite-remote #marketForm label:has(input[name="login_id"]),
+body.invite-remote #marketForm label:has(input[name="login_password"]),
+body.invite-remote #marketForm label:has(input[name="api_key"]),
+body.invite-remote #marketForm label:has(input[name="api_secret"]),
+body.invite-remote #marketForm label:has(input[name="vendor_code"]),
+body.invite-remote #marketForm label:has(input[name="esm_id"]),
+body.invite-remote #marketForm label:has(input[name="naver_account_id"]),
+body.invite-remote #wholesaleForm label:has(input[name="login_id"]),
+body.invite-remote #wholesaleForm label:has(input[name="login_password"]),
+body.invite-remote .invite-secret {
+  display: none !important;
+}
+.invite-panel { margin-top: 14px; }
+.invite-title { margin: 10px 0 6px; font-weight: 700; }
+#inviteRoleBadge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #1f6b4a;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+html[data-theme="dark"] #inviteRoleBadge {
+  background: #d7c4a3;
+  color: #1c1917;
+}
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -1245,8 +1641,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "image-work1")
-    return bump_asset(text, "app.js", "image-work1")
+    text = bump_asset(text, "styles.css", "admin-invite1")
+    return bump_asset(text, "app.js", "admin-invite1")
 
 
 def patch_answer(text: str) -> str:
@@ -1266,6 +1662,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + MARGIN_JS
     if "/* image-work1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_JS
+    if "/* admin-invite1 */" not in text:
+        text = text.rstrip() + "\n" + INVITE_JS
     return text
 
 
@@ -1285,6 +1683,8 @@ def patch_css(text: str) -> str:
         extra += MARGIN_CSS
     if "/* image-work1 */" not in text:
         extra += IMAGE_CSS
+    if "/* admin-invite1 */" not in text:
+        extra += INVITE_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

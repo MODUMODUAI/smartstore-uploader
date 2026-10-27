@@ -1,5 +1,4 @@
 $ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $root = 'C:\smartstore uploader'
 if ($args.Count -gt 0) { $root = $args[0] }
 $static = Join-Path $root 'app\static'
@@ -9,6 +8,7 @@ Write-Host '========================================'
 if (-not (Test-Path -LiteralPath $static)) { Write-Host ('[FAIL] not found: ' + $static); exit 1 }
 
 $utf8 = New-Object Text.UTF8Encoding($false)
+function Dec([string]$s) { return $utf8.GetString([Convert]::FromBase64String($s)) }
 function Read-Doc([string]$path) {
   $bytes = [IO.File]::ReadAllBytes($path)
   $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
@@ -31,90 +31,30 @@ if ($idx.Text -match 'inquiry-answer-box' -and $idx.Text -match 'inquiryOldWrap'
   exit 0
 }
 
-# --- index.html: replace old/new answer blocks ---
-$htmlOld = [regex]::Match($idx.Text, '(?s)<div class="inquiry-old">\s*<label>답변내용<textarea id="inquiryAnswerView"[^>]*>.*?</textarea></label>\s*<label>답변일<input id="inquiryAnswerAt"[^>]*/?>\s*</label>\s*</div>\s*<div class="inquiry-new">\s*<label>새 답변 제목<input id="inquiryAnswerTitle"[^>]*/?>\s*</label>\s*<label>새 답변 내용<textarea id="inquiryAnswerDraft"[^>]*>.*?</textarea></label>\s*</div>')
+# Match by element ids only (no Korean in the pattern)
+$htmlPat = '(?s)<div class="inquiry-old">\s*<label>[^<]*<textarea id="inquiryAnswerView"[^>]*>.*?</textarea></label>\s*<label>[^<]*<input id="inquiryAnswerAt"[^>]*/?>\s*</label>\s*</div>\s*<div class="inquiry-new">\s*<label>[^<]*<input id="inquiryAnswerTitle"[^>]*/?>\s*</label>\s*<label>[^<]*<textarea id="inquiryAnswerDraft"[^>]*>.*?</textarea></label>\s*</div>'
+$htmlOld = [regex]::Match($idx.Text, $htmlPat)
 if (-not $htmlOld.Success) {
   Write-Host '[FAIL] index.html: inquiry old/new block not found. Nothing changed.'
   exit 1
 }
-$htmlNew = @"
-            <div class="inquiry-new inquiry-answer-box">
-              <label>답변 제목<input id="inquiryAnswerTitle" autocomplete="off" /></label>
-              <label>답변내용 (여기에 입력)<textarea id="inquiryAnswerDraft" placeholder="여기에 답변을 입력하세요"></textarea></label>
-            </div>
-            <div class="inquiry-old" id="inquiryOldWrap" hidden>
-              <label>보낸 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
-              <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
-            </div>
-"@
+$htmlNew = Dec 'ICAgICAgICAgICAgPGRpdiBjbGFzcz0iaW5xdWlyeS1uZXcgaW5xdWlyeS1hbnN3ZXItYm94Ij4KICAgICAgICAgICAgICA8bGFiZWw+64u167OAIOygnOuqqTxpbnB1dCBpZD0iaW5xdWlyeUFuc3dlclRpdGxlIiBhdXRvY29tcGxldGU9Im9mZiIgLz48L2xhYmVsPgogICAgICAgICAgICAgIDxsYWJlbD7ri7Xrs4DrgrTsmqkgKOyXrOq4sOyXkCDsnoXroKUpPHRleHRhcmVhIGlkPSJpbnF1aXJ5QW5zd2VyRHJhZnQiIHBsYWNlaG9sZGVyPSLsl6zquLDsl5Ag64u167OA7J2EIOyeheugpe2VmOyEuOyalCI+PC90ZXh0YXJlYT48L2xhYmVsPgogICAgICAgICAgICA8L2Rpdj4KICAgICAgICAgICAgPGRpdiBjbGFzcz0iaW5xdWlyeS1vbGQiIGlkPSJpbnF1aXJ5T2xkV3JhcCIgaGlkZGVuPgogICAgICAgICAgICAgIDxsYWJlbD7rs7Trgrgg64u167OAPHRleHRhcmVhIGlkPSJpbnF1aXJ5QW5zd2VyVmlldyIgcmVhZG9ubHkgdGFiaW5kZXg9Ii0xIj48L3RleHRhcmVhPjwvbGFiZWw+CiAgICAgICAgICAgICAgPGxhYmVsPuuLteuzgOydvDxpbnB1dCBpZD0iaW5xdWlyeUFuc3dlckF0IiByZWFkb25seSB0YWJpbmRleD0iLTEiIC8+PC9sYWJlbD4KICAgICAgICAgICAgPC9kaXY+'
 $idx.Text = $idx.Text.Substring(0, $htmlOld.Index) + $htmlNew.TrimEnd() + $idx.Text.Substring($htmlOld.Index + $htmlOld.Length)
 
-# button label -> 답변 보내기(S) if present
 $btn = [regex]::Match($idx.Text, '<button type="button" id="inquiryAnswerButton"[^>]*>.*?</button>')
 if (-not $btn.Success) { Write-Host '[FAIL] index.html: send button not found. Nothing changed.'; exit 1 }
-$idx.Text = $idx.Text.Substring(0, $btn.Index) + '<button type="button" id="inquiryAnswerButton" accesskey="s">답변 보내기(S)</button>' + $idx.Text.Substring($btn.Index + $btn.Length)
+$idx.Text = $idx.Text.Substring(0, $btn.Index) + (Dec 'PGJ1dHRvbiB0eXBlPSJidXR0b24iIGlkPSJpbnF1aXJ5QW5zd2VyQnV0dG9uIiBhY2Nlc3NrZXk9InMiPuuLteuzgCDrs7TrgrTquLAoUyk8L2J1dHRvbj4=') + $idx.Text.Substring($btn.Index + $btn.Length)
 
-# --- app.js: show/hide old answer + focus draft ---
 $jsPat = '(?s)if \(\$\("#inquiryAnswerView"\)\) \$\("#inquiryAnswerView"\)\.value = item\.answer \|\| "";\s*if \(\$\("#inquiryAnswerAt"\)\) \$\("#inquiryAnswerAt"\)\.value = item\.answer_at \? formatOrderDate\(item\.answer_at\) : "";\s*if \(!same\) \{\s*if \(\$\("#inquiryAnswerTitle"\)\) \$\("#inquiryAnswerTitle"\)\.value = "";\s*if \(\$\("#inquiryAnswerDraft"\)\) \$\("#inquiryAnswerDraft"\)\.value = "";\s*\}'
 $jsM = [regex]::Match($js.Text, $jsPat)
 if (-not $jsM.Success) {
   Write-Host '[FAIL] app.js: fillInquiryDetail answer block not found. Nothing changed.'
   exit 1
 }
-$jsNew = @'
-  if ($("#inquiryAnswerView")) $("#inquiryAnswerView").value = item.answer || "";
-  if ($("#inquiryAnswerAt")) $("#inquiryAnswerAt").value = item.answer_at ? formatOrderDate(item.answer_at) : "";
-  const answered = Boolean(String(item.answer || "").trim());
-  if ($("#inquiryOldWrap")) $("#inquiryOldWrap").hidden = !answered;
-  $("#inquiryPaneBasic")?.classList.toggle("inquiry-no-old", !answered);
-  if (!same) {
-    if ($("#inquiryAnswerTitle")) $("#inquiryAnswerTitle").value = "";
-    if ($("#inquiryAnswerDraft")) $("#inquiryAnswerDraft").value = "";
-    const batch = $("#inquiryPaneBatch") && !$("#inquiryPaneBatch").hidden;
-    const target = batch ? $("#inquiryBatchBody") : $("#inquiryAnswerDraft");
-    requestAnimationFrame(() => target?.focus({ preventScroll: true }));
-  }
-'@
-$js.Text = $js.Text.Substring(0, $jsM.Index) + $jsNew.TrimEnd() + $js.Text.Substring($jsM.Index + $jsM.Length)
+$js.Text = $js.Text.Substring(0, $jsM.Index) + (Dec 'ICBpZiAoJCgiI2lucXVpcnlBbnN3ZXJWaWV3IikpICQoIiNpbnF1aXJ5QW5zd2VyVmlldyIpLnZhbHVlID0gaXRlbS5hbnN3ZXIgfHwgIiI7CiAgaWYgKCQoIiNpbnF1aXJ5QW5zd2VyQXQiKSkgJCgiI2lucXVpcnlBbnN3ZXJBdCIpLnZhbHVlID0gaXRlbS5hbnN3ZXJfYXQgPyBmb3JtYXRPcmRlckRhdGUoaXRlbS5hbnN3ZXJfYXQpIDogIiI7CiAgY29uc3QgYW5zd2VyZWQgPSBCb29sZWFuKFN0cmluZyhpdGVtLmFuc3dlciB8fCAiIikudHJpbSgpKTsKICBpZiAoJCgiI2lucXVpcnlPbGRXcmFwIikpICQoIiNpbnF1aXJ5T2xkV3JhcCIpLmhpZGRlbiA9ICFhbnN3ZXJlZDsKICAkKCIjaW5xdWlyeVBhbmVCYXNpYyIpPy5jbGFzc0xpc3QudG9nZ2xlKCJpbnF1aXJ5LW5vLW9sZCIsICFhbnN3ZXJlZCk7CiAgaWYgKCFzYW1lKSB7CiAgICBpZiAoJCgiI2lucXVpcnlBbnN3ZXJUaXRsZSIpKSAkKCIjaW5xdWlyeUFuc3dlclRpdGxlIikudmFsdWUgPSAiIjsKICAgIGlmICgkKCIjaW5xdWlyeUFuc3dlckRyYWZ0IikpICQoIiNpbnF1aXJ5QW5zd2VyRHJhZnQiKS52YWx1ZSA9ICIiOwogICAgY29uc3QgYmF0Y2ggPSAkKCIjaW5xdWlyeVBhbmVCYXRjaCIpICYmICEkKCIjaW5xdWlyeVBhbmVCYXRjaCIpLmhpZGRlbjsKICAgIGNvbnN0IHRhcmdldCA9IGJhdGNoID8gJCgiI2lucXVpcnlCYXRjaEJvZHkiKSA6ICQoIiNpbnF1aXJ5QW5zd2VyRHJhZnQiKTsKICAgIHJlcXVlc3RBbmltYXRpb25GcmFtZSgoKSA9PiB0YXJnZXQ/LmZvY3VzKHsgcHJldmVudFNjcm9sbDogdHJ1ZSB9KSk7CiAgfQ==').TrimEnd() + $js.Text.Substring($jsM.Index + $jsM.Length)
 
-# --- styles.css: center sticky send button + layout ---
 if ($css.Text -notmatch 'inquiry-no-old') {
-  $css.Text = $css.Text.TrimEnd() + @"
-
-/* inquiry-answer-fix */
-.inquiry-old[hidden] { display: none; }
-.inquiry-sheet.inquiry-no-old { grid-template-columns: minmax(420px, 1.3fr) minmax(260px, 1.2fr); }
-.inquiry-answer-box textarea { min-height: 170px; }
-.inquiry-detail-foot {
-  display: flex !important;
-  justify-content: center;
-  align-items: center;
-  gap: 8px;
-  position: sticky;
-  bottom: -10px;
-  z-index: 2;
-  padding: 6px 0;
-  background: var(--surface);
-}
-.inquiry-detail-foot #inquiryTemplate {
-  position: absolute;
-  left: 0;
-  width: min(360px, 45%);
-}
-#inquiryAnswerButton {
-  min-width: 160px;
-  padding: 7px 28px;
-  font-size: 14px;
-}
-#inquiryAnswerDraft,
-#inquiryBatchBody,
-#inquiryAnswerTitle,
-#inquiryBatchTitle {
-  pointer-events: auto !important;
-  user-select: text !important;
-  -webkit-user-select: text !important;
-}
-"@
+  $css.Text = $css.Text.TrimEnd() + (Dec 'Ci8qIGlucXVpcnktYW5zd2VyLWZpeCAqLwouaW5xdWlyeS1vbGRbaGlkZGVuXSB7IGRpc3BsYXk6IG5vbmU7IH0KLmlucXVpcnktc2hlZXQuaW5xdWlyeS1uby1vbGQgeyBncmlkLXRlbXBsYXRlLWNvbHVtbnM6IG1pbm1heCg0MjBweCwgMS4zZnIpIG1pbm1heCgyNjBweCwgMS4yZnIpOyB9Ci5pbnF1aXJ5LWFuc3dlci1ib3ggdGV4dGFyZWEgeyBtaW4taGVpZ2h0OiAxNzBweDsgfQouaW5xdWlyeS1kZXRhaWwtZm9vdCB7CiAgZGlzcGxheTogZmxleCAhaW1wb3J0YW50OwogIGp1c3RpZnktY29udGVudDogY2VudGVyOwogIGFsaWduLWl0ZW1zOiBjZW50ZXI7CiAgZ2FwOiA4cHg7CiAgcG9zaXRpb246IHN0aWNreTsKICBib3R0b206IC0xMHB4OwogIHotaW5kZXg6IDI7CiAgcGFkZGluZzogNnB4IDA7CiAgYmFja2dyb3VuZDogdmFyKC0tc3VyZmFjZSk7Cn0KLmlucXVpcnktZGV0YWlsLWZvb3QgI2lucXVpcnlUZW1wbGF0ZSB7CiAgcG9zaXRpb246IGFic29sdXRlOwogIGxlZnQ6IDA7CiAgd2lkdGg6IG1pbigzNjBweCwgNDUlKTsKfQojaW5xdWlyeUFuc3dlckJ1dHRvbiB7CiAgbWluLXdpZHRoOiAxNjBweDsKICBwYWRkaW5nOiA3cHggMjhweDsKICBmb250LXNpemU6IDE0cHg7Cn0KI2lucXVpcnlBbnN3ZXJEcmFmdCwKI2lucXVpcnlCYXRjaEJvZHksCiNpbnF1aXJ5QW5zd2VyVGl0bGUsCiNpbnF1aXJ5QmF0Y2hUaXRsZSB7CiAgcG9pbnRlci1ldmVudHM6IGF1dG8gIWltcG9ydGFudDsKICB1c2VyLXNlbGVjdDogdGV4dCAhaW1wb3J0YW50OwogIC13ZWJraXQtdXNlci1zZWxlY3Q6IHRleHQgIWltcG9ydGFudDsKfQo=')
 }
 
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'

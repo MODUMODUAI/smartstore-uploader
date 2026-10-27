@@ -1762,15 +1762,53 @@ tr.selected .order-cancel-link { color: #2563eb; }
 #inquiryTable tr.inquiry-current { outline: 2px solid #93c5fd; outline-offset: -2px; }
 #inquiryGrid a { color: #2563eb; text-decoration: none; }
 #inquiryGrid a:hover { text-decoration: underline; }
-a.product-no-link {
-  color: #2563eb;
-  text-decoration: underline;
+a.product-no-link,
+button.product-no-link,
+#inquiryGrid .product-no-link,
+#inquiryGrid .order-product-link,
+#inquiryGrid .order-no-link,
+#inquiryProductNo .product-no-link,
+#inquiryProductName .product-no-link {
+  color: #2563eb !important;
+  text-decoration: underline !important;
   cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  font: inherit;
 }
 html[data-theme="dark"] a.product-no-link,
+html[data-theme="dark"] button.product-no-link,
 html[data-theme="dark"] .order-product-link,
-html[data-theme="dark"] .order-no-link {
-  color: #8ec5ff;
+html[data-theme="dark"] .order-no-link,
+html[data-theme="dark"] #inquiryGrid .product-no-link,
+html[data-theme="dark"] #inquiryGrid .order-product-link,
+html[data-theme="dark"] #inquiryGrid .order-no-link {
+  color: #8ec5ff !important;
+}
+#inquiryAnswerDraft,
+#inquiryBatchBody,
+#inquiryAnswerTitle,
+#inquiryBatchTitle {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  background: var(--field) !important;
+  color: var(--text) !important;
+}
+#inquiryAnswerView,
+#inquiryContent,
+#inquiryAnswerAt {
+  opacity: 0.85;
+  cursor: default;
+}
+.inquiry-new {
+  outline: 1px solid #93c5fd;
+  background: #f8fbff;
+}
+html[data-theme="dark"] .inquiry-new {
+  outline-color: #3b82f6;
+  background: #1a2740;
 }
 .catalog-panel {
   flex: 1;

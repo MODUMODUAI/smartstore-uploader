@@ -1482,6 +1482,27 @@ function sellerOriginProductUrl(number) {
   return `https://sell.smartstore.naver.com/#/products/origin-product/${no}`;
 }
 
+function openProductHref(href, emptyMessage) {
+  const url = String(href || "").trim();
+  if (!url) {
+    toast(emptyMessage || "상품 페이지 주소가 없습니다.", true);
+    return false;
+  }
+  const popup = window.open(url, "_blank", "noopener,noreferrer");
+  if (popup) {
+    try { popup.focus(); } catch (_) {}
+    return true;
+  }
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  return true;
+}
+
 function linkedNumberCell(number, href, title) {
   const cell = document.createElement("td");
   const no = String(number || "").trim();
@@ -1491,15 +1512,17 @@ function linkedNumberCell(number, href, title) {
     cell.textContent = no;
     return cell;
   }
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  anchor.className = "product-no-link";
-  anchor.textContent = no;
-  anchor.title = title || "상품 페이지 열기";
-  anchor.addEventListener("click", (event) => event.stopPropagation());
-  cell.appendChild(anchor);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "order-product-link product-no-link";
+  button.textContent = no;
+  button.title = title || "상품 페이지 열기";
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openProductHref(href, "상품 페이지 주소가 없습니다.");
+  });
+  cell.appendChild(button);
   return cell;
 }
 
@@ -1512,15 +1535,17 @@ function setLinkedText(node, text, href, title) {
     node.textContent = value;
     return;
   }
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  anchor.className = "product-no-link";
-  anchor.textContent = value;
-  anchor.title = title || "상품 페이지 열기";
-  anchor.addEventListener("click", (event) => event.stopPropagation());
-  node.appendChild(anchor);
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "order-product-link product-no-link";
+  button.textContent = value;
+  button.title = title || "상품 페이지 열기";
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openProductHref(href, "상품 페이지 주소가 없습니다.");
+  });
+  node.appendChild(button);
 }
 
 function productFromRow(row, product) {
@@ -5072,6 +5097,19 @@ $("#inquiryDetail")?.addEventListener("click", (event) => {
 $("#inquiryTemplate")?.addEventListener("change", () => applyInquiryTemplate());
 $("#inquiryAnswerButton")?.addEventListener("click", () => {
   sendInquiryAnswer().catch((error) => toast(error.message, true));
+});
+$("#inquiryAnswerView")?.addEventListener("focus", () => {
+  const draft = $("#inquiryAnswerDraft");
+  if (draft && !draft.readOnly && !draft.disabled) draft.focus();
+});
+$("#inquiryAnswerView")?.addEventListener("mousedown", (event) => {
+  event.preventDefault();
+  const draft = $("#inquiryAnswerDraft");
+  if (draft && !draft.readOnly && !draft.disabled) draft.focus();
+});
+["inquiryAnswerDraft", "inquiryAnswerTitle", "inquiryBatchBody", "inquiryBatchTitle"].forEach((id) => {
+  $(`#${id}`)?.addEventListener("keydown", (event) => event.stopPropagation());
+  $(`#${id}`)?.addEventListener("keypress", (event) => event.stopPropagation());
 });
 $("#inquiryCheckAll")?.addEventListener("click", (event) => {
   const checked = event.target.checked;
@@ -12022,15 +12060,50 @@ function fillInquiryDetail(item) {
   setLinkedText($("#inquiryProductNo"), item.product_no || "", productHref, "스마트스토어 상품 페이지");
   setLinkedText($("#inquiryProductName"), item.product_name || "", productHref, "스마트스토어 상품 페이지");
   if ($("#inquiryTitle")) $("#inquiryTitle").textContent = inquiryTitleText(item);
-  if ($("#inquiryContent")) $("#inquiryContent").value = item.content || "";
-  if ($("#inquiryAnswerView")) $("#inquiryAnswerView").value = item.answer || "";
-  if ($("#inquiryAnswerAt")) $("#inquiryAnswerAt").value = item.answer_at ? formatOrderDate(item.answer_at) : "";
+  if ($("#inquiryContent")) {
+    $("#inquiryContent").value = item.content || "";
+    $("#inquiryContent").readOnly = true;
+  }
+  const answered = String(item.answer || "").trim();
+  const oldWrap = $("#inquiryOldWrap");
+  if (oldWrap) oldWrap.hidden = !answered;
+  if ($("#inquiryAnswerView")) {
+    $("#inquiryAnswerView").value = answered;
+    $("#inquiryAnswerView").readOnly = true;
+  }
+  if ($("#inquiryAnswerAt")) {
+    $("#inquiryAnswerAt").value = item.answer_at ? formatOrderDate(item.answer_at) : "";
+    $("#inquiryAnswerAt").readOnly = true;
+  }
+  const draft = $("#inquiryAnswerDraft");
+  const title = $("#inquiryAnswerTitle");
+  if (draft) {
+    draft.readOnly = false;
+    draft.disabled = false;
+    draft.removeAttribute("readonly");
+    draft.removeAttribute("disabled");
+  }
+  if (title) {
+    title.readOnly = false;
+    title.disabled = false;
+  }
   if (!same) {
-    if ($("#inquiryAnswerTitle")) $("#inquiryAnswerTitle").value = "";
-    if ($("#inquiryAnswerDraft")) $("#inquiryAnswerDraft").value = "";
+    if (title) title.value = "";
+    if (draft) draft.value = "";
   }
   updateInquiryBatchCount();
   loadInquiryTemplates(item.market_id).catch(() => {});
+  const batch = $("#inquiryPaneBatch") && !$("#inquiryPaneBatch").hidden;
+  const focusTarget = batch ? $("#inquiryBatchBody") : draft;
+  if (focusTarget) {
+    requestAnimationFrame(() => {
+      try {
+        focusTarget.focus({ preventScroll: true });
+      } catch (_) {
+        focusTarget.focus();
+      }
+    });
+  }
 }
 
 function updateInquiryBatchCount() {
@@ -13173,14 +13246,17 @@ function renderOrderDetail() {
     if (label === "상품번호" && text) {
       const href = orderProductUrl(item);
       if (href) {
-        const anchor = document.createElement("a");
-        anchor.href = href;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.className = "product-no-link";
-        anchor.textContent = text;
-        anchor.title = "스마트스토어 상품 페이지";
-        cell.appendChild(anchor);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "order-product-link product-no-link";
+        button.textContent = text;
+        button.title = "스마트스토어 상품 페이지";
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openProductHref(href, "상품 페이지 주소가 없습니다.");
+        });
+        cell.appendChild(button);
       } else {
         cell.textContent = text;
       }

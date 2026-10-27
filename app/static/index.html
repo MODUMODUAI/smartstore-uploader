@@ -8,7 +8,7 @@
   </script>
   <title>모두모두AI</title>
   <link rel="icon" href="/static/favicon.svg?v=3" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/styles.css?v=bundle295" />
+  <link rel="stylesheet" href="/static/styles.css?v=bundle296" />
 </head>
 <body>
   <header class="titlebar">
@@ -867,25 +867,25 @@
                 </tr>
               </tbody>
             </table>
-            <div class="inquiry-old">
-              <label>답변내용<textarea id="inquiryAnswerView" readonly></textarea></label>
-              <label>답변일<input id="inquiryAnswerAt" readonly /></label>
+            <div class="inquiry-old" id="inquiryOldWrap" hidden>
+              <label>기존 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
+              <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
             </div>
             <div class="inquiry-new">
-              <label>새 답변 제목<input id="inquiryAnswerTitle" /></label>
-              <label>새 답변 내용<textarea id="inquiryAnswerDraft"></textarea></label>
+              <label>답변 제목<input id="inquiryAnswerTitle" autocomplete="off" /></label>
+              <label>답변내용<textarea id="inquiryAnswerDraft" rows="8" placeholder="여기에 답변을 입력하세요"></textarea></label>
             </div>
           </div>
           <div id="inquiryPaneBatch" class="inquiry-batch" hidden>
             <p>선택한 <strong id="inquiryBatchCount">0</strong>건에 같은 답변을 보냅니다.</p>
-            <label>새 답변 제목<input id="inquiryBatchTitle" /></label>
-            <label>새 답변 내용<textarea id="inquiryBatchBody"></textarea></label>
+            <label>답변 제목<input id="inquiryBatchTitle" autocomplete="off" /></label>
+            <label>답변내용<textarea id="inquiryBatchBody" rows="8" placeholder="여기에 답변을 입력하세요"></textarea></label>
           </div>
           <div class="inquiry-detail-foot">
             <select id="inquiryTemplate" title="답변 템플릿">
               <option value="">사용 방법 및 안내 사항</option>
             </select>
-            <button type="button" id="inquiryAnswerButton" accesskey="s">답변 전송(S)</button>
+            <button type="button" id="inquiryAnswerButton">답변 전송</button>
           </div>
         </section>
       </div>
@@ -2496,6 +2496,6 @@
     </div>
   </dialog>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=bundle295"></script>
+  <script src="/static/app.js?v=bundle296"></script>
 </body>
 </html>

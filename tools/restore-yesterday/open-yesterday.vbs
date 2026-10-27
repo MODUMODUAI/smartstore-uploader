@@ -1,6 +1,7 @@
 Option Explicit
 
-Dim fso, shell, here, root, staticDir, marker, py, launcher, desktop, link, restored
+Dim fso, shell, here, root, staticDir, marker, py, launcher, desktop, link
+Dim dataDir, bestData, bestCount, liveCount, copied
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -11,22 +12,44 @@ If root = "" Then
   WScript.Quit 1
 End If
 
+If Not fso.FolderExists(root & "\data") Then fso.CreateFolder root & "\data"
+LogLine "root " & root
+
 staticDir = root & "\app\static"
 marker = root & "\data\.yesterday-restored"
-If Not fso.FolderExists(root & "\data") Then fso.CreateFolder root & "\data"
-restored = RestoreYesterday(staticDir, marker)
+RestoreYesterday staticDir, marker
 
-py = "C:\Users\user\smartstore-shorts\.venv\Scripts\pythonw.exe"
-If Not fso.FileExists(py) Then py = "C:\Users\user\smartstore-shorts\.venv\Scripts\python.exe"
+dataDir = root & "\data"
+liveCount = ProductCount(dataDir)
+bestData = dataDir
+bestCount = liveCount
+ConsiderKnownData root
+If bestData <> dataDir And bestCount > liveCount Then
+  LogLine "copy data " & bestData & " count " & CStr(bestCount)
+  shell.Run "robocopy """ & bestData & """ """ & dataDir & """ /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP", 0, True
+  copied = True
+  liveCount = ProductCount(dataDir)
+Else
+  copied = False
+End If
+LogLine "products " & CStr(liveCount)
+
+py = ChoosePython(root)
 launcher = root & "\launcher.py"
-If Not fso.FileExists(py) Or Not fso.FileExists(launcher) Then
+If py = "" Or Not fso.FileExists(launcher) Then
   MsgBox "어제 프로그램을 열 파이썬을 찾지 못했습니다.", 48, "모두모두AI"
   WScript.Quit 1
 End If
+LogLine "python " & py
+
+On Error Resume Next
+shell.Run "taskkill /IM MODUMODU.exe /F", 0, True
+On Error GoTo 0
+WScript.Sleep 1000
 
 shell.Environment("PROCESS")("UPLOADER_SKIP_UPDATE") = "1"
 shell.CurrentDirectory = root
-shell.Run """" & py & """ """ & launcher & """", 0, False
+shell.Run """" & py & """ """ & launcher & """", 1, False
 
 On Error Resume Next
 desktop = shell.SpecialFolders("Desktop")
@@ -39,10 +62,20 @@ link.Description = "모두모두AI"
 link.Save
 On Error GoTo 0
 
-MsgBox "어제 오후 9시 프로그램을 엽니다." & vbCrLf & _
-  "화면 번호는 v2026.10.22.8 입니다." & vbCrLf & _
-  "문의 버튼이 답변 보내기 이면 그 프로그램입니다." & vbCrLf & vbCrLf & _
-  "브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요.", 64, "모두모두AI"
+MsgBox "어제 프로그램과 데이터를 엽니다." & vbCrLf & _
+  "버전 2026.10.22.8" & vbCrLf & _
+  "상품 " & CStr(liveCount) & "개" & vbCrLf & vbCrLf & _
+  "브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요." & vbCrLf & _
+  "주소는 http://127.0.0.1:8787 입니다.", 64, "모두모두AI"
+
+Sub LogLine(text)
+  Dim ts
+  On Error Resume Next
+  Set ts = fso.OpenTextFile(root & "\data\restore-yesterday.log", 8, True)
+  ts.WriteLine text
+  ts.Close
+  On Error GoTo 0
+End Sub
 
 Function FindRoot(startDir)
   Dim dir, i, parent
@@ -63,11 +96,10 @@ Function FindRoot(startDir)
   End If
 End Function
 
-Function RestoreYesterday(staticDir, markerPath)
-  Dim names, i, bak, count
-  RestoreYesterday = 0
-  If fso.FileExists(markerPath) Then Exit Function
-  If Not fso.FolderExists(staticDir) Then Exit Function
+Sub RestoreYesterday(staticDir, markerPath)
+  Dim names, i, bak, count, ts
+  If fso.FileExists(markerPath) Then Exit Sub
+  If Not fso.FolderExists(staticDir) Then Exit Sub
   names = Array("app.js", "index.html", "styles.css")
   count = 0
   For i = 0 To UBound(names)
@@ -78,19 +110,18 @@ Function RestoreYesterday(staticDir, markerPath)
     End If
   Next
   If count > 0 Then
-    Dim ts
     Set ts = fso.CreateTextFile(markerPath, True)
     ts.WriteLine "2026-10-26"
     ts.Close
   End If
-  RestoreYesterday = count
-End Function
+End Sub
 
 Function OldestBackup(folder, name)
   Dim folderObj, file, prefix, best
   OldestBackup = ""
   best = ""
   prefix = name & ".bak-20261027"
+  If Not fso.FolderExists(folder) Then Exit Function
   Set folderObj = fso.GetFolder(folder)
   For Each file In folderObj.Files
     If Left(file.Name, Len(prefix)) = prefix Then
@@ -99,3 +130,101 @@ Function OldestBackup(folder, name)
   Next
   If best <> "" Then OldestBackup = folder & "\" & best
 End Function
+
+Function ProductCount(folderPath)
+  Dim products, folderObj, file, n
+  ProductCount = 0
+  products = folderPath & "\products"
+  If Not fso.FolderExists(products) Then Exit Function
+  On Error Resume Next
+  Set folderObj = fso.GetFolder(products)
+  n = 0
+  For Each file In folderObj.Files
+    n = n + 1
+  Next
+  On Error GoTo 0
+  ProductCount = n
+End Function
+
+Sub ConsiderData(folderPath)
+  Dim n
+  If folderPath = "" Then Exit Sub
+  If Not fso.FolderExists(folderPath) Then Exit Sub
+  n = ProductCount(folderPath)
+  If n > bestCount Then
+    bestCount = n
+    bestData = folderPath
+  End If
+End Sub
+
+Sub ConsiderKnownData(appRoot)
+  Dim paths, i, downloads, folderObj, subFolder, nested
+  paths = Array( _
+    appRoot & "\data", _
+    appRoot & "\배포\MODUMODU-마스터\data", _
+    appRoot & "\배포\MODUMODU-배포용\data", _
+    appRoot & "\배포\MODUMODU-테스트용\data", _
+    appRoot & "\dist\MODUMODU\data", _
+    appRoot & "\dist\모두모두AI 테스트용\data", _
+    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.9\모두모두AI-마스터\data", _
+    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.8\모두모두AI-마스터\data", _
+    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.7\모두모두AI-마스터\data" _
+  )
+  For i = 0 To UBound(paths)
+    ConsiderData paths(i)
+  Next
+  downloads = "C:\Users\user\Downloads"
+  If Not fso.FolderExists(downloads) Then Exit Sub
+  On Error Resume Next
+  Set folderObj = fso.GetFolder(downloads)
+  For Each subFolder In folderObj.SubFolders
+    If Left(subFolder.Name, 8) = "MODUMODU" Then
+      ConsiderData subFolder.Path & "\data"
+      ConsiderData subFolder.Path & "\모두모두AI-마스터\data"
+      nested = subFolder.Path & "\모두모두AI-마스터\data"
+      ConsiderData nested
+    End If
+  Next
+  On Error GoTo 0
+End Sub
+
+Function ChoosePython(appRoot)
+  Dim localPy, knownPy, sysPy
+  localPy = appRoot & "\.venv\Scripts\python.exe"
+  knownPy = "C:\Users\user\smartstore-shorts\.venv\Scripts\python.exe"
+  If fso.FileExists(localPy) Then
+    If Not CanImport(localPy) Then InstallRequirements localPy, appRoot
+    If CanImport(localPy) Then
+      ChoosePython = localPy
+      Exit Function
+    End If
+  End If
+  If fso.FileExists(knownPy) And CanImport(knownPy) Then
+    ChoosePython = knownPy
+    Exit Function
+  End If
+  sysPy = "python"
+  InstallRequirements sysPy, appRoot
+  ChoosePython = sysPy
+End Function
+
+Function CanImport(py)
+  Dim rc
+  On Error Resume Next
+  rc = shell.Run("""" & py & """ -c ""import pybase64""", 0, True)
+  CanImport = (Err.Number = 0 And rc = 0)
+  Err.Clear
+  On Error GoTo 0
+End Function
+
+Sub InstallRequirements(py, appRoot)
+  Dim req
+  req = appRoot & "\requirements.txt"
+  On Error Resume Next
+  If fso.FileExists(req) Then
+    shell.Run """" & py & """ -m pip install -r """ & req & """", 1, True
+  Else
+    shell.Run """" & py & """ -m pip install pybase64", 1, True
+  End If
+  On Error GoTo 0
+End Sub

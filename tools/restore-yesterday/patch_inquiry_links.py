@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.2"
+SCREEN_VERSION = "2026.10.28.3"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -529,6 +529,90 @@ SIMPLE_CSS2 = """
   min-height: 220px;
 }
 """
+SIMPLE3_JS = r"""
+/* inquiry-simple3 */
+(function () {
+  const version = "2026.10.28.3";
+  function showStoreLabel() {
+    document.querySelectorAll(".inquiry-form th").forEach((th) => {
+      const text = th.textContent.replace(/\s+/g, "");
+      if (text === "쇼핑몰ID") th.textContent = "스토어명";
+    });
+  }
+  function storeName(item) {
+    if (!item) return "";
+    let name = "";
+    if (typeof inquiryStoreName === "function") name = inquiryStoreName(item) || "";
+    if (!name) {
+      const market = typeof inquiryMarketOf === "function" ? inquiryMarketOf(item) : null;
+      name = item.store_name || (market && market.name) || item.market_name || "";
+    }
+    return String(name || "").trim();
+  }
+  function fillStore(item) {
+    showStoreLabel();
+    const cell = document.getElementById("inquiryMallId");
+    const name = storeName(item);
+    if (cell && name) cell.textContent = name;
+  }
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function hook() {
+    showStoreLabel();
+    showVersion();
+    if (typeof fillInquiryDetail === "function" && !fillInquiryDetail.inquiryStoreName) {
+      const inner = fillInquiryDetail;
+      function wrapped(item) {
+        const result = inner.apply(this, arguments);
+        fillStore(item);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      fillInquiryDetail = wrapped;
+    }
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion3) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      applyEdition = wrapped;
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 50);
+})();
+"""
+SIMPLE3_CSS = """
+/* inquiry-simple3 */
+.inquiry-page.inquiry-simple { font-size: 110%; }
+.inquiry-simple textarea,
+.inquiry-simple input,
+.inquiry-simple select,
+.inquiry-simple button,
+.inquiry-simple .inquiry-form th,
+.inquiry-simple .inquiry-form td,
+.inquiry-simple .grid th,
+.inquiry-simple .grid td { font-size: inherit; }
+.inquiry-simple .inquiry-head h3 { font-size: 16.5px; }
+.inquiry-simple .inquiry-form th,
+.inquiry-simple .inquiry-new label { font-size: 13.2px; }
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -592,23 +676,35 @@ def bump_asset(text: str, name: str, version: str) -> str:
     return updated
 
 
+def patch_store_label(text: str) -> str:
+    pattern = re.compile(r"(<th>)\s*쇼핑몰\s*ID\s*(</th>\s*<td id=\"inquiryMallId\")")
+    return pattern.sub(r"\1스토어명\2", text, count=1)
+
+
 def patch_html(text: str) -> str:
-    text = bump_asset(text, "styles.css", "inquiry-simple2")
-    return bump_asset(text, "app.js", "inquiry-simple2")
+    text = patch_store_label(text)
+    text = bump_asset(text, "styles.css", "inquiry-simple3")
+    return bump_asset(text, "app.js", "inquiry-simple3")
 
 
 def patch_answer(text: str) -> str:
-    if ANSWER_MARKER in text:
-        return text
-    for pattern in (SIMPLE1_RE, PLACE2_RE, OLD_ANSWER_RE):
-        updated, count = pattern.subn(ANSWER_JS.strip() + "\n", text, count=1)
-        if count == 1:
-            return updated
-    return text.rstrip() + "\n" + ANSWER_JS
+    if "/* inquiry-simple2 */" not in text:
+        replaced = False
+        for pattern in (SIMPLE1_RE, PLACE2_RE, OLD_ANSWER_RE):
+            updated, count = pattern.subn(ANSWER_JS.strip() + "\n", text, count=1)
+            if count == 1:
+                text = updated
+                replaced = True
+                break
+        if not replaced:
+            text = text.rstrip() + "\n" + ANSWER_JS
+    if "/* inquiry-simple3 */" not in text:
+        text = text.rstrip() + "\n" + SIMPLE3_JS
+    return text
 
 
 def patch_css(text: str) -> str:
-    if "/* inquiry-simple2 */" in text:
+    if "/* inquiry-simple3 */" in text:
         return text
     extra = ""
     if "inquiry-send-under-date" not in text:
@@ -617,7 +713,9 @@ def patch_css(text: str) -> str:
         extra += ANSWER_CSS2
     if "/* inquiry-simple1 */" not in text:
         extra += SIMPLE_CSS
-    return text.rstrip() + "\n" + extra + SIMPLE_CSS2
+    if "/* inquiry-simple2 */" not in text:
+        extra += SIMPLE_CSS2
+    return text.rstrip() + "\n" + extra + SIMPLE3_CSS
 
 
 def write_screen_version(root: Path) -> bool:

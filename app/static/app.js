@@ -1375,7 +1375,69 @@ function orderNumberCell(item) {
   button.type = "button";
   button.className = "order-no-link";
   button.textContent = number;
-  button.addEventListener("click", () => openOrderInfo(item));
+  button.title = "주문 내용 보기";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openOrderInfo(item);
+  });
+  cell.appendChild(button);
+  return cell;
+}
+
+function findOrderByNumber(number, marketId) {
+  const no = String(number || "").trim();
+  if (!no) return null;
+  const matches = (orders || []).filter((item) => {
+    const ids = [item.order_id, item.product_order_id].map((value) => String(value || "").trim());
+    return ids.includes(no);
+  });
+  if (!matches.length) return null;
+  if (marketId) {
+    const local = matches.find((item) => item.market_id === marketId);
+    if (local) return local;
+  }
+  return matches[0];
+}
+
+async function openOrderByNumber(number, marketId) {
+  const no = String(number || "").trim();
+  if (!no) {
+    toast("주문번호가 없습니다.", true);
+    return;
+  }
+  let item = findOrderByNumber(no, marketId);
+  if (!item) {
+    try {
+      setBusy(true, "주문 내용을 찾는 중입니다.");
+      await loadOrders({ quiet: true });
+      item = findOrderByNumber(no, marketId);
+    } catch (error) {
+      toast(error.message || "주문을 불러오지 못했습니다.", true);
+      return;
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!item) {
+    toast("수집된 주문에서 이 번호를 찾지 못했습니다. 주문관리에서 먼저 주문을 수집해 주세요.", true);
+    return;
+  }
+  openOrderInfo(item);
+}
+
+function inquiryOrderCell(item) {
+  const number = item.order_id || item.product_order_id || "";
+  if (!String(number).trim()) return textCell("");
+  const cell = document.createElement("td");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "order-no-link";
+  button.textContent = number;
+  button.title = "주문 내용 보기";
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    openOrderByNumber(number, item.market_id).catch((error) => toast(error.message, true));
+  });
   cell.appendChild(button);
   return cell;
 }
@@ -11755,7 +11817,7 @@ function renderInquiryRows(body, rows, cols) {
       textCell(inquiryStoreName(item)),
       textCell(inquiryAlias(item)),
       textCell(inquiryMemo(item)),
-      textCell(item.order_id || ""),
+      inquiryOrderCell(item),
       linkedNumberCell(item.product_no || "", smartstoreProductUrl(item.product_no, market), "스마트스토어 상품 페이지"),
       textCell(item.product_name || ""),
       textCell(formatOrderDate(item.created_at)),

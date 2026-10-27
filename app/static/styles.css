@@ -1712,6 +1712,19 @@ tr.selected .order-cancel-link { color: #2563eb; }
   gap: 8px;
   align-items: stretch;
 }
+.inquiry-sheet-stack {
+  grid-template-columns: 1fr;
+}
+.inquiry-answer-box {
+  width: 100%;
+  max-width: none;
+}
+.inquiry-answer-head {
+  font-weight: 800;
+  color: #0b5cab;
+  margin-bottom: 4px;
+}
+html[data-theme="dark"] .inquiry-answer-head { color: #8ec5ff; }
 .inquiry-form { width: 100%; border-collapse: collapse; height: 100%; }
 .inquiry-form th,
 .inquiry-form td { border: 1px solid #f0e2a8; padding: 4px 6px; vertical-align: middle; }

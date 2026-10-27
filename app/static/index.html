@@ -8,7 +8,7 @@
   </script>
   <title>모두모두AI</title>
   <link rel="icon" href="/static/favicon.svg?v=3" type="image/svg+xml" />
-  <link rel="stylesheet" href="/static/styles.css?v=bundle296" />
+  <link rel="stylesheet" href="/static/styles.css?v=bundle297" />
 </head>
 <body>
   <header class="titlebar">
@@ -23,7 +23,7 @@
       <button type="button" id="appTabHelp" class="app-tab">도움말</button>
     </nav>
     <span id="appEdition" class="app-edition"></span>
-    <span id="appVersion" class="app-version">v2026.10.21.21</span>
+    <span id="appVersion" class="app-version">v2026.10.27.5</span>
     <button type="button" id="appQuit" class="app-quit" title="프로그램 종료">종료</button>
   </header>
 
@@ -832,7 +832,7 @@
             <button type="button" data-inquiry-pane="basic" class="active">기본 입력</button>
             <button type="button" data-inquiry-pane="batch">일괄 입력</button>
           </div>
-          <div id="inquiryPaneBasic" class="inquiry-sheet">
+          <div id="inquiryPaneBasic" class="inquiry-sheet inquiry-sheet-stack">
             <table class="inquiry-form">
               <tbody>
                 <tr>
@@ -871,9 +871,10 @@
               <label>기존 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
               <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
             </div>
-            <div class="inquiry-new">
+            <div class="inquiry-new inquiry-answer-box">
+              <div class="inquiry-answer-head">답변 작성</div>
               <label>답변 제목<input id="inquiryAnswerTitle" autocomplete="off" /></label>
-              <label>답변내용<textarea id="inquiryAnswerDraft" rows="8" placeholder="여기에 답변을 입력하세요"></textarea></label>
+              <label>답변내용<textarea id="inquiryAnswerDraft" rows="10" placeholder="여기에 답변을 입력하세요. 이 칸에 타이핑하면 됩니다."></textarea></label>
             </div>
           </div>
           <div id="inquiryPaneBatch" class="inquiry-batch" hidden>
@@ -2496,6 +2497,6 @@
     </div>
   </dialog>
   <div id="toast" role="status"></div>
-  <script src="/static/app.js?v=bundle296"></script>
+  <script src="/static/app.js?v=bundle297"></script>
 </body>
 </html>

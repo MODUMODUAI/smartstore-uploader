@@ -41,6 +41,10 @@ If py = "" Or Not fso.FileExists(launcher) Then
   WScript.Quit 1
 End If
 LogLine "python " & py
+If fso.FileExists(here & "\patch-inquiry-links.py") Then
+  shell.Run """" & py & """ """ & here & "\patch-inquiry-links.py"" """ & root & """", 0, True
+  LogLine "inquiry links patched"
+End If
 
 On Error Resume Next
 shell.Run "taskkill /IM MODUMODU.exe /F", 0, True
@@ -62,7 +66,7 @@ link.Description = "모두모두AI"
 link.Save
 On Error GoTo 0
 
-MsgBox "어제 프로그램과 데이터를 엽니다." & vbCrLf & _
+MsgBox "고객문의의 주문번호와 상품번호를 눌러 열 수 있습니다." & vbCrLf & _
   "버전 2026.10.22.8" & vbCrLf & _
   "상품 " & CStr(liveCount) & "개" & vbCrLf & vbCrLf & _
   "브라우저가 열리면 Ctrl+Shift+R 을 한 번 누르세요." & vbCrLf & _

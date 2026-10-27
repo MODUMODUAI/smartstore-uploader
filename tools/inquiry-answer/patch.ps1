@@ -1,59 +1,128 @@
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $root = 'C:\smartstore uploader'
 if ($args.Count -gt 0) { $root = $args[0] }
 $static = Join-Path $root 'app\static'
 Write-Host '========================================'
-Write-Host ' MODUMODU patch: inquiry answer box + send button'
+Write-Host ' MODUMODU patch: inquiry answer + send button'
 Write-Host '========================================'
 if (-not (Test-Path -LiteralPath $static)) { Write-Host ('[FAIL] not found: ' + $static); exit 1 }
 
 $utf8 = New-Object Text.UTF8Encoding($false)
-function Dec([string]$s) { return $utf8.GetString([Convert]::FromBase64String($s)) }
-$edits = @(
-  @{ File = 'index.html'; Marker = 'inquiryOldWrap'; Old = 'ICAgICAgICAgICAgPGRpdiBjbGFzcz0iaW5xdWlyeS1vbGQiPgogICAgICAgICAgICAgIDxsYWJlbD7ri7Xrs4DrgrTsmqk8dGV4dGFyZWEgaWQ9ImlucXVpcnlBbnN3ZXJWaWV3IiByZWFkb25seT48L3RleHRhcmVhPjwvbGFiZWw+CiAgICAgICAgICAgICAgPGxhYmVsPuuLteuzgOydvDxpbnB1dCBpZD0iaW5xdWlyeUFuc3dlckF0IiByZWFkb25seSAvPjwvbGFiZWw+CiAgICAgICAgICAgIDwvZGl2PgogICAgICAgICAgICA8ZGl2IGNsYXNzPSJpbnF1aXJ5LW5ldyI+CiAgICAgICAgICAgICAgPGxhYmVsPuyDiCDri7Xrs4Ag7KCc66qpPGlucHV0IGlkPSJpbnF1aXJ5QW5zd2VyVGl0bGUiIC8+PC9sYWJlbD4KICAgICAgICAgICAgICA8bGFiZWw+7IOIIOuLteuzgCDrgrTsmqk8dGV4dGFyZWEgaWQ9ImlucXVpcnlBbnN3ZXJEcmFmdCI+PC90ZXh0YXJlYT48L2xhYmVsPgogICAgICAgICAgICA8L2Rpdj4='; New = 'ICAgICAgICAgICAgPGRpdiBjbGFzcz0iaW5xdWlyeS1uZXcgaW5xdWlyeS1hbnN3ZXItYm94Ij4KICAgICAgICAgICAgICA8bGFiZWw+64u167OAIOygnOuqqTxpbnB1dCBpZD0iaW5xdWlyeUFuc3dlclRpdGxlIiBhdXRvY29tcGxldGU9Im9mZiIgLz48L2xhYmVsPgogICAgICAgICAgICAgIDxsYWJlbD7ri7Xrs4DrgrTsmqkgKOyXrOq4sOyXkCDsnoXroKUpPHRleHRhcmVhIGlkPSJpbnF1aXJ5QW5zd2VyRHJhZnQiIHBsYWNlaG9sZGVyPSLsl6zquLDsl5Ag64u167OA7J2EIOyeheugpe2VmOyEuOyalCI+PC90ZXh0YXJlYT48L2xhYmVsPgogICAgICAgICAgICA8L2Rpdj4KICAgICAgICAgICAgPGRpdiBjbGFzcz0iaW5xdWlyeS1vbGQiIGlkPSJpbnF1aXJ5T2xkV3JhcCIgaGlkZGVuPgogICAgICAgICAgICAgIDxsYWJlbD7rs7Trgrgg64u167OAPHRleHRhcmVhIGlkPSJpbnF1aXJ5QW5zd2VyVmlldyIgcmVhZG9ubHkgdGFiaW5kZXg9Ii0xIj48L3RleHRhcmVhPjwvbGFiZWw+CiAgICAgICAgICAgICAgPGxhYmVsPuuLteuzgOydvDxpbnB1dCBpZD0iaW5xdWlyeUFuc3dlckF0IiByZWFkb25seSB0YWJpbmRleD0iLTEiIC8+PC9sYWJlbD4KICAgICAgICAgICAgPC9kaXY+' },
-  @{ File = 'index.html'; Marker = 'inquiryOldWrap'; Old = 'ICAgICAgICAgICAgPGJ1dHRvbiB0eXBlPSJidXR0b24iIGlkPSJpbnF1aXJ5QW5zd2VyQnV0dG9uIiBhY2Nlc3NrZXk9InMiPuuLteuzgCDsoITshqEoUyk8L2J1dHRvbj4='; New = 'ICAgICAgICAgICAgPGJ1dHRvbiB0eXBlPSJidXR0b24iIGlkPSJpbnF1aXJ5QW5zd2VyQnV0dG9uIiBhY2Nlc3NrZXk9InMiPuuLteuzgCDrs7TrgrTquLAoUyk8L2J1dHRvbj4=' },
-  @{ File = 'app.js'; Marker = 'inquiry-no-old'; Old = 'ICBpZiAoJCgiI2lucXVpcnlBbnN3ZXJBdCIpKSAkKCIjaW5xdWlyeUFuc3dlckF0IikudmFsdWUgPSBpdGVtLmFuc3dlcl9hdCA/IGZvcm1hdE9yZGVyRGF0ZShpdGVtLmFuc3dlcl9hdCkgOiAiIjsKICBpZiAoIXNhbWUpIHsKICAgIGlmICgkKCIjaW5xdWlyeUFuc3dlclRpdGxlIikpICQoIiNpbnF1aXJ5QW5zd2VyVGl0bGUiKS52YWx1ZSA9ICIiOwogICAgaWYgKCQoIiNpbnF1aXJ5QW5zd2VyRHJhZnQiKSkgJCgiI2lucXVpcnlBbnN3ZXJEcmFmdCIpLnZhbHVlID0gIiI7CiAgfQ=='; New = 'ICBpZiAoJCgiI2lucXVpcnlBbnN3ZXJBdCIpKSAkKCIjaW5xdWlyeUFuc3dlckF0IikudmFsdWUgPSBpdGVtLmFuc3dlcl9hdCA/IGZvcm1hdE9yZGVyRGF0ZShpdGVtLmFuc3dlcl9hdCkgOiAiIjsKICBjb25zdCBhbnN3ZXJlZCA9IEJvb2xlYW4oU3RyaW5nKGl0ZW0uYW5zd2VyIHx8ICIiKS50cmltKCkpOwogIGlmICgkKCIjaW5xdWlyeU9sZFdyYXAiKSkgJCgiI2lucXVpcnlPbGRXcmFwIikuaGlkZGVuID0gIWFuc3dlcmVkOwogICQoIiNpbnF1aXJ5UGFuZUJhc2ljIik/LmNsYXNzTGlzdC50b2dnbGUoImlucXVpcnktbm8tb2xkIiwgIWFuc3dlcmVkKTsKICBpZiAoIXNhbWUpIHsKICAgIGlmICgkKCIjaW5xdWlyeUFuc3dlclRpdGxlIikpICQoIiNpbnF1aXJ5QW5zd2VyVGl0bGUiKS52YWx1ZSA9ICIiOwogICAgaWYgKCQoIiNpbnF1aXJ5QW5zd2VyRHJhZnQiKSkgJCgiI2lucXVpcnlBbnN3ZXJEcmFmdCIpLnZhbHVlID0gIiI7CiAgICBjb25zdCBiYXRjaCA9ICQoIiNpbnF1aXJ5UGFuZUJhdGNoIikgJiYgISQoIiNpbnF1aXJ5UGFuZUJhdGNoIikuaGlkZGVuOwogICAgY29uc3QgdGFyZ2V0ID0gYmF0Y2ggPyAkKCIjaW5xdWlyeUJhdGNoQm9keSIpIDogJCgiI2lucXVpcnlBbnN3ZXJEcmFmdCIpOwogICAgcmVxdWVzdEFuaW1hdGlvbkZyYW1lKCgpID0+IHRhcmdldD8uZm9jdXMoeyBwcmV2ZW50U2Nyb2xsOiB0cnVlIH0pKTsKICB9' },
-  @{ File = 'styles.css'; Marker = 'inquiry-no-old'; Old = 'I2lucXVpcnlUZW1wbGF0ZSB7IHdpZHRoOiBtaW4oMzYwcHgsIDUwJSk7IH0='; New = 'I2lucXVpcnlUZW1wbGF0ZSB7IHdpZHRoOiBtaW4oMzYwcHgsIDEwMCUpOyBqdXN0aWZ5LXNlbGY6IHN0YXJ0OyB9Ci5pbnF1aXJ5LWRldGFpbC1mb290IHsgZGlzcGxheTogZ3JpZDsgZ3JpZC10ZW1wbGF0ZS1jb2x1bW5zOiAxZnIgYXV0byAxZnI7IHBvc2l0aW9uOiBzdGlja3k7IGJvdHRvbTogLTEwcHg7IHotaW5kZXg6IDI7IHBhZGRpbmc6IDZweCAwOyBiYWNrZ3JvdW5kOiB2YXIoLS1zdXJmYWNlKTsgfQojaW5xdWlyeUFuc3dlckJ1dHRvbiB7IGp1c3RpZnktc2VsZjogY2VudGVyOyBtaW4td2lkdGg6IDE2MHB4OyBwYWRkaW5nOiA3cHggMjhweDsgZm9udC1zaXplOiAxNHB4OyB9Ci5pbnF1aXJ5LW9sZFtoaWRkZW5dIHsgZGlzcGxheTogbm9uZTsgfQouaW5xdWlyeS1zaGVldC5pbnF1aXJ5LW5vLW9sZCB7IGdyaWQtdGVtcGxhdGUtY29sdW1uczogbWlubWF4KDQyMHB4LCAxLjNmcikgbWlubWF4KDI2MHB4LCAxLjJmcik7IH0=' }
-)
-
-$docs = @{}
-foreach ($e in $edits) {
-  $f = $e.File
-  if (-not $docs.ContainsKey($f)) {
-    $path = Join-Path $static $f
-    if (-not (Test-Path -LiteralPath $path)) { Write-Host ('[FAIL] not found: ' + $path); exit 1 }
-    $bytes = [IO.File]::ReadAllBytes($path)
-    $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
-    $off = 0; if ($bom) { $off = 3 }
-    $raw = $utf8.GetString($bytes, $off, $bytes.Length - $off)
-    $docs[$f] = @{ Path = $path; Bom = $bom; Crlf = $raw.Contains("`r`n"); Text = $raw.Replace("`r`n", "`n"); Skip = $false }
-    if ($docs[$f].Text.Contains($e.Marker)) { $docs[$f].Skip = $true }
-  }
+function Read-Doc([string]$path) {
+  $bytes = [IO.File]::ReadAllBytes($path)
+  $bom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+  $off = 0; if ($bom) { $off = 3 }
+  $raw = $utf8.GetString($bytes, $off, $bytes.Length - $off)
+  return @{ Path = $path; Bom = $bom; Crlf = $raw.Contains("`r`n"); Text = $raw.Replace("`r`n", "`n") }
 }
-
-foreach ($e in $edits) {
-  $d = $docs[$e.File]
-  if ($d.Skip) { continue }
-  $old = Dec $e.Old
-  $count = ([regex]::Matches($d.Text, [regex]::Escape($old))).Count
-  if ($count -ne 1) { Write-Host ('[FAIL] ' + $e.File + ': expected text found ' + $count + ' times. Nothing changed.'); exit 1 }
-}
-
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-foreach ($e in $edits) {
-  $d = $docs[$e.File]
-  if ($d.Skip) { continue }
-  $d.Text = $d.Text.Replace((Dec $e.Old), (Dec $e.New))
-  $d.Changed = $true
-}
-foreach ($f in $docs.Keys) {
-  $d = $docs[$f]
-  if ($d.Skip) { Write-Host ('[-] ' + $f + ' already patched'); continue }
-  Copy-Item -LiteralPath $d.Path -Destination ($d.Path + '.bak-' + $stamp)
+function Write-Doc($d) {
   $out = $d.Text
   if ($d.Crlf) { $out = $out.Replace("`n", "`r`n") }
   [IO.File]::WriteAllText($d.Path, $out, (New-Object Text.UTF8Encoding($d.Bom)))
-  Write-Host ('[OK] ' + $f + ' patched (backup .bak-' + $stamp + ')')
 }
+
+$idx = Read-Doc (Join-Path $static 'index.html')
+$js  = Read-Doc (Join-Path $static 'app.js')
+$css = Read-Doc (Join-Path $static 'styles.css')
+
+if ($idx.Text -match 'inquiry-answer-box' -and $idx.Text -match 'inquiryOldWrap') {
+  Write-Host '[-] already patched'
+  exit 0
+}
+
+# --- index.html: replace old/new answer blocks ---
+$htmlOld = [regex]::Match($idx.Text, '(?s)<div class="inquiry-old">\s*<label>답변내용<textarea id="inquiryAnswerView"[^>]*>.*?</textarea></label>\s*<label>답변일<input id="inquiryAnswerAt"[^>]*/?>\s*</label>\s*</div>\s*<div class="inquiry-new">\s*<label>새 답변 제목<input id="inquiryAnswerTitle"[^>]*/?>\s*</label>\s*<label>새 답변 내용<textarea id="inquiryAnswerDraft"[^>]*>.*?</textarea></label>\s*</div>')
+if (-not $htmlOld.Success) {
+  Write-Host '[FAIL] index.html: inquiry old/new block not found. Nothing changed.'
+  exit 1
+}
+$htmlNew = @"
+            <div class="inquiry-new inquiry-answer-box">
+              <label>답변 제목<input id="inquiryAnswerTitle" autocomplete="off" /></label>
+              <label>답변내용 (여기에 입력)<textarea id="inquiryAnswerDraft" placeholder="여기에 답변을 입력하세요"></textarea></label>
+            </div>
+            <div class="inquiry-old" id="inquiryOldWrap" hidden>
+              <label>보낸 답변<textarea id="inquiryAnswerView" readonly tabindex="-1"></textarea></label>
+              <label>답변일<input id="inquiryAnswerAt" readonly tabindex="-1" /></label>
+            </div>
+"@
+$idx.Text = $idx.Text.Substring(0, $htmlOld.Index) + $htmlNew.TrimEnd() + $idx.Text.Substring($htmlOld.Index + $htmlOld.Length)
+
+# button label -> 답변 보내기(S) if present
+$btn = [regex]::Match($idx.Text, '<button type="button" id="inquiryAnswerButton"[^>]*>.*?</button>')
+if (-not $btn.Success) { Write-Host '[FAIL] index.html: send button not found. Nothing changed.'; exit 1 }
+$idx.Text = $idx.Text.Substring(0, $btn.Index) + '<button type="button" id="inquiryAnswerButton" accesskey="s">답변 보내기(S)</button>' + $idx.Text.Substring($btn.Index + $btn.Length)
+
+# --- app.js: show/hide old answer + focus draft ---
+$jsPat = '(?s)if \(\$\("#inquiryAnswerView"\)\) \$\("#inquiryAnswerView"\)\.value = item\.answer \|\| "";\s*if \(\$\("#inquiryAnswerAt"\)\) \$\("#inquiryAnswerAt"\)\.value = item\.answer_at \? formatOrderDate\(item\.answer_at\) : "";\s*if \(!same\) \{\s*if \(\$\("#inquiryAnswerTitle"\)\) \$\("#inquiryAnswerTitle"\)\.value = "";\s*if \(\$\("#inquiryAnswerDraft"\)\) \$\("#inquiryAnswerDraft"\)\.value = "";\s*\}'
+$jsM = [regex]::Match($js.Text, $jsPat)
+if (-not $jsM.Success) {
+  Write-Host '[FAIL] app.js: fillInquiryDetail answer block not found. Nothing changed.'
+  exit 1
+}
+$jsNew = @'
+  if ($("#inquiryAnswerView")) $("#inquiryAnswerView").value = item.answer || "";
+  if ($("#inquiryAnswerAt")) $("#inquiryAnswerAt").value = item.answer_at ? formatOrderDate(item.answer_at) : "";
+  const answered = Boolean(String(item.answer || "").trim());
+  if ($("#inquiryOldWrap")) $("#inquiryOldWrap").hidden = !answered;
+  $("#inquiryPaneBasic")?.classList.toggle("inquiry-no-old", !answered);
+  if (!same) {
+    if ($("#inquiryAnswerTitle")) $("#inquiryAnswerTitle").value = "";
+    if ($("#inquiryAnswerDraft")) $("#inquiryAnswerDraft").value = "";
+    const batch = $("#inquiryPaneBatch") && !$("#inquiryPaneBatch").hidden;
+    const target = batch ? $("#inquiryBatchBody") : $("#inquiryAnswerDraft");
+    requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+  }
+'@
+$js.Text = $js.Text.Substring(0, $jsM.Index) + $jsNew.TrimEnd() + $js.Text.Substring($jsM.Index + $jsM.Length)
+
+# --- styles.css: center sticky send button + layout ---
+if ($css.Text -notmatch 'inquiry-no-old') {
+  $css.Text = $css.Text.TrimEnd() + @"
+
+/* inquiry-answer-fix */
+.inquiry-old[hidden] { display: none; }
+.inquiry-sheet.inquiry-no-old { grid-template-columns: minmax(420px, 1.3fr) minmax(260px, 1.2fr); }
+.inquiry-answer-box textarea { min-height: 170px; }
+.inquiry-detail-foot {
+  display: flex !important;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  position: sticky;
+  bottom: -10px;
+  z-index: 2;
+  padding: 6px 0;
+  background: var(--surface);
+}
+.inquiry-detail-foot #inquiryTemplate {
+  position: absolute;
+  left: 0;
+  width: min(360px, 45%);
+}
+#inquiryAnswerButton {
+  min-width: 160px;
+  padding: 7px 28px;
+  font-size: 14px;
+}
+#inquiryAnswerDraft,
+#inquiryBatchBody,
+#inquiryAnswerTitle,
+#inquiryBatchTitle {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+"@
+}
+
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+Copy-Item -LiteralPath $idx.Path -Destination ($idx.Path + '.bak-' + $stamp)
+Copy-Item -LiteralPath $js.Path  -Destination ($js.Path  + '.bak-' + $stamp)
+Copy-Item -LiteralPath $css.Path -Destination ($css.Path + '.bak-' + $stamp)
+Write-Doc $idx; Write-Host ('[OK] index.html patched (backup .bak-' + $stamp + ')')
+Write-Doc $js;  Write-Host ('[OK] app.js patched (backup .bak-' + $stamp + ')')
+Write-Doc $css; Write-Host ('[OK] styles.css patched (backup .bak-' + $stamp + ')')
 Write-Host ''
 Write-Host '[OK] Done. In the MODUMODU browser window press Ctrl+Shift+R.'

@@ -31,7 +31,9 @@ function Repair-BrokenNames([string]$Folder) {
         $keep = Get-Item -LiteralPath $dest -Force
         if ($keep.FullName -eq $_.FullName) { return }
         $keep.Attributes = 'Archive'
-        if ($keep.Length -ge $_.Length) { Remove-Item -LiteralPath $_.FullName -Force }
+        $newer = $_.LastWriteTimeUtc -gt $keep.LastWriteTimeUtc.AddSeconds(2)
+        $same = [Math]::Abs(($_.LastWriteTimeUtc - $keep.LastWriteTimeUtc).TotalSeconds) -le 2
+        if (-not $newer -and -not ($same -and $_.Length -gt $keep.Length)) { Remove-Item -LiteralPath $_.FullName -Force }
         else { Remove-Item -LiteralPath $dest -Force; Move-Item -LiteralPath $_.FullName -Destination $dest -Force }
       } else {
         Move-Item -LiteralPath $_.FullName -Destination $dest -Force

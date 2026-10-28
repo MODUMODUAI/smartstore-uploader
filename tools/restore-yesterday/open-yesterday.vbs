@@ -61,16 +61,10 @@ End If
 
 RepairMasterShortcut
 
-If patched = 10 Then
-  MsgBox "셀러용 설치 프로그램을 만들었습니다." & vbCrLf & _
-    "구매자에게 배포\모두모두AI-셀러용-설치.zip 을 주세요." & vbCrLf & _
-    "구매자는 모두모두AI-셀러용-설치.exe 로 설치하고, 실행할 때 업데이트할 수 있습니다." & vbCrLf & _
-    "셀러용은 전화번호마다 비밀번호를 발급합니다. 같은 전화번호는 같은 데이터로 들어갑니다." & vbCrLf & _
-    "마켓 로그인 정보와 URL 수집은 없습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.30 입니다." & vbCrLf & _
-    "배포용과 테스트용 바로가기와 자료는 지웁니다." & vbCrLf & _
-    "마스터는 비밀번호 창이 열립니다." & vbCrLf & _
-    "셀러용을 열면 http://127.0.0.1:8788 로그인 창이 나옵니다.", 64, "모두모두AI"
+If patched = 11 Then
+  MsgBox "마스터 프로그램을 엽니다. 화면 버전은 v" & ScreenVersion() & " 입니다." & vbCrLf & vbCrLf & _
+    "셀러용 설치 파일도 같은 버전으로 새로 만들었습니다." & vbCrLf & _
+    "구매자에게 배포\모두모두AI-셀러용-설치.zip 을 주세요.", 64, "모두모두AI"
 End If
 
 Sub RepairMasterShortcut()
@@ -127,7 +121,7 @@ Sub RepairBrokenNames(folder)
       On Error Resume Next
       If Not fso.FileExists(dst) Then
         fso.MoveFile src, dst
-      ElseIf fso.GetFile(src).Size > fso.GetFile(dst).Size Then
+      ElseIf NewerFile(fso.GetFile(src), fso.GetFile(dst)) Then
         fso.DeleteFile dst, True
         fso.MoveFile src, dst
       Else
@@ -137,6 +131,31 @@ Sub RepairBrokenNames(folder)
     End If
   Next
 End Sub
+
+Function NewerFile(a, b)
+  Dim gap
+  gap = DateDiff("s", b.DateLastModified, a.DateLastModified)
+  If gap > 2 Then
+    NewerFile = True
+  ElseIf gap < -2 Then
+    NewerFile = False
+  Else
+    NewerFile = a.Size > b.Size
+  End If
+End Function
+
+Function ScreenVersion()
+  Dim ts, text
+  ScreenVersion = ""
+  On Error Resume Next
+  If fso.FileExists(here & "\version.txt") Then
+    Set ts = fso.OpenTextFile(here & "\version.txt", 1, False)
+    text = Trim(Replace(Replace(ts.ReadAll, vbCr, ""), vbLf, ""))
+    ts.Close
+    ScreenVersion = text
+  End If
+  On Error GoTo 0
+End Function
 
 Function ReadyArg()
   Dim i

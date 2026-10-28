@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.30"
+SCREEN_VERSION = "2026.10.28.31"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3993,6 +3993,9 @@ def _sync_program(src: Path, dest: Path) -> bool:
     return changed
 
 
+SETUP_ZIP_BUILT = False
+
+
 def _write_setup_zip(setup: Path, dest: Path) -> bool:
     signature = hashlib.sha256()
     files = [path for path in sorted(setup.rglob("*")) if path.is_file() and path.name != ".seller-setup.sha"]
@@ -4012,6 +4015,8 @@ def _write_setup_zip(setup: Path, dest: Path) -> bool:
             info.flag_bits |= 0x800
             archive.writestr(info, path.read_bytes())
     stamp.write_text(digest + "\n", encoding="utf-8")
+    global SETUP_ZIP_BUILT
+    SETUP_ZIP_BUILT = True
     return True
 
 
@@ -4213,6 +4218,10 @@ def arrange_seller_copies(root: Path, desktops=None) -> bool:
             if apply_static_patches(seller):
                 changed = True
             if write_screen_version(seller):
+                changed = True
+            if patch_murray_sources(seller):
+                changed = True
+            if write_frozen_fixes(seller):
                 changed = True
     if _remove_old_editions(root, keep):
         changed = True
@@ -5119,7 +5128,7 @@ def patch_answer(text: str) -> str:
     if "/* collect-url2 */" not in text:
         text = text.rstrip() + "\n" + COLLECT_URL2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5198,6 +5207,13 @@ def repaired_filename(name: str) -> str:
     return fixed
 
 
+def _newer_file(path: Path, other: Path) -> bool:
+    a, b = path.stat(), other.stat()
+    if int(a.st_mtime) != int(b.st_mtime):
+        return a.st_mtime > b.st_mtime
+    return a.st_size > b.st_size
+
+
 def repair_broken_names(folder: Path) -> None:
     if not folder.is_dir():
         return
@@ -5212,7 +5228,7 @@ def repair_broken_names(folder: Path) -> None:
             path.chmod(0o666)
             if dest.exists() and dest.resolve() != path.resolve():
                 dest.chmod(0o666)
-                if dest.read_bytes() == path.read_bytes() or dest.stat().st_size >= path.stat().st_size:
+                if dest.read_bytes() == path.read_bytes() or not _newer_file(path, dest):
                     path.unlink()
                 else:
                     dest.unlink()
@@ -5988,17 +6004,197 @@ def patch_murray_sources(root: Path) -> bool:
     return changed
 
 
+def frozen_fix_plan() -> dict:
+    godo_needed = (
+        "def _read_supplier_product",
+        "def _load_page",
+        "def _gallery_ready",
+        "def _match_wholesaler_id",
+        "PageSession",
+    )
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    return {
+        "app.scraper": [
+            (MURRAY_MARKER, ("def extract_product",), MURRAY_SCRAPER_PY),
+            (GODO_MARKER, ("def extract_product",), GODO_SCRAPER_PY),
+            (GODO_NAME_MARKER, ("def extract_product", GODO_MARKER), GODO_NAME_SCRAPER_PY),
+        ],
+        "app.service": [
+            (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
+            (GODO_MARKER, godo_needed, GODO_SERVICE_PY),
+            (GODO_NAME_MARKER, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_SERVICE_PY),
+        ],
+        "app.shop_catalog": [
+            (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),
+        ],
+    }
+
+
+FROZEN_FIXES_TEMPLATE = r'''# The seller program is a frozen PyInstaller build, so its app modules cannot
+# be edited. pwd.py loads this file early and it applies the same source fixes
+# as the master right after each app module runs.
+import sys
+
+FIXES = __FIXES__
+
+
+def _ready(module, required):
+    done = module.__dict__.get("_modumodu_fixes", set())
+    for name in required:
+        if name.startswith("# "):
+            if name not in done:
+                return False
+        elif (name[4:] if name.startswith("def ") else name) not in module.__dict__:
+            return False
+    return True
+
+
+def apply(module):
+    done = module.__dict__.setdefault("_modumodu_fixes", set())
+    for marker, required, snippet in FIXES.get(module.__name__, ()):
+        if marker in done or not _ready(module, required):
+            continue
+        try:
+            code = compile(snippet, "<" + module.__name__ + " " + marker + ">", "exec", flags=0x1000000, dont_inherit=True)
+            exec(code, module.__dict__)
+        except Exception as exc:
+            print("modumodu fix failed", module.__name__, marker, exc, file=sys.stderr)
+            continue
+        done.add(marker)
+
+
+class _Loader:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader, name)
+
+    def create_module(self, spec):
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module):
+        self._loader.exec_module(module)
+        apply(module)
+
+
+class _Finder:
+    def find_spec(self, name, path=None, target=None):
+        if name not in FIXES:
+            return None
+        for finder in list(sys.meta_path):
+            if isinstance(finder, _Finder):
+                continue
+            find = getattr(finder, "find_spec", None)
+            if find is None:
+                continue
+            spec = find(name, path, target)
+            if spec is None:
+                continue
+            if spec.loader is not None and hasattr(spec.loader, "exec_module"):
+                spec.loader = _Loader(spec.loader)
+            return spec
+        return None
+
+    def invalidate_caches(self):
+        pass
+
+
+def install():
+    if getattr(sys, "_modumodu_fixes_installed", False):
+        return
+    sys._modumodu_fixes_installed = True
+    for name in FIXES:
+        module = sys.modules.get(name)
+        spec = getattr(module, "__spec__", None)
+        if module is not None and not getattr(spec, "_initializing", False):
+            apply(module)
+    sys.meta_path.insert(0, _Finder())
+'''
+
+FROZEN_PWD_PY = r'''# Windows has no pwd module. The frozen seller program imports it while
+# starting (shutil does), which is the first chance to load modumodu_fixes.
+import sys
+
+if getattr(sys, "frozen", False) and not getattr(sys, "_modumodu_fixes_installed", False):
+    try:
+        import modumodu_fixes
+
+        modumodu_fixes.install()
+    except Exception:
+        pass
+
+raise ModuleNotFoundError("No module named 'pwd'", name="pwd")
+'''
+
+
+def frozen_fixes_source() -> str:
+    plan = frozen_fix_plan()
+    lines = ["{"]
+    for module, items in plan.items():
+        lines.append("    " + repr(module) + ": [")
+        for marker, required, snippet in items:
+            lines.append("        (" + repr(marker) + ", " + repr(tuple(required)) + ", " + repr(snippet.strip() + "\n") + "),")
+        lines.append("    ],")
+    lines.append("}")
+    return FROZEN_FIXES_TEMPLATE.replace("__FIXES__", "\n".join(lines))
+
+
+def _frozen_program(folder: Path) -> bool:
+    exe = folder / "MODUMODU.exe"
+    return (folder / "_internal").is_dir() and exe.is_file() and exe.stat().st_size > 8000000
+
+
+def write_frozen_fixes(folder: Path) -> bool:
+    if not _frozen_program(folder):
+        return False
+    changed = False
+    internal = folder / "_internal"
+    for name, text in (("modumodu_fixes.py", frozen_fixes_source()), ("pwd.py", FROZEN_PWD_PY)):
+        path = internal / name
+        payload = text.encode("utf-8")
+        if path.is_file() and path.read_bytes() == payload:
+            continue
+        path.write_bytes(payload)
+        changed = True
+    return changed
+
+
+MASTER_SCRIPT_NAME = "어제오후9시.vbs"
+
+
+def refresh_master_script(folder: Path) -> bool:
+    """Windows tar can unpack the Korean script name garbled, and the old
+    repair kept the bigger file, so a same-size new script was thrown away.
+    The ASCII-named copy always arrives intact."""
+    source = folder / "open-yesterday.vbs"
+    target = folder / MASTER_SCRIPT_NAME
+    if not source.is_file() or "셀러용" in folder.name:
+        return False
+    data = source.read_bytes()
+    if target.is_file() and target.read_bytes() == data:
+        return False
+    try:
+        if target.exists():
+            target.chmod(0o666)
+        target.write_bytes(data)
+    except OSError:
+        return False
+    return True
+
+
 def main() -> None:
     seller_only = "--seller-only" in sys.argv[1:]
     args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
     root = Path(args[0] if args else r"C:\smartstore uploader")
     if root.exists():
         repair_known_folders(root)
+    refresh_master_script(Path(__file__).resolve().parent)
     seller_changed = arrange_seller_copies(root) if root.exists() else False
     if seller_only:
         if seller_changed:
             print("seller edition")
-            raise SystemExit(10)
+            raise SystemExit(11 if SETUP_ZIP_BUILT else 0)
         print("already linked")
         return
     static_changed = apply_static_patches(root)
@@ -6010,7 +6206,9 @@ def main() -> None:
         print("already linked")
         return
     print("inquiry links on")
-    raise SystemExit(10)
+    # Exit 10 made older 어제오후9시.vbs copies show the seller setup notice on
+    # every master start; 11 is only for a rebuilt seller setup zip.
+    raise SystemExit(11 if SETUP_ZIP_BUILT else 0)
 
 
 if __name__ == "__main__":

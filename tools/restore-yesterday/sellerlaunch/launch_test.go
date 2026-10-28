@@ -60,6 +60,9 @@ func TestRemoveOldEditionMaterials(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "사용방법-셀러용.txt"), []byte("keep"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "사용방법-마스터.txt"), []byte("master"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(desk, "모두모두AI 배포용.lnk"), []byte("icon"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -75,6 +78,9 @@ func TestRemoveOldEditionMaterials(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "배포용자료")); !os.IsNotExist(err) {
 		t.Fatal("deploy folder kept")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "사용방법-마스터.txt")); !os.IsNotExist(err) {
+		t.Fatal("master help kept")
 	}
 	kept, err := os.ReadFile(filepath.Join(dir, "사용방법-셀러용.txt"))
 	if err != nil || string(kept) != "keep" {

@@ -151,5 +151,13 @@ func RemoveOldEditionMaterials(dir string) error {
 			return err
 		}
 	}
+	return removeSellerMasterHelp(dir)
+}
+
+func removeSellerMasterHelp(dir string) error {
+	path := filepath.Join(dir, "사용방법-마스터.txt")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
 }

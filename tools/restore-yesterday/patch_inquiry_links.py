@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.21"
+SCREEN_VERSION = "2026.10.28.22"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3869,7 +3869,7 @@ def prepare_seller_folder(folder: Path) -> bool:
     if not _same_text(help_path, SELLER_HELP):
         help_path.write_bytes(_crlf_bytes(SELLER_HELP))
         changed = True
-    for name in ("사용방법-배포용.txt", "사용방법-테스트용.txt"):
+    for name in ("사용방법-배포용.txt", "사용방법-테스트용.txt", "사용방법-마스터.txt"):
         old_help = folder / name
         if old_help.is_file():
             old_help.unlink()
@@ -4306,7 +4306,7 @@ def patch_answer(text: str) -> str:
     if "/* seller-peek1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_PEEK_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

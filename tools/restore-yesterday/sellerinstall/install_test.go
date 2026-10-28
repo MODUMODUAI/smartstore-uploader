@@ -93,6 +93,12 @@ func TestRemoveOldEditionMaterials(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "사용방법-테스트용.txt"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "사용방법-마스터.txt"), []byte("master"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "사용방법-셀러용.txt"), []byte("seller"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "edition.txt"), []byte("test\r\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +111,13 @@ func TestRemoveOldEditionMaterials(t *testing.T) {
 	RemoveOldEditionShortcuts([]string{desk})
 	if _, err := os.Stat(filepath.Join(dir, "사용방법-테스트용.txt")); !os.IsNotExist(err) {
 		t.Fatal("test help kept")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "사용방법-마스터.txt")); !os.IsNotExist(err) {
+		t.Fatal("master help kept")
+	}
+	sellerHelp, err := os.ReadFile(filepath.Join(dir, "사용방법-셀러용.txt"))
+	if err != nil || string(sellerHelp) != "seller" {
+		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "edition.txt")); err != nil {
 		t.Fatal(err)

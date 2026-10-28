@@ -56,10 +56,11 @@ func main() {
 	if err := startModumodu(dir); err != nil {
 		if errors.Is(err, errMasterLauncher) {
 			alert(errMasterLauncher.Error())
-			return
+		} else {
+			alert("셀러용 프로그램을 찾지 못했습니다.")
 		}
-		alert("셀러용 프로그램을 찾지 못했습니다.")
 	}
+	keepSellerProcess()
 }
 
 func desktopDirs() []string {

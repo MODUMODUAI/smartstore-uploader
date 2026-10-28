@@ -112,3 +112,9 @@ func startModumodu(dir string) error {
 	}
 	return cmd.Start()
 }
+
+// keepSellerProcess holds the login service open. Returning from main stops
+// the account server even while the seller screen is still open.
+func keepSellerProcess() {
+	select {}
+}

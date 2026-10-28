@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSellerCommandStaysOnSellerPort(t *testing.T) {
@@ -100,5 +101,18 @@ func TestPrepareRejectsMasterUpdater(t *testing.T) {
 	_, err = prepareSellerCommand(t.TempDir())
 	if !errors.Is(err, errMissingProgram) {
 		t.Fatal(err)
+	}
+}
+
+func TestKeepSellerProcessStaysUp(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		keepSellerProcess()
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("login service process ended")
+	case <-time.After(50 * time.Millisecond):
 	}
 }

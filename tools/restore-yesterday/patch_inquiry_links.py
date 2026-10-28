@@ -131,7 +131,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.39"
+SCREEN_VERSION = "2026.10.28.40"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5426,7 +5426,7 @@ def patch_answer(text: str) -> str:
     if "/* open-login1 */" not in text:
         text = text.rstrip() + "\n" + OPEN_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5998,10 +5998,13 @@ def _godo_fetch(url, supplier):
     key = (_godo_host(url), str(supplier.get("login_id") or "").strip())
     for attempt in range(2):
         with _godo_jar_lock:
-            jar = dict(_godo_jars.get(key) or {})
+            saved = list(_godo_jars.get(key) or [])
+        jar = httpx.Cookies()
+        for name, value, domain, path in saved:
+            jar.set(name, value, domain=domain, path=path)
         client = httpx.Client(headers=_GODO_HEADERS, follow_redirects=True, timeout=25.0, cookies=jar)
         try:
-            if not jar or attempt:
+            if not saved or attempt:
                 if not _godo_login(client, url, supplier):
                     return None
             response = client.get(url)
@@ -6009,7 +6012,7 @@ def _godo_fetch(url, supplier):
             final_url = str(response.url)
             if response.status_code < 400 and not _godo_is_login(html, final_url):
                 with _godo_jar_lock:
-                    _godo_jars[key] = dict(client.cookies)
+                    _godo_jars[key] = [(c.name, c.value, c.domain, c.path) for c in client.cookies.jar]
                 return client, html, final_url
         except httpx.HTTPError:
             client.close()
@@ -6446,6 +6449,8 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(service, GODO_OPEN1_SERVICE_PY, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_MARKER):
         changed = True
+    if _append_marked_source(service, GODO_LOGIN2_SERVICE_PY, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_MARKER):
+        changed = True
     try:
         write_fix_status(root)
     except OSError:
@@ -6572,6 +6577,44 @@ def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
         result["server_fixes"] = _godo_server_fixes()
     return result
 """
+GODO_LOGIN2_MARKER = "# godo-login2"
+GODO_LOGIN2_SERVICE_PY = r"""
+# godo-login2
+# godo-login1 saved the session with dict(client.cookies), which drops cookie
+# domains. Murray sets analytics_* again for .murray.co.kr, so the next fetch
+# held two cookies with one name and httpx raised CookieConflict.
+_godo_jars = {}
+
+
+def _godo_fetch(url, supplier):
+    key = (_godo_host(url), str(supplier.get("login_id") or "").strip())
+    for attempt in range(2):
+        with _godo_jar_lock:
+            saved = list(_godo_jars.get(key) or [])
+        jar = httpx.Cookies()
+        for name, value, domain, path in saved:
+            jar.set(name, value, domain=domain, path=path)
+        client = httpx.Client(headers=_GODO_HEADERS, follow_redirects=True, timeout=25.0, cookies=jar)
+        try:
+            if not saved or attempt:
+                if not _godo_login(client, url, supplier):
+                    return None
+            response = client.get(url)
+            html = response.text or ""
+            final_url = str(response.url)
+            if response.status_code < 400 and not _godo_is_login(html, final_url):
+                with _godo_jar_lock:
+                    _godo_jars[key] = [(c.name, c.value, c.domain, c.path) for c in client.cookies.jar]
+                return client, html, final_url
+        except httpx.HTTPError:
+            client.close()
+            return None
+        client.close()
+        with _godo_jar_lock:
+            _godo_jars.pop(key, None)
+    return None
+"""
+GODO_LOGIN2_SERVICE_NEEDED = ("def _godo_fetch", "_godo_jar_lock", "_godo_login", GODO_MARKER)
 GODO_OPEN1_MARKER = "# godo-open1"
 GODO_OPEN1_SERVICE_PY = r"""
 # godo-open1
@@ -6706,6 +6749,7 @@ def write_fix_status(root: Path) -> bool:
             (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
             (service, GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED),
             (service, GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED),
+            (service, GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED),
         ),
     }
     files = {}
@@ -6748,6 +6792,7 @@ def frozen_fix_plan() -> dict:
             (GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_SERVICE_PY),
             (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
             (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
+            (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
         ],
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),

@@ -77,8 +77,8 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "깨진 파일 이름을 한글로 고쳤습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.8 입니다.", 64, "모두모두AI"
+  MsgBox "관리자초대를 설정에 넣었습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.9 입니다.", 64, "모두모두AI"
 End If
 
 Sub RepairBrokenNames(folder)

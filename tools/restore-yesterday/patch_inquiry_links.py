@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.8"
+SCREEN_VERSION = "2026.10.28.9"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1654,6 +1654,189 @@ NAME_JS2 = r"""
   setTimeout(showVersion, 3200);
 })();
 """
+INVITE_SETTINGS_JS = r"""
+/* invite-settings1 */
+(function () {
+  const version = "2026.10.28.9";
+  let owner = false;
+  let links = [];
+
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+
+  function withRole(link, role) {
+    try {
+      const url = new URL(link, location.href);
+      url.searchParams.set("role", role);
+      return url.toString();
+    } catch (error) {
+      return link + (link.indexOf("?") >= 0 ? "&" : "?") + "role=" + role;
+    }
+  }
+
+  async function copyLink(url) {
+    try {
+      if (typeof copyText === "function") await copyText(url);
+      else if (navigator.clipboard) await navigator.clipboard.writeText(url);
+      if (typeof toast === "function") toast("링크를 복사했습니다.");
+    } catch (error) {
+      if (typeof toast === "function") toast("복사에 실패했습니다.", true);
+    }
+  }
+
+  function hideHelpCopy() {
+    document.querySelectorAll("#helpShare #invitePanel").forEach((el) => el.remove());
+  }
+
+  function watchHelp() {
+    const help = document.getElementById("helpShare");
+    if (!help || help.dataset.inviteSettingsWatch === "1") return;
+    help.dataset.inviteSettingsWatch = "1";
+    new MutationObserver(() => hideHelpCopy()).observe(help, { childList: true });
+    hideHelpCopy();
+  }
+
+  function paint() {
+    const page = document.querySelector("#viewSettings .settings-page");
+    if (!page || !owner) {
+      const stale = document.getElementById("settingsInvite");
+      if (stale) stale.remove();
+      return;
+    }
+    let card = document.getElementById("settingsInvite");
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "settingsInvite";
+      card.className = "settings-card";
+      const theme = document.getElementById("setup-theme");
+      if (theme && theme.parentElement === page) page.insertBefore(card, theme);
+      else page.prepend(card);
+    }
+    card.replaceChildren();
+    const title = document.createElement("h3");
+    title.textContent = "관리자초대";
+    const head = document.createElement("p");
+    head.className = "hint";
+    head.textContent = "상품관리와 주문관리를 나눠 보냅니다. 초대받은 화면에는 마켓과 공급사 로그인 정보가 나오지 않습니다.";
+    card.append(title, head);
+    const rows = links.length ? links : ((typeof cachedShareLinks !== "undefined" && cachedShareLinks) || []);
+    [["products", "상품관리 초대"], ["orders", "주문관리 초대"]].forEach(([role, labelText]) => {
+      const block = document.createElement("div");
+      block.className = "invite-block";
+      const label = document.createElement("p");
+      label.className = "invite-title";
+      label.textContent = labelText;
+      block.append(label);
+      if (!rows.length) {
+        const empty = document.createElement("p");
+        empty.className = "hint";
+        empty.textContent = "공유 주소를 찾지 못했습니다.";
+        block.append(empty);
+      }
+      rows.forEach((link) => {
+        const row = document.createElement("div");
+        row.className = "share-link-row";
+        const url = withRole(link, role);
+        const anchor = document.createElement("a");
+        anchor.className = "share-link-url";
+        anchor.href = url;
+        anchor.textContent = url;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = "복사";
+        button.addEventListener("click", () => copyLink(url));
+        row.append(anchor, button);
+        block.append(row);
+      });
+      card.append(block);
+    });
+  }
+
+  async function load() {
+    watchHelp();
+    hideHelpCopy();
+    if (typeof api !== "function") return;
+    try {
+      const data = await api("/api/share-link", { quiet: true });
+      owner = true;
+      links = (data && data.links) || [];
+      if (typeof cachedShareLinks !== "undefined" && links.length) cachedShareLinks = links.slice();
+    } catch (error) {
+      const message = String((error && error.message) || "");
+      if (/이 컴퓨터에서만|공유 주소/.test(message)) {
+        owner = false;
+        const stale = document.getElementById("settingsInvite");
+        if (stale) stale.remove();
+      }
+      return;
+    }
+    paint();
+  }
+
+  function wrapShow() {
+    if (typeof showAppView !== "function" || showAppView.inviteSettingsHook) return;
+    const inner = showAppView;
+    function wrapped(name) {
+      const result = inner.apply(this, arguments);
+      hideHelpCopy();
+      const view = document.getElementById("viewSettings");
+      if (name === "settings" || (view && !view.hidden)) load();
+      return result;
+    }
+    wrapped.inviteHook = true;
+    wrapped.inviteSettingsHook = true;
+    window.showAppView = wrapped;
+  }
+
+  function hook() {
+    showVersion();
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion9) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryVersion5 = true;
+      wrapped.inquiryVersion6 = true;
+      wrapped.inquiryVersion7 = true;
+      wrapped.inquiryVersion8 = true;
+      wrapped.inquiryVersion9 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      window.applyEdition = wrapped;
+    }
+    wrapShow();
+    watchHelp();
+    hideHelpCopy();
+    load();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 3600);
+  setTimeout(showVersion, 4000);
+})();
+"""
+INVITE_SETTINGS_CSS = """
+/* invite-settings1 */
+#helpShare #invitePanel { display: none !important; }
+body.invite-remote #settingsInvite { display: none !important; }
+#settingsInvite { margin-bottom: 12px; }
+#settingsInvite .invite-title { margin: 12px 0 6px; font-weight: 700; }
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -1724,8 +1907,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "name-fix2")
-    return bump_asset(text, "app.js", "name-fix2")
+    text = bump_asset(text, "styles.css", "invite-settings1")
+    return bump_asset(text, "app.js", "invite-settings1")
 
 
 def patch_answer(text: str) -> str:
@@ -1751,6 +1934,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_JS
     if "/* name-fix2 */" not in text:
         text = text.rstrip() + "\n" + NAME_JS2
+    if "/* invite-settings1 */" not in text:
+        text = text.rstrip() + "\n" + INVITE_SETTINGS_JS
     return text
 
 
@@ -1772,6 +1957,8 @@ def patch_css(text: str) -> str:
         extra += IMAGE_CSS
     if "/* admin-invite1 */" not in text:
         extra += INVITE_CSS
+    if "/* invite-settings1 */" not in text:
+        extra += INVITE_SETTINGS_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

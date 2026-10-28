@@ -130,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.35"
+SCREEN_VERSION = "2026.10.28.36"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3718,6 +3718,39 @@ MASTER_LOGIN2_JS = r"""
 })();
 """
 
+WHOLESALE_IMPORT_ALL_JS = r"""
+/* wholesale-import-all1 */
+(function () {
+  function attach() {
+    if (document.getElementById("wholesaleImportAll")) return;
+    const anchor = document.getElementById("wholesaleLogin") || document.getElementById("wholesaleDelete");
+    if (!anchor || typeof importWholesaleProducts !== "function") return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "wholesaleImportAll";
+    button.textContent = "전체상품 가져오기";
+    button.title = "선택한 공급처의 전체 상품을 상품관리로 가져옵니다.";
+    button.addEventListener("click", () => {
+      const id = typeof selectedWholesalerId === "function" ? selectedWholesalerId() : "";
+      if (!id) {
+        toast("공급처를 먼저 선택해 주세요.", true);
+        return;
+      }
+      const supplier = (typeof wholesalers !== "undefined" ? wholesalers : []).find((row) => row.id === id);
+      const name = supplier?.name || "선택한 공급처";
+      if (supplier?.type !== "ownerclan" && !confirm(`${name}의 전체 상품을 상품관리로 가져올까요?\n이미 있는 상품은 그대로 두고 새 상품만 더합니다. 상품이 많으면 몇 분 걸립니다.`)) return;
+      importWholesaleProducts().catch((error) => toast(error.message, true));
+    });
+    anchor.after(button);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
+  else attach();
+  setTimeout(attach, 0);
+  setTimeout(attach, 500);
+})();
+"""
+
 MASTER_LOGIN2_CSS = """
 /* master-login2 */
 #masterLogin .master-login-card input,
@@ -4487,8 +4520,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "master-login3")
-    return bump_asset(text, "app.js", "master-login3")
+    text = bump_asset(text, "styles.css", "import-all1")
+    return bump_asset(text, "app.js", "import-all1")
 
 
 COLLECT_URL_JS = r"""
@@ -5308,8 +5341,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + COLLECT_URL2_JS
     if "/* master-login2 */" not in text:
         text = text.rstrip() + "\n" + MASTER_LOGIN2_JS
+    if "/* wholesale-import-all1 */" not in text:
+        text = text.rstrip() + "\n" + WHOLESALE_IMPORT_ALL_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

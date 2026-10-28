@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.24"
+SCREEN_VERSION = "2026.10.28.25"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3805,6 +3805,10 @@ def patch_help(text: str) -> str:
         old = "상품 검색·담기는 <strong>상품담기</strong> 메뉴에서 합니다."
         if old in text:
             text = text.replace(old, old + " " + WHOLESALE_HELP_NOTE, 1)
+    text = text.replace(
+        "품절/재판매: 고른 상품의 공급처 재고를 확인한 뒤, 품절로 바꾸기 또는 재판매로 바꾸기를 누릅니다.",
+        "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 목록을 본 뒤, 모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다.",
+    )
     return text
 
 
@@ -4286,8 +4290,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-peek1")
-    return bump_asset(text, "app.js", "seller-peek1")
+    text = bump_asset(text, "styles.css", "stock-list1")
+    return bump_asset(text, "app.js", "stock-list1")
 
 
 COLLECT_URL_JS = r"""
@@ -4347,6 +4351,390 @@ function isCafe24AlreadyCollected(item, keys) {
   if (itemNo && !ident.key.includes(itemNo)) return false;
   return true;
 }
+"""
+
+
+STOCK_LIST_JS = r"""
+/* stock-list1 */
+let stockSupplierId = "";
+let stockPicked = new Set();
+let stockSeenIds = new Set();
+let stockListQuery = "";
+let stockListStamp = "";
+
+function stockLookupLabel() {
+  if (stockJob && stockJob.status === "running") return "조회 중";
+  if (stockJob && stockJob.status && stockJob.status !== "running") return "다시 조회하기";
+  return stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+}
+
+function stockProceedLabel() {
+  return stockMode === "resale" ? "재판매진행" : "품절진행";
+}
+
+function stockServerIds() {
+  if (!stockJob) return null;
+  const key = stockMode === "resale" ? "resale_ids" : "soldout_ids";
+  const ids = stockJob[key];
+  if (!Array.isArray(ids)) return null;
+  return ids.map((id) => String(id || "")).filter(Boolean);
+}
+
+function stockRows() {
+  const id = String(stockSupplierId || "");
+  const rows = products.filter((item) => id && !item.market_id && productWholesalerId(item) === id);
+  const seen = new Set();
+  const unique = [];
+  rows.forEach((item) => {
+    const key = String(item.id || "");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(item);
+  });
+  unique.sort((a, b) => {
+    const sold = (item) => (item.wholesale_soldout ? 0 : 1);
+    if (sold(a) !== sold(b)) return sold(a) - sold(b);
+    return String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  });
+  return unique;
+}
+
+function stockListedRows() {
+  const rows = stockRows();
+  const ids = stockServerIds();
+  if (!ids) return rows;
+  const wanted = new Set(ids);
+  const matched = rows.filter((item) => wanted.has(String(item.id)));
+  ids.forEach((id) => {
+    if (matched.some((item) => String(item.id) === id)) return;
+    const found = products.find((item) => String(item.id) === id);
+    matched.push(found || { id, name: `상품 ${id}`, wholesale_soldout: stockMode === "soldout" });
+  });
+  return matched;
+}
+
+function adoptStockRows() {
+  stockListedRows().forEach((item) => {
+    const id = String(item.id || "");
+    if (!id || stockSeenIds.has(id)) return;
+    stockSeenIds.add(id);
+    stockPicked.add(id);
+  });
+}
+
+function stockSelectionComplete() {
+  const rows = stockListedRows();
+  if (!rows.length) return true;
+  return rows.every((item) => stockPicked.has(String(item.id)));
+}
+
+function stockResultCount() {
+  if (!stockJob) return 0;
+  return stockMode === "resale" ? Number(stockJob.resale_count || 0) : Number(stockJob.soldout_count || 0);
+}
+
+function stockProceedReady() {
+  if (!stockJob || stockJob.status === "running" || stockJob.status === "error" || stockJob.status === "cancelled") return false;
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  if ((stockJob.applied || {})[kind] != null) return false;
+  if (!stockResultCount()) return false;
+  return stockSelectionComplete();
+}
+
+function stockEscape(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+
+function stockSummaryText() {
+  const rows = stockListedRows();
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  const applied = stockJob?.applied || {};
+  if (!stockJob) {
+    const noun = stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+    return `아래는 이 공급처에 담아 둔 상품입니다. ${noun}를 누른 뒤, 모두 선택한 상태에서 ${stockProceedLabel()}을 누르세요.`;
+  }
+  if (stockJob.status === "running") return "공급처 상품을 확인하는 중입니다. 목록에서 상품을 미리 볼 수 있습니다.";
+  if (stockJob.status === "cancelled") return "조회를 중지했습니다.";
+  if (stockJob.status === "error") return stockJob.message || "조회하지 못했습니다.";
+  if (applied[kind] != null) {
+    return kind === "resale"
+      ? `${applied.resale}개 상품을 재판매로 바꿨습니다.`
+      : `${applied.soldout}개 상품을 품절로 바꿨습니다.`;
+  }
+  const count = stockResultCount();
+  if (!count) {
+    return kind === "resale" ? "재판매로 바꿀 상품이 없습니다." : "품절로 바꿀 상품이 없습니다.";
+  }
+  const named = stockServerIds()
+    ? "조회된 상품입니다."
+    : `담아 둔 상품 ${rows.length}개입니다.`;
+  const action = kind === "resale"
+    ? `공급처에서 다시 판매하는 상품 ${count}개를 재판매로 바꿉니다.`
+    : `공급처에서 품절로 확인된 상품 ${count}개를 품절로 바꿉니다.`;
+  if (!stockSelectionComplete()) {
+    return "지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 목록을 모두 선택한 뒤 진행해 주세요.";
+  }
+  return `${named} ${action} 모두 선택된 상태에서 ${stockProceedLabel()}을 누르세요.`;
+}
+
+function ensureStockList() {
+  const form = $("#stockForm");
+  if (!form || $("#stockList")) return;
+  const box = document.createElement("div");
+  box.innerHTML = `
+    <div class="stock-lookup-row">
+      <button type="button" id="stockLookup">품절상품 조회하기</button>
+    </div>
+    <p id="stockListSummary" class="hint"></p>
+    <div class="stock-list-tools">
+      <label><input type="checkbox" id="stockListAll" /> 전체선택</label>
+      <input type="search" id="stockListSearch" placeholder="상품명, 상품번호" autocomplete="off" />
+      <span id="stockListCount"></span>
+    </div>
+    <div id="stockList" class="stock-list"></div>
+  `;
+  const anchor = form.querySelector(".delivery-actions");
+  if (anchor) form.insertBefore(box, anchor);
+  else form.append(box);
+  $("#stockLookup").addEventListener("click", () => {
+    startStockLookup().catch((error) => toast(error.message, true));
+  });
+  $("#stockListAll").addEventListener("change", () => {
+    const on = $("#stockListAll").checked;
+    stockListedRows().forEach((item) => {
+      const id = String(item.id);
+      stockSeenIds.add(id);
+      if (on) stockPicked.add(id);
+      else stockPicked.delete(id);
+    });
+    stockListStamp = "";
+    renderStockList(true);
+  });
+  $("#stockListSearch").addEventListener("input", () => {
+    stockListQuery = $("#stockListSearch").value || "";
+    stockListStamp = "";
+    renderStockList(true);
+  });
+  $("#stockList").addEventListener("change", (event) => {
+    const boxInput = event.target.closest("input[data-stock-id]");
+    if (!boxInput) return;
+    const id = boxInput.getAttribute("data-stock-id") || "";
+    stockSeenIds.add(id);
+    if (boxInput.checked) stockPicked.add(id);
+    else stockPicked.delete(id);
+    syncStockSelection();
+  });
+  const soldBtn = $("#stockApplySoldout");
+  const resaleBtn = $("#stockApplyResale");
+  if (soldBtn) soldBtn.textContent = "품절진행";
+  if (resaleBtn) resaleBtn.textContent = "재판매진행";
+}
+
+function renderStockList(force) {
+  ensureStockList();
+  adoptStockRows();
+  const stamp = [
+    stockMode,
+    stockSupplierId,
+    stockListQuery,
+    stockJob?.id || "",
+    stockJob?.status || "",
+    stockJob?.soldout_count || 0,
+    stockJob?.resale_count || 0,
+    stockListedRows().length,
+  ].join("|");
+  const list = $("#stockList");
+  if (list && (force || stamp !== stockListStamp)) {
+    stockListStamp = stamp;
+    const query = stockListQuery.trim().toLowerCase();
+    const rows = stockListedRows().filter((item) => {
+      if (!query) return true;
+      const hay = `${item.name || ""} ${item.wholesale_product_no || ""} ${item.seller_code || ""}`.toLowerCase();
+      return hay.includes(query);
+    });
+    if (!rows.length) {
+      const empty = stockListQuery.trim() ? "찾는 상품이 없습니다." : "이 공급처에 담아 둔 상품이 없습니다.";
+      list.innerHTML = `<p class="stock-list-empty">${stockEscape(empty)}</p>`;
+    } else {
+      list.innerHTML = rows.map((item) => {
+        const id = String(item.id);
+        const checked = stockPicked.has(id) ? " checked" : "";
+        const sold = item.wholesale_soldout ? " is-soldout" : "";
+        const no = String(item.wholesale_product_no || "").trim();
+        const price = Number(item.price || 0).toLocaleString("ko-KR");
+        const state = item.wholesale_soldout ? "품절" : "정상";
+        const meta = [no, `${price}원`, state].filter(Boolean).join(" · ");
+        return `<label class="stock-list-row${sold}"><input type="checkbox" data-stock-id="${stockEscape(id)}"${checked} /><span class="stock-list-name">${stockEscape(item.name || "이름 없는 상품")}</span><span class="stock-list-meta">${stockEscape(meta)}</span></label>`;
+      }).join("");
+    }
+  }
+  syncStockSelection();
+}
+
+function syncStockSelection() {
+  const summary = $("#stockListSummary");
+  if (summary) summary.textContent = stockSummaryText();
+  const rows = stockListedRows();
+  const picked = rows.filter((item) => stockPicked.has(String(item.id))).length;
+  const count = $("#stockListCount");
+  if (count) count.textContent = rows.length ? `${picked} / ${rows.length}` : "";
+  const all = $("#stockListAll");
+  if (all) {
+    all.checked = rows.length > 0 && picked === rows.length;
+    all.indeterminate = picked > 0 && picked < rows.length;
+    all.disabled = !rows.length;
+  }
+  const lookup = $("#stockLookup");
+  if (lookup) {
+    lookup.textContent = stockLookupLabel();
+    lookup.disabled = stockJob?.status === "running";
+  }
+  const soldBtn = $("#stockApplySoldout");
+  const resaleBtn = $("#stockApplyResale");
+  if (soldBtn) soldBtn.textContent = "품절진행";
+  if (resaleBtn) resaleBtn.textContent = "재판매진행";
+  if (stockJob && $("#stockApplySoldout") && $("#stockApplyResale")) {
+    const running = stockJob.status === "running";
+    const applied = stockJob.applied || {};
+    const readySold = !running && stockMode === "soldout" && stockProceedReady();
+    const readyResale = !running && stockMode === "resale" && stockProceedReady();
+    $("#stockApplySoldout").disabled = !readySold || applied.soldout != null;
+    $("#stockApplyResale").disabled = !readyResale || applied.resale != null;
+  }
+}
+
+async function openStockDialog(mode = "soldout") {
+  const id = (productFilter && productFilter !== "all" && productFilter !== "url")
+    ? productFilter
+    : selectedWholesalerId();
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (wholesalers.find((row) => row.id === id)?.type === "ownerclan") {
+    throw new Error("오너클랜 상품은 상품담기에서 확인합니다.");
+  }
+  const supplier = wholesalers.find((row) => row.id === id);
+  clearTimeout(stockTimer);
+  stockJob = null;
+  stockMode = mode === "resale" ? "resale" : "soldout";
+  stockSupplierId = id;
+  stockListQuery = "";
+  stockListStamp = "";
+  stockPicked = new Set();
+  stockSeenIds = new Set();
+  ensureStockList();
+  const search = $("#stockListSearch");
+  if (search) search.value = "";
+  $("#stockTitle").textContent = stockModeLabel();
+  $("#stockRowSoldout").hidden = stockMode !== "soldout";
+  $("#stockRowResale").hidden = stockMode !== "resale";
+  $("#stockSupplier").textContent = stockMode === "resale"
+    ? `${supplier?.name || "공급처"}에 담아 둔 품절상품을 조회한 뒤, 재판매진행으로 다시 판매합니다.`
+    : `${supplier?.name || "공급처"}에 담아 둔 상품을 조회한 뒤, 품절진행으로 품절 처리합니다.`;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "조회 전";
+  $("#stockStep").textContent = "";
+  $("#stockChecked").textContent = "";
+  $("#stockProgress").value = 0;
+  $("#stockSoldoutText").textContent = "조회 전";
+  $("#stockResaleText").textContent = "조회 전";
+  $("#stockStop").disabled = true;
+  adoptStockRows();
+  renderStockList(true);
+  const dialog = $("#stockDialog");
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
+async function startStockLookup() {
+  const id = stockSupplierId;
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (stockJob?.status === "running") return;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "작업을 시작하는 중입니다.";
+  $("#stockStop").disabled = true;
+  syncStockSelection();
+  setBusy(true, `${stockModeLabel()} 상품을 조회하는 중입니다.`);
+  try {
+    stockJob = await api(`/api/wholesalers/${id}/stock-check`, { method: "POST", scope: "products" });
+  } catch (error) {
+    setBusy(false);
+    stockJob = { status: "error", phase: "시작하지 못했습니다.", done: 0, total: 0, checked: 0, products: 0, soldout_total: 0, soldout_count: 0, resale_count: 0, applied: {}, message: error.message };
+    renderStockJob(stockJob);
+    throw error;
+  }
+  log(`${stockModeLabel()} 상품 조회를 시작했습니다.`);
+  renderStockJob(stockJob);
+  pollStockJob();
+}
+
+function renderStockJob(job) {
+  const running = job.status === "running";
+  const total = Number(job.total || 0);
+  const done = Number(job.done || 0);
+  const progress = $("#stockProgress");
+  if (running && !total) progress.removeAttribute("value");
+  else progress.value = total ? Math.round((done / total) * 100) : (job.status === "done" || job.status === "cancelled" ? 100 : 0);
+  $("#stockPhase").textContent = job.phase || (running ? "조회 중" : "");
+  $("#stockStep").textContent = total ? `${done.toLocaleString("ko-KR")} / ${total.toLocaleString("ko-KR")}` : "";
+  $("#stockChecked").textContent = job.products ? `상품 ${job.products}개 중 ${job.checked || 0}개 확인` : "";
+  const applied = job.applied || {};
+  $("#stockSoldoutText").textContent = applied.soldout != null
+    ? `${applied.soldout}개를 품절로 바꿨습니다`
+    : `새로 품절 ${Number(job.soldout_count || 0)}개`;
+  $("#stockResaleText").textContent = applied.resale != null
+    ? `${applied.resale}개를 재판매로 바꿨습니다`
+    : `재판매 가능 ${Number(job.resale_count || 0)}개`;
+  $("#stockStop").disabled = !running || !stockJob;
+  if (job.message) $("#stockMessage").textContent = job.message;
+  renderStockList(false);
+}
+
+async function applyStockJob(kind) {
+  if (!stockJob) return;
+  const expected = kind === "resale" ? "resale" : "soldout";
+  if (stockMode !== expected) return;
+  if (!stockProceedReady()) {
+    renderStockList(false);
+    toast("지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 목록을 모두 선택한 뒤 진행해 주세요.", true);
+    return;
+  }
+  stockJob = await api(`/api/stock-jobs/${stockJob.id}/apply`, { method: "POST", body: JSON.stringify({ kind }) });
+  await loadProducts();
+  stockListStamp = "";
+  renderStockJob(stockJob);
+  const count = stockJob.applied?.[kind] || 0;
+  const message = kind === "soldout" ? `${count}개 상품을 품절로 바꿨습니다.` : `${count}개 상품을 재판매로 바꿨습니다.`;
+  $("#stockMessage").textContent = message;
+  log(message, "ok");
+  toast(message);
+}
+"""
+
+
+STOCK_LIST_CSS = """
+/* stock-list1 */
+#stockDialog { width: min(760px, calc(100vw - 24px)); }
+.stock-lookup-row { margin: 8px 0 4px; }
+.stock-list-tools { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.stock-list-tools input[type="search"] { flex: 1; min-width: 0; }
+.stock-list {
+  max-height: min(420px, 48vh);
+  overflow: auto;
+  border: 1px solid #c8c8c8;
+  background: #fff;
+}
+.stock-list-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+}
+.stock-list-row:last-child { border-bottom: 0; }
+.stock-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-list-meta { color: #666; font-size: 12px; white-space: nowrap; }
+.stock-list-row.is-soldout .stock-list-meta { color: #a33; }
+.stock-list-empty { margin: 0; padding: 16px 8px; color: #666; }
 """
 
 
@@ -4417,8 +4805,10 @@ def patch_answer(text: str) -> str:
     text = patch_seller_login_port(text)
     if "/* collect-url1 */" not in text:
         text = text.rstrip() + "\n" + COLLECT_URL_JS
+    if "/* stock-list1 */" not in text:
+        text = text.rstrip() + "\n" + STOCK_LIST_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -4456,6 +4846,8 @@ def patch_css(text: str) -> str:
         extra += MASTER_LOGIN_CSS
     if "/* seller-peek1 */" not in text:
         extra += SELLER_PEEK_CSS
+    if "/* stock-list1 */" not in text:
+        extra += STOCK_LIST_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

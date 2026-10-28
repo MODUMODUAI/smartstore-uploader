@@ -77,8 +77,9 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "관리자초대를 설정에 넣었습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.9 입니다.", 64, "모두모두AI"
+  MsgBox "설정에 관리자 관리 메뉴를 넣었습니다." & vbCrLf & _
+    "상품관리, 주문관리, 문의관리를 나눠 초대합니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.10 입니다.", 64, "모두모두AI"
 End If
 
 Sub RepairBrokenNames(folder)

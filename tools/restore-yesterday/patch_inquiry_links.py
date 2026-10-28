@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.9"
+SCREEN_VERSION = "2026.10.28.10"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1838,6 +1838,712 @@ body.invite-remote #settingsInvite { display: none !important; }
 #settingsInvite .invite-title { margin: 12px 0 6px; font-weight: 700; }
 """
 
+ADMIN_MENU_JS = r"""
+/* admin-menu1 */
+(function () {
+  const version = "2026.10.28.10";
+  const storeKey = "modumodu-admin-managers";
+  const rolesKey = "modumodu-invite-roles";
+  const legacyRoleKey = "modumodu-invite-role";
+  const duties = [
+    { id: "products", label: "상품관리", views: ["products", "collect"] },
+    { id: "orders", label: "주문관리", views: ["orders"] },
+    { id: "inquiries", label: "문의관리", views: ["inquiries"] },
+  ];
+  const dutyIds = duties.map((item) => item.id);
+  const state = { roles: new Set(), owner: false, remote: false, pending: false, links: [] };
+  let editingId = "";
+
+  function parseDuties(value) {
+    const found = new Set();
+    String(value || "").split(/[,\s]+/).forEach((item) => {
+      if (dutyIds.includes(item)) found.add(item);
+    });
+    return found;
+  }
+
+  function rememberRoles(roles) {
+    const list = dutyIds.filter((id) => roles.has(id));
+    try {
+      if (list.length) sessionStorage.setItem(rolesKey, list.join(","));
+      else sessionStorage.removeItem(rolesKey);
+    } catch (error) {}
+  }
+
+  function readRoles() {
+    const params = new URLSearchParams(location.search);
+    const listed = parseDuties(params.get("roles"));
+    if (listed.size) {
+      rememberRoles(listed);
+      return listed;
+    }
+    const legacy = params.get("role");
+    if (legacy === "products" || legacy === "orders") {
+      const roles = new Set([legacy]);
+      if (legacy === "orders") roles.add("inquiries");
+      rememberRoles(roles);
+      return roles;
+    }
+    try {
+      const saved = parseDuties(sessionStorage.getItem(rolesKey));
+      if (saved.size) return saved;
+      const old = sessionStorage.getItem(legacyRoleKey);
+      if (old === "products") return new Set(["products"]);
+      if (old === "orders") return new Set(["orders", "inquiries"]);
+    } catch (error) {}
+    return new Set();
+  }
+
+  function isLocked() {
+    if (state.owner || !state.roles.size) return false;
+    return state.remote || state.pending;
+  }
+
+  function viewAllowed(name) {
+    if (name === "help") return true;
+    return duties.some((item) => state.roles.has(item.id) && item.views.includes(name));
+  }
+
+  function gate(name) {
+    if (!isLocked()) return name;
+    if (viewAllowed(name)) return name;
+    for (const item of duties) {
+      if (state.roles.has(item.id)) return item.views[0];
+    }
+    return "help";
+  }
+
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label && label.textContent !== "v" + version) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    const title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+    if (document.title !== title) document.title = title;
+  }
+
+  function paintLock() {
+    const locked = isLocked();
+    document.body.classList.toggle("admin-locked", locked);
+    duties.forEach((item) => {
+      const on = locked && state.roles.has(item.id);
+      item.views.forEach((view) => document.body.classList.toggle("admin-allow-" + view, on));
+    });
+    const badge = document.getElementById("inviteRoleBadge");
+    if (!locked) {
+      if (badge && badge.dataset.adminMenu === "1") badge.remove();
+      return;
+    }
+    let chip = badge;
+    if (!chip) {
+      chip = document.createElement("span");
+      chip.id = "inviteRoleBadge";
+      const tabs = document.querySelector(".app-tabs");
+      if (tabs) tabs.after(chip);
+    }
+    if (chip) {
+      chip.dataset.adminMenu = "1";
+      chip.textContent = duties.filter((item) => state.roles.has(item.id)).map((item) => item.label).join(" · ");
+    }
+  }
+
+  function currentView() {
+    const names = ["products", "orders", "inquiries", "collect", "wholesalers", "settings", "help"];
+    for (const name of names) {
+      const el = document.getElementById("view" + name.charAt(0).toUpperCase() + name.slice(1));
+      if (el && !el.hidden) return name;
+    }
+    return "products";
+  }
+
+  function settleView() {
+    if (!isLocked() || typeof showAppView !== "function") return;
+    const now = currentView();
+    const next = gate(now);
+    if (next !== now) showAppView(next);
+  }
+
+  function productWrite(item) {
+    return item.includes("/products")
+      || item.includes("/images")
+      || item.includes("/register")
+      || item.includes("/notices")
+      || item.includes("/delivery")
+      || item.includes("/price-sets")
+      || item.includes("/excel-forms")
+      || item.includes("/stock-jobs")
+      || item.includes("/product-refresh")
+      || item.includes("/product-market");
+  }
+
+  function denied(path, method) {
+    if (!isLocked()) return "";
+    const item = String(path || "").split("?")[0];
+    const write = method !== "GET" && method !== "HEAD";
+    const credential = "아이디, 패스워드, 관리자키는 그대로 둡니다.";
+    if (write && (item === "/api/settings" || item.startsWith("/api/settings/"))) return credential;
+    if (write && (item === "/api/markets" || /^\/api\/markets\/[^/]+$/.test(item) || /^\/api\/markets\/[^/]+\/test$/.test(item))) return credential;
+    if (write && (item === "/api/wholesalers" || /^\/api\/wholesalers\/[^/]+$/.test(item))) return "공급처 로그인 정보는 바꿀 수 없습니다.";
+    if (item.includes("/wholesalers/") && item.endsWith("/login")) return "공급처 로그인 정보는 바꿀 수 없습니다.";
+    if (write && !state.roles.has("products") && productWrite(item)) return "상품관리 권한이 없습니다.";
+    if (write && !state.roles.has("products") && item.includes("/wholesalers/") && /\/(import|collect|stock-check|catalog|categories|open-product)/.test(item)) return "상품관리 권한이 없습니다.";
+    if (write && !state.roles.has("orders") && item.includes("/orders")) return "주문관리 권한이 없습니다.";
+    if (write && !state.roles.has("inquiries") && (item.includes("/inquiries") || /\/answer$/.test(item))) return "문의관리 권한이 없습니다.";
+    return "";
+  }
+
+  function wrapApi() {
+    if (typeof api !== "function" || api.adminMenuHook) return;
+    const inner = api;
+    async function wrapped(path, options) {
+      const method = String((options && options.method) || "GET").toUpperCase();
+      const reason = denied(path, method);
+      if (reason) throw new Error(reason);
+      return inner.apply(this, arguments);
+    }
+    wrapped.adminMenuHook = true;
+    window.api = wrapped;
+  }
+
+  function wrapShow() {
+    if (typeof showAppView !== "function" || showAppView.adminMenuHook) return;
+    const inner = showAppView;
+    function wrapped(name) {
+      const next = gate(name);
+      const result = inner.call(this, next);
+      paintLock();
+      if (next === "settings" && state.owner) ensureOwnerUi();
+      return result;
+    }
+    wrapped.adminMenuHook = true;
+    wrapped.inviteHook = true;
+    wrapped.inviteSettingsHook = true;
+    window.showAppView = wrapped;
+  }
+
+  function hideOldCard() {
+    document.querySelectorAll("#settingsInvite, #helpShare #invitePanel").forEach((el) => el.remove());
+  }
+
+  function watchOldCard() {
+    const page = document.querySelector("#viewSettings .settings-page");
+    if (page && page.dataset.adminMenuWatch !== "1") {
+      page.dataset.adminMenuWatch = "1";
+      new MutationObserver(() => hideOldCard()).observe(page, { childList: true });
+    }
+    const help = document.getElementById("helpShare");
+    if (help && help.dataset.adminMenuWatch !== "1") {
+      help.dataset.adminMenuWatch = "1";
+      new MutationObserver(() => hideOldCard()).observe(help, { childList: true });
+    }
+    hideOldCard();
+  }
+
+  function loadManagers() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storeKey) || "[]");
+      return Array.isArray(parsed) ? parsed.filter((item) => item && item.id && Array.isArray(item.duties)) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveManagers(items) {
+    localStorage.setItem(storeKey, JSON.stringify(items));
+  }
+
+  function dutyLabel(list) {
+    return duties.filter((item) => list.includes(item.id)).map((item) => item.label).join(", ");
+  }
+
+  function formatDate(iso) {
+    const text = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(iso));
+    return text.replaceAll("-", ".") + ".";
+  }
+
+  function buildUrl(base, list) {
+    const url = new URL(base, location.href);
+    const chosen = dutyIds.filter((id) => list.includes(id));
+    url.searchParams.set("roles", chosen.join(","));
+    url.searchParams.delete("role");
+    if (chosen.length === 1 && chosen[0] === "products") url.searchParams.set("role", "products");
+    if (chosen.includes("orders") && chosen.includes("inquiries") && !chosen.includes("products")) url.searchParams.set("role", "orders");
+    return url.toString();
+  }
+
+  function defaultName(list) {
+    const labels = duties.filter((item) => list.includes(item.id)).map((item) => item.label);
+    return (labels.join("·") || "매니저") + " 매니저";
+  }
+
+  async function copyLink(url) {
+    if (typeof copyText === "function") await copyText(url);
+    else if (navigator.clipboard) await navigator.clipboard.writeText(url);
+    else throw new Error("copy");
+  }
+
+  function selectedDuties() {
+    return [...document.querySelectorAll("#adminInviteForm input[name='adminDuty']:checked")].map((input) => input.value);
+  }
+
+  function fillDuties(list) {
+    document.querySelectorAll("#adminInviteForm input[name='adminDuty']").forEach((input) => {
+      input.checked = list.includes(input.value);
+    });
+  }
+
+  function renderManagers() {
+    const body = document.querySelector("#adminManagerTable tbody");
+    const count = document.getElementById("adminManagerCount");
+    if (!body) return;
+    const items = loadManagers();
+    if (count) count.textContent = "관리자 " + items.length + "명";
+    body.replaceChildren();
+    if (!items.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.textContent = "초대한 관리자가 없습니다. 관리자 초대로 매니저를 보내세요.";
+      row.append(cell);
+      body.append(row);
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("tr");
+      const name = document.createElement("td");
+      name.textContent = item.name || defaultName(item.duties);
+      const work = document.createElement("td");
+      const workText = document.createElement("span");
+      workText.textContent = dutyLabel(item.duties);
+      const change = document.createElement("button");
+      change.type = "button";
+      change.textContent = "변경";
+      change.addEventListener("click", () => openForm(item));
+      work.append(workText, change);
+      const link = document.createElement("td");
+      const url = buildUrl(item.base, item.duties);
+      const shown = document.createElement("span");
+      shown.className = "admin-link";
+      shown.textContent = url;
+      shown.title = url;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "복사";
+      copy.addEventListener("click", async () => {
+        try {
+          await copyLink(url);
+          if (typeof toast === "function") toast("초대 링크를 복사했습니다.");
+        } catch (error) {
+          if (typeof toast === "function") toast("복사에 실패했습니다.", true);
+        }
+      });
+      link.append(shown, copy);
+      const date = document.createElement("td");
+      date.textContent = item.created ? formatDate(item.created) : "";
+      const removeCell = document.createElement("td");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => {
+        if (!window.confirm("이 관리자를 목록에서 지울까요? 이미 보낸 주소는 계속 열립니다.")) return;
+        saveManagers(loadManagers().filter((saved) => saved.id !== item.id));
+        renderManagers();
+      });
+      removeCell.append(remove);
+      row.append(name, work, link, date, removeCell);
+      body.append(row);
+    });
+  }
+
+  function openForm(item) {
+    const form = document.getElementById("adminInviteForm");
+    const name = document.getElementById("adminInviteName");
+    const submit = document.getElementById("adminInviteSubmit");
+    if (!form || !name || !submit) return;
+    editingId = item ? item.id : "";
+    name.value = item ? item.name : "";
+    fillDuties(item ? item.duties : []);
+    const picker = document.getElementById("adminInviteBase");
+    if (picker) {
+      picker.replaceChildren();
+      state.links.forEach((link) => {
+        const option = document.createElement("option");
+        option.value = link;
+        option.textContent = link;
+        picker.append(option);
+      });
+      picker.closest("label").hidden = state.links.length < 2;
+      if (item && item.base) picker.value = item.base;
+    }
+    submit.textContent = item ? "수정 링크 복사" : "초대 링크 복사";
+    form.hidden = false;
+    name.focus();
+  }
+
+  function closeForm() {
+    const form = document.getElementById("adminInviteForm");
+    if (form) form.hidden = true;
+    editingId = "";
+  }
+
+  async function submitInvite(event) {
+    event.preventDefault();
+    const chosen = dutyIds.filter((id) => selectedDuties().includes(id));
+    if (!chosen.length) {
+      if (typeof toast === "function") toast("담당업무를 하나 이상 고르세요.", true);
+      return;
+    }
+    const picker = document.getElementById("adminInviteBase");
+    const base = (picker && picker.value) || state.links[0] || "";
+    if (!base) {
+      if (typeof toast === "function") toast("공유 주소를 찾지 못했습니다.", true);
+      return;
+    }
+    const name = document.getElementById("adminInviteName");
+    const items = loadManagers();
+    const current = editingId ? items.find((item) => item.id === editingId) : null;
+    const record = {
+      id: current ? current.id : String(Date.now()),
+      name: (name && name.value.trim()) || defaultName(chosen),
+      duties: chosen,
+      base,
+      created: current ? current.created : new Date().toISOString(),
+    };
+    const next = current ? items.map((item) => item.id === record.id ? record : item) : [record, ...items];
+    saveManagers(next);
+    renderManagers();
+    const url = buildUrl(base, chosen);
+    try {
+      await copyLink(url);
+      if (typeof toast === "function") toast(current ? "담당업무를 바꿔 링크를 복사했습니다." : "관리자 초대 링크를 복사했습니다.");
+    } catch (error) {
+      if (typeof toast === "function") toast("목록에는 넣었지만 복사에 실패했습니다.", true);
+    }
+    closeForm();
+  }
+
+  function ensureOwnerUi() {
+    const tabs = document.querySelector("#viewSettings .settings-tabs");
+    const page = document.querySelector("#viewSettings .settings-page");
+    if (!tabs || !page) return;
+    if (!document.getElementById("settingsTabAdmins")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.id = "settingsTabAdmins";
+      button.className = "tab";
+      button.textContent = "관리자 관리";
+      button.addEventListener("click", () => showAdminPane());
+      tabs.append(button);
+    }
+    if (document.getElementById("settingsPaneAdmins")) return;
+    const pane = document.createElement("div");
+    pane.id = "settingsPaneAdmins";
+    pane.className = "settings-pane";
+    pane.hidden = true;
+    const card = document.createElement("div");
+    card.className = "settings-card";
+    const head = document.createElement("div");
+    head.className = "settings-card-head";
+    const title = document.createElement("h3");
+    title.textContent = "관리자 목록";
+    const invite = document.createElement("button");
+    invite.type = "button";
+    invite.id = "adminInviteOpen";
+    invite.textContent = "관리자 초대";
+    invite.addEventListener("click", () => openForm(null));
+    head.append(title, invite);
+    const notes = document.createElement("ul");
+    notes.className = "admin-manager-notes";
+    [
+      "상품관리, 주문관리, 문의관리 매니저를 나눠 초대합니다.",
+      "아이디, 패스워드, 관리자키는 그대로입니다. 초대받은 화면에는 나오지 않고 바꿀 수 없습니다.",
+      "초대받은 관리자는 맡은 기능만 사용할 수 있습니다. 상품관리에는 상품담기가 포함됩니다.",
+      "목록에서 지워도 이미 보낸 주소는 계속 열립니다.",
+    ].forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      notes.append(item);
+    });
+    const form = document.createElement("form");
+    form.id = "adminInviteForm";
+    form.className = "admin-invite-form";
+    form.hidden = true;
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = "이름";
+    const nameInput = document.createElement("input");
+    nameInput.id = "adminInviteName";
+    nameInput.maxLength = 40;
+    nameInput.placeholder = "예: 상품관리 매니저";
+    nameLabel.append(nameInput);
+    const work = document.createElement("div");
+    work.className = "admin-duty-list";
+    duties.forEach((item) => {
+      const label = document.createElement("label");
+      label.className = "check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "adminDuty";
+      input.value = item.id;
+      label.append(input, document.createTextNode(item.label));
+      work.append(label);
+    });
+    const baseLabel = document.createElement("label");
+    baseLabel.textContent = "보낼 주소";
+    const base = document.createElement("select");
+    base.id = "adminInviteBase";
+    baseLabel.append(base);
+    baseLabel.hidden = true;
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.id = "adminInviteSubmit";
+    submit.textContent = "초대 링크 복사";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "취소";
+    cancel.addEventListener("click", () => closeForm());
+    actions.append(submit, cancel);
+    form.append(nameLabel, work, baseLabel, actions);
+    form.addEventListener("submit", (event) => {
+      submitInvite(event).catch((error) => {
+        if (typeof toast === "function") toast(error.message || "초대에 실패했습니다.", true);
+      });
+    });
+    const count = document.createElement("p");
+    count.id = "adminManagerCount";
+    count.className = "admin-manager-count";
+    const wrap = document.createElement("div");
+    wrap.className = "delivery-table-wrap admin-manager-table-wrap";
+    const table = document.createElement("table");
+    table.className = "delivery-table";
+    table.id = "adminManagerTable";
+    const headRow = document.createElement("tr");
+    ["이름", "담당업무", "초대 링크", "초대일", "삭제"].forEach((text) => {
+      const cell = document.createElement("th");
+      cell.textContent = text;
+      headRow.append(cell);
+    });
+    const thead = document.createElement("thead");
+    thead.append(headRow);
+    const tbody = document.createElement("tbody");
+    table.append(thead, tbody);
+    wrap.append(table);
+    card.append(head, notes, form, count, wrap);
+    pane.append(card);
+    page.append(pane);
+    renderManagers();
+  }
+
+  function showAdminPane() {
+    ensureOwnerUi();
+    const pane = document.getElementById("settingsPaneAdmins");
+    const form = document.getElementById("settingsForm");
+    const market = document.getElementById("marketForm");
+    const theme = document.getElementById("setup-theme");
+    if (form) form.hidden = true;
+    if (market) market.hidden = true;
+    if (theme) theme.hidden = true;
+    if (pane) pane.hidden = false;
+    ["settingsTabApi", "settingsTabMarkets", "settingsTabLicense"].forEach((id) => {
+      const tab = document.getElementById(id);
+      if (tab) tab.classList.remove("active");
+    });
+    const tab = document.getElementById("settingsTabAdmins");
+    if (tab) tab.classList.add("active");
+    renderManagers();
+  }
+
+  function hideAdminPane() {
+    const pane = document.getElementById("settingsPaneAdmins");
+    const theme = document.getElementById("setup-theme");
+    const tab = document.getElementById("settingsTabAdmins");
+    if (pane) pane.hidden = true;
+    if (theme) theme.hidden = false;
+    if (tab) tab.classList.remove("active");
+  }
+
+  function wrapSettings() {
+    if (typeof showSettingsPane !== "function" || showSettingsPane.adminMenuHook) return;
+    const inner = showSettingsPane;
+    function wrapped(name) {
+      if (name === "admins") {
+        showAdminPane();
+        return;
+      }
+      hideAdminPane();
+      return inner.apply(this, arguments);
+    }
+    wrapped.adminMenuHook = true;
+    window.showSettingsPane = wrapped;
+  }
+
+  function watchVersion() {
+    const label = document.getElementById("appVersion");
+    if (!label || label.dataset.adminMenuVersion === "1") return;
+    label.dataset.adminMenuVersion = "1";
+    new MutationObserver(() => showVersion()).observe(label, { childList: true, characterData: true, subtree: true });
+  }
+
+  function watchTabs() {
+    const tabs = document.querySelector(".app-tabs");
+    if (!tabs || tabs.dataset.adminMenuClick === "1") return;
+    tabs.dataset.adminMenuClick = "1";
+    const viewById = {
+      appTabProducts: "products",
+      appTabOrders: "orders",
+      appTabInquiries: "inquiries",
+      appTabCollect: "collect",
+      appTabWholesalers: "wholesalers",
+      appTabSettings: "settings",
+      appTabHelp: "help",
+    };
+    tabs.addEventListener("click", (event) => {
+      if (!isLocked()) return;
+      const button = event.target.closest("button");
+      const name = button && viewById[button.id];
+      if (!name || gate(name) === name) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof showAppView === "function") showAppView(gate(name));
+    }, true);
+  }
+
+  async function detect() {
+    if (typeof api !== "function") {
+      state.pending = false;
+      paintLock();
+      settleView();
+      document.documentElement.dataset.adminMenu = "ready";
+      return;
+    }
+    try {
+      const data = await api("/api/share-link", { quiet: true });
+      state.owner = true;
+      state.remote = false;
+      state.pending = false;
+      state.links = (data && data.links) || [];
+      if (typeof cachedShareLinks !== "undefined" && state.links.length) cachedShareLinks = state.links.slice();
+      ensureOwnerUi();
+    } catch (error) {
+      const message = String((error && error.message) || "");
+      if (/이 컴퓨터에서만|공유 주소/.test(message)) {
+        state.remote = true;
+        state.owner = false;
+      }
+      state.pending = false;
+    }
+    paintLock();
+    settleView();
+    document.documentElement.dataset.adminMenu = "ready";
+  }
+
+  function hook() {
+    state.roles = readRoles();
+    if (!state.owner && !state.remote && state.roles.size) state.pending = true;
+    showVersion();
+    watchVersion();
+    wrapApi();
+    wrapShow();
+    wrapSettings();
+    watchTabs();
+    watchOldCard();
+    paintLock();
+    if (typeof applyEdition === "function" && !applyEdition.adminMenuHook) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion9 = true;
+      wrapped.inquiryVersion10 = true;
+      wrapped.adminMenuHook = true;
+      window.applyEdition = wrapped;
+    }
+    if (!state.owner && !state.remote) detect();
+    else document.documentElement.dataset.adminMenu = "ready";
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paintLock, 400);
+  setTimeout(paintLock, 1400);
+  setTimeout(showVersion, 6500);
+  setTimeout(showVersion, 8000);
+})();
+"""
+ADMIN_MENU_CSS = """
+/* admin-menu1 */
+#settingsInvite { display: none !important; }
+#helpShare #invitePanel { display: none !important; }
+.admin-manager-count { margin: 0 0 8px; font-weight: 700; }
+.admin-manager-notes {
+  margin: 0 0 12px;
+  padding: 8px 12px 8px 28px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.admin-duty-list { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 8px; }
+.admin-invite-form { margin-bottom: 8px; }
+.admin-manager-table-wrap { height: auto; max-height: none; }
+#adminManagerTable { table-layout: auto; }
+#adminManagerTable tbody tr { cursor: default; }
+#adminManagerTable td { white-space: normal; }
+#adminManagerTable .admin-link {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+#adminManagerTable button { margin-left: 6px; }
+body.admin-locked:not(.admin-allow-products) #appTabProducts,
+body.admin-locked:not(.admin-allow-products) #viewProducts,
+body.admin-locked:not(.admin-allow-collect) #appTabCollect,
+body.admin-locked:not(.admin-allow-collect) #viewCollect,
+body.admin-locked:not(.admin-allow-orders) #appTabOrders,
+body.admin-locked:not(.admin-allow-orders) #viewOrders,
+body.admin-locked:not(.admin-allow-inquiries) #appTabInquiries,
+body.admin-locked:not(.admin-allow-inquiries) #viewInquiries,
+body.admin-locked #appTabWholesalers,
+body.admin-locked #viewWholesalers,
+body.admin-locked #appTabSettings,
+body.admin-locked #viewSettings,
+body.admin-locked #marketSidebarSettings,
+body.admin-locked #collectOpenWholesalers,
+body.admin-locked #collectEmptyOpenWholesalers,
+body.admin-locked #marketLoginIdRow,
+body.admin-locked #marketLoginPwRow,
+body.admin-locked #marketApiKeyRow,
+body.admin-locked #marketApiSecretRow,
+body.admin-locked #marketVendorRow,
+body.admin-locked #marketEsmRow,
+body.admin-locked #marketApiAccountRow,
+body.admin-locked #marketForm label:has(input[name="login_id"]),
+body.admin-locked #marketForm label:has(input[name="login_password"]),
+body.admin-locked #marketForm label:has(input[name="api_key"]),
+body.admin-locked #marketForm label:has(input[name="api_secret"]),
+body.admin-locked #marketForm label:has(input[name="vendor_code"]),
+body.admin-locked #marketForm label:has(input[name="esm_id"]),
+body.admin-locked #marketForm label:has(input[name="naver_account_id"]),
+body.admin-locked #wholesaleForm label:has(input[name="login_id"]),
+body.admin-locked #wholesaleForm label:has(input[name="login_password"]) {
+  display: none !important;
+}
+"""
+
 
 def read_text(path: Path) -> tuple[str, str]:
     raw = path.read_bytes()
@@ -1907,8 +2613,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "invite-settings1")
-    return bump_asset(text, "app.js", "invite-settings1")
+    text = bump_asset(text, "styles.css", "admin-menu1")
+    return bump_asset(text, "app.js", "admin-menu1")
 
 
 def patch_answer(text: str) -> str:
@@ -1936,6 +2642,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_JS2
     if "/* invite-settings1 */" not in text:
         text = text.rstrip() + "\n" + INVITE_SETTINGS_JS
+    if "/* admin-menu1 */" not in text:
+        text = text.rstrip() + "\n" + ADMIN_MENU_JS
     return text
 
 
@@ -1959,6 +2667,8 @@ def patch_css(text: str) -> str:
         extra += INVITE_CSS
     if "/* invite-settings1 */" not in text:
         extra += INVITE_SETTINGS_CSS
+    if "/* admin-menu1 */" not in text:
+        extra += ADMIN_MENU_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

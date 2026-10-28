@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.27"
+SCREEN_VERSION = "2026.10.28.28"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4300,7 +4300,7 @@ def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
     text = bump_asset(text, "styles.css", "stock-market1")
-    return bump_asset(text, "app.js", "stock-market1")
+    return bump_asset(text, "app.js", "murray-price1")
 
 
 COLLECT_URL_JS = r"""
@@ -5117,7 +5117,7 @@ def patch_answer(text: str) -> str:
     if "/* stock-market1 */" not in text:
         text = text.rstrip() + "\n" + STOCK_MARKET_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5280,6 +5280,285 @@ def _apply_one_static(static: Path) -> bool:
     return changed
 
 
+MURRAY_MARKER = "# murray-price1"
+MURRAY_PARSE_PY = r'''
+# murray-price1
+import re as _murray_re
+import threading as _murray_threading
+
+_murray_local = _murray_threading.local()
+
+
+def _murray_won(text):
+    match = _murray_re.search(r"(\d{1,3}(?:,\d{3})+|\d+)\s*원", text or "")
+    if not match:
+        return 0
+    try:
+        return int(match.group(1).replace(",", ""))
+    except ValueError:
+        return 0
+
+
+def _murray_ship_amount(text):
+    head = (text or "").split("지역별", 1)[0]
+    if _murray_re.search(r"\d", head):
+        return _murray_won(head)
+    if "무료" in head:
+        return 0
+    return None
+
+
+def _murray_compact(text):
+    return _murray_re.sub(r"\s+", "", text or "")
+
+
+def _murray_following(el):
+    sibling = el.next_sibling
+    steps = 0
+    while sibling is not None and steps < 6:
+        steps += 1
+        getter = getattr(sibling, "get_text", None)
+        if getter is not None:
+            return getter(" ", strip=True)
+        text = str(sibling).strip()
+        if text:
+            return text
+        sibling = sibling.next_sibling
+    return ""
+
+
+def murray_price_fields(html):
+    raw = html or ""
+    compact = _murray_compact(raw)
+    if "판매지도가" not in compact and "딜러공급가" not in compact:
+        return 0, 0, None
+    guide = 0
+    dealer = 0
+    ship = None
+
+    def take(label, value):
+        nonlocal guide, dealer, ship
+        key = _murray_compact(label)
+        blob = f"{label or ''} {value or ''}"
+        if "판매지도가" in key:
+            amount = _murray_won(value) or _murray_won(blob)
+            if amount:
+                guide = amount
+            return
+        if "딜러공급가" in key:
+            amount = _murray_won(value) or _murray_won(blob)
+            if amount:
+                dealer = amount
+            return
+        if "지역별" in key:
+            return
+        if key == "배송비" or (key.startswith("배송비") and len(key) <= 12 and "원" not in key):
+            amount = _murray_ship_amount(value or blob)
+            if amount is None:
+                amount = _murray_ship_amount(blob)
+            if amount is not None:
+                ship = amount
+
+    try:
+        from bs4 import BeautifulSoup
+        try:
+            soup = BeautifulSoup(raw, "lxml")
+        except Exception:
+            soup = BeautifulSoup(raw, "html.parser")
+        for row in soup.select("tr"):
+            cells = row.find_all(["th", "td"], recursive=False) or row.find_all(["th", "td"])
+            if len(cells) >= 2:
+                take(cells[0].get_text(" ", strip=True), cells[1].get_text(" ", strip=True))
+        for block in soup.select("dl"):
+            term = block.find("dt")
+            desc = block.find("dd")
+            if term is not None and desc is not None:
+                take(term.get_text(" ", strip=True), desc.get_text(" ", strip=True))
+        for el in soup.find_all(["strong", "span", "th", "dt", "em", "b", "p", "div", "li"]):
+            label = el.get_text(" ", strip=True)
+            if not label or len(label) > 24:
+                continue
+            key = _murray_compact(label)
+            known = key in {"판매지도가", "딜러공급가", "배송비"} or (
+                key.startswith("배송비") and len(key) <= 12 and "지역" not in key and "원" not in key
+            )
+            if not known:
+                continue
+            value = _murray_following(el)
+            if not _murray_won(value) and "무료" not in value and el.parent is not None:
+                parent_text = el.parent.get_text(" ", strip=True)
+                if parent_text.startswith(label):
+                    value = parent_text[len(label):].strip()
+            take(label, value)
+    except Exception:
+        pass
+    plain = _murray_re.sub(r"<[^>]+>", " ", raw)
+    plain = _murray_re.sub(r"\s+", " ", plain)
+    if not guide:
+        match = _murray_re.search(r"판매\s*지도가\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            guide = int(match.group(1).replace(",", ""))
+    if not dealer:
+        match = _murray_re.search(r"딜러\s*공급가\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            dealer = int(match.group(1).replace(",", ""))
+    if ship is None and (guide or dealer):
+        match = _murray_re.search(r"(?<![가-힣])배송비\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            ship = int(match.group(1).replace(",", ""))
+        elif _murray_re.search(r"(?<![가-힣])배송비\s*[:：]?\s*무료", plain):
+            ship = 0
+    if not guide and not dealer:
+        return 0, 0, None
+    return guide, dealer, ship
+'''
+MURRAY_SCRAPER_PY = MURRAY_PARSE_PY + r'''
+
+_extract_product_before_murray = extract_product
+
+
+def extract_product(html, page_url=""):
+    _murray_local.info = None
+    _murray_local.url = str(page_url or "")
+    data = _extract_product_before_murray(html, page_url)
+    guide, dealer, ship = murray_price_fields(html if isinstance(html, str) else "")
+    info = {}
+    if isinstance(data, dict):
+        if guide:
+            data["price"] = int(guide)
+            data["original_price"] = int(guide)
+            data["_murray_guide"] = int(guide)
+            info["guide"] = int(guide)
+        if dealer:
+            data["cost"] = int(dealer)
+            data["_murray_dealer"] = int(dealer)
+            info["dealer"] = int(dealer)
+        if ship is not None and (guide or dealer):
+            data["shipping_fee"] = int(ship)
+            data["_murray_ship"] = int(ship)
+            info["ship"] = int(ship)
+    if info:
+        _murray_local.info = info
+    return data
+'''
+MURRAY_SERVICE_PY = r'''
+# murray-price1
+import re as _murray_re
+
+try:
+    from app import scraper as _murray_scraper
+except Exception:
+    _murray_scraper = None
+
+
+def _murray_same_page(left, right):
+    a = str(left or "").strip()
+    b = str(right or "").strip()
+    if not a or not b:
+        return False
+    if a.rstrip("/") == b.rstrip("/"):
+        return True
+    pattern = r"(?:goodsNo|goods_no|product_no|productno)=(\d+)"
+    ma = _murray_re.search(pattern, a, _murray_re.I)
+    mb = _murray_re.search(pattern, b, _murray_re.I)
+    if ma and mb:
+        return ma.group(1) == mb.group(1)
+    return a.split("?", 1)[0].rstrip("/") == b.split("?", 1)[0].rstrip("/")
+
+
+def _murray_apply_fields(item, info):
+    if not isinstance(item, dict) or not isinstance(info, dict):
+        return False
+    changed = False
+    guide = int(info.get("guide") or 0)
+    dealer = int(info.get("dealer") or 0)
+    if guide and int(item.get("price") or 0) != guide:
+        item["price"] = guide
+        changed = True
+    if guide and int(item.get("original_price") or 0) != guide:
+        item["original_price"] = guide
+        changed = True
+    if dealer and int(item.get("cost") or 0) != dealer:
+        item["cost"] = dealer
+        changed = True
+    if "ship" in info:
+        ship = int(info.get("ship") or 0)
+        current = item.get("shipping_fee")
+        if current in (None, "") or int(current or 0) != ship:
+            item["shipping_fee"] = ship
+            changed = True
+    return changed
+
+
+def _murray_info_from_extract(extracted):
+    if not isinstance(extracted, dict):
+        return None
+    if not extracted.get("_murray_guide") and not extracted.get("_murray_dealer"):
+        return None
+    info = {}
+    if extracted.get("_murray_guide"):
+        info["guide"] = int(extracted.get("_murray_guide") or 0)
+    if extracted.get("_murray_dealer"):
+        info["dealer"] = int(extracted.get("_murray_dealer") or 0)
+    if "_murray_ship" in extracted:
+        info["ship"] = int(extracted.get("_murray_ship") or 0)
+    return info or None
+
+
+_apply_wholesale_extract_before_murray = _apply_wholesale_extract
+
+
+def _apply_wholesale_extract(*args, **kwargs):
+    changed = _apply_wholesale_extract_before_murray(*args, **kwargs)
+    extracted = args[1] if len(args) > 1 else kwargs.get("extracted")
+    item = args[0] if args else kwargs.get("item")
+    info = _murray_info_from_extract(extracted)
+    if info and _murray_apply_fields(item, info):
+        changed = True
+    return changed
+
+
+_collect_product_before_murray = collect_product
+
+
+def collect_product(*args, **kwargs):
+    product = _collect_product_before_murray(*args, **kwargs)
+    scraper = _murray_scraper
+    local = getattr(scraper, "_murray_local", None) if scraper is not None else None
+    info = getattr(local, "info", None) if local is not None else None
+    seen = getattr(local, "url", "") if local is not None else ""
+    if not isinstance(product, dict) or not isinstance(info, dict):
+        return product
+    source = product.get("source_url") or (args[0] if args else "")
+    if seen and source and not _murray_same_page(seen, source):
+        return product
+    if _murray_apply_fields(product, info):
+        save_product(product)
+    return product
+'''
+
+
+def _append_marked_source(path: Path, snippet: str, required: str) -> bool:
+    if not path.is_file():
+        return False
+    text, newline = read_text(path)
+    if MURRAY_MARKER in text:
+        return False
+    if required not in text:
+        return False
+    write_text(path, text.rstrip() + "\n\n" + snippet.strip() + "\n", newline)
+    return True
+
+
+def patch_murray_sources(root: Path) -> bool:
+    changed = False
+    if _append_marked_source(root / "app" / "scraper.py", MURRAY_SCRAPER_PY, "def extract_product"):
+        changed = True
+    if _append_marked_source(root / "app" / "service.py", MURRAY_SERVICE_PY, "def _apply_wholesale_extract"):
+        changed = True
+    return changed
+
+
 def main() -> None:
     seller_only = "--seller-only" in sys.argv[1:]
     args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
@@ -5295,7 +5574,8 @@ def main() -> None:
         return
     static_changed = apply_static_patches(root)
     version_changed = write_screen_version(root) if root.exists() else False
-    if not seller_changed and not static_changed and not version_changed:
+    murray_changed = patch_murray_sources(root) if root.exists() else False
+    if not seller_changed and not static_changed and not version_changed and not murray_changed:
         if not iter_static_dirs(root):
             raise SystemExit(f"static files not found: {root / 'app' / 'static'}")
         print("already linked")

@@ -81,6 +81,57 @@ function Find-PackageRoot([string]$extracted) {
   return $exe.DirectoryName
 }
 
+function Test-ProgramExe([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $false }
+  $fs = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+  try {
+    $buf = New-Object byte[] 1048576
+    $carry = ''
+    while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+      $window = $carry + [System.Text.Encoding]::ASCII.GetString($buf, 0, $n)
+      if ($window.Contains('PyInstaller') -or $window.Contains('python313.dll')) { return $true }
+      if ($window.Length -gt 64) { $carry = $window.Substring($window.Length - 64) } else { $carry = $window }
+    }
+  } finally {
+    $fs.Close()
+  }
+  return $false
+}
+
+function Repair-MasterShortcut([string]$Folder) {
+  $vbs = Join-Path $Folder '어제오후9시.vbs'
+  if (-not (Test-Path -LiteralPath $vbs)) { return }
+  $desk = [Environment]::GetFolderPath('Desktop')
+  if (-not $desk) { return }
+  $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+  $shell = New-Object -ComObject WScript.Shell
+  $link = $shell.CreateShortcut((Join-Path $desk '모두모두AI 마스터.lnk'))
+  $link.TargetPath = $wscript
+  $link.Arguments = "//nologo `"$vbs`""
+  $link.WorkingDirectory = $Folder
+  $exe = Join-Path $Folder 'MODUMODU.exe'
+  if (Test-Path -LiteralPath $exe) { $link.IconLocation = "$exe,0" }
+  $link.WindowStyle = 1
+  $link.Description = '모두모두AI'
+  $link.Save()
+  Get-ChildItem -LiteralPath $desk -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -eq '모두모두AI 마스터.lnk') { return }
+    $item = $shell.CreateShortcut($_.FullName)
+    $target = [string]$item.TargetPath
+    if (-not $target.ToLower().EndsWith('\modumodu.exe')) { return }
+    $targetDir = [System.IO.Path]::GetDirectoryName($target)
+    $script = Join-Path $targetDir '어제오후9시.vbs'
+    if (-not (Test-Path -LiteralPath $script)) { return }
+    $item.TargetPath = $wscript
+    $item.Arguments = "//nologo `"$script`""
+    $item.WorkingDirectory = $targetDir
+    $targetExe = Join-Path $targetDir 'MODUMODU.exe'
+    if (Test-Path -LiteralPath $targetExe) { $item.IconLocation = "$targetExe,0" }
+    $item.WindowStyle = 1
+    $item.Save()
+  }
+}
+
 if ($Mode -eq '-Check') {
   try {
     $local = '0'
@@ -115,9 +166,13 @@ if ($Mode -eq '-Apply') {
     & tar.exe -xf $zip -C $extracted
     if ($LASTEXITCODE -ne 0) { throw 'extract failed' }
     $src = Find-PackageRoot $extracted
-    & robocopy.exe $src $Dir /E /XD data /XF edition.txt update_url.txt license_url.txt launcher.log /R:8 /W:2 /NFL /NDL /NJH /NJS /NP
+    $exclude = @('edition.txt', 'update_url.txt', 'license_url.txt', 'launcher.log')
+    if (Test-ProgramExe (Join-Path $Dir 'MODUMODU.exe')) { $exclude += 'MODUMODU.exe' }
+    $roboArgs = @($src, $Dir, '/E', '/XD', 'data', '/XF') + $exclude + @('/R:8', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
+    & robocopy.exe @roboArgs
     if ($LASTEXITCODE -ge 8) { throw 'copy failed' }
     Repair-BrokenNames $Dir
+    Repair-MasterShortcut $Dir
     exit 0
   } catch {
     exit 1

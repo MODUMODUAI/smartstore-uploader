@@ -12,6 +12,9 @@ func TestRenderApplyVBSKeepsData(t *testing.T) {
 		"update_url.txt",
 		"license_url.txt",
 		"launcher.log",
+		"Size > 8000000",
+		"모두모두AI 마스터.lnk",
+		`wscript.exe`,
 		`C:\smartstore uploader\배포\MODUMODU-마스터`,
 		`shell.Run """C:\smartstore uploader\배포\MODUMODU-마스터\MODUMODU.exe"""`,
 	} {

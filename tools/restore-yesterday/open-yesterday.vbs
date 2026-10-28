@@ -1,12 +1,13 @@
 Option Explicit
 
-Dim fso, shell, here, root, staticDir, marker, py, launcher, desktop, link
-Dim dataDir, bestData, bestCount, liveCount, copied, patched, exePath
+Dim fso, shell, here, root, staticDir, marker, py, launcher
+Dim dataDir, bestData, bestCount, liveCount, copied, patched
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 RepairBrokenNames here
+RepairMasterShortcut
 If Not ReadyArg() Then
   If OfferUpdate(here) Then WScript.Quit 0
 End If
@@ -58,24 +59,7 @@ If fso.FileExists(here & "\idle-update.vbs") Then
   shell.Run "wscript.exe //nologo """ & here & "\idle-update.vbs"" """ & here & """ """ & root & """", 0, False
 End If
 
-On Error Resume Next
-desktop = shell.SpecialFolders("Desktop")
-exePath = here & "\MODUMODU.exe"
-Set link = shell.CreateShortcut(desktop & "\모두모두AI 마스터.lnk")
-If fso.FileExists(exePath) Then
-  link.TargetPath = exePath
-  link.Arguments = ""
-  link.WorkingDirectory = here
-  link.IconLocation = exePath & ",0"
-Else
-  link.TargetPath = "wscript.exe"
-  link.Arguments = "//nologo """ & WScript.ScriptFullName & """"
-  link.WorkingDirectory = here
-End If
-link.WindowStyle = 1
-link.Description = "모두모두AI"
-link.Save
-On Error GoTo 0
+RepairMasterShortcut
 
 If patched = 10 Then
   MsgBox "셀러용 설치 프로그램을 만들었습니다." & vbCrLf & _
@@ -83,11 +67,49 @@ If patched = 10 Then
     "구매자는 모두모두AI-셀러용-설치.exe 로 설치하고, 실행할 때 업데이트할 수 있습니다." & vbCrLf & _
     "셀러용은 전화번호마다 비밀번호를 발급합니다. 같은 전화번호는 같은 데이터로 들어갑니다." & vbCrLf & _
     "마켓 로그인 정보와 URL 수집은 없습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.26 입니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.27 입니다." & vbCrLf & _
     "배포용과 테스트용 바로가기와 자료는 지웁니다." & vbCrLf & _
     "마스터는 비밀번호 창이 열립니다." & vbCrLf & _
     "셀러용을 열면 http://127.0.0.1:8788 로그인 창이 나옵니다.", 64, "모두모두AI"
 End If
+
+Sub RepairMasterShortcut()
+  Dim desktop, shellLink, folder, file, scriptPath, target, targetDir
+  On Error Resume Next
+  desktop = shell.SpecialFolders("Desktop")
+  If desktop = "" Then Exit Sub
+  scriptPath = here & "\어제오후9시.vbs"
+  If Not fso.FileExists(scriptPath) Then scriptPath = WScript.ScriptFullName
+  Set shellLink = shell.CreateShortcut(desktop & "\모두모두AI 마스터.lnk")
+  shellLink.TargetPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
+  shellLink.Arguments = "//nologo """ & scriptPath & """"
+  shellLink.WorkingDirectory = here
+  If fso.FileExists(here & "\MODUMODU.exe") Then shellLink.IconLocation = here & "\MODUMODU.exe,0"
+  shellLink.WindowStyle = 1
+  shellLink.Description = "모두모두AI"
+  shellLink.Save
+  Set folder = fso.GetFolder(desktop)
+  For Each file In folder.Files
+    If LCase(Right(file.Name, 4)) = ".lnk" And LCase(file.Name) <> "모두모두ai 마스터.lnk" Then
+      Set shellLink = shell.CreateShortcut(file.Path)
+      target = shellLink.TargetPath
+      If Len(target) >= 12 Then
+        If LCase(Right(target, 12)) = "\modumodu.exe" Then
+          targetDir = fso.GetParentFolderName(target)
+          If fso.FileExists(targetDir & "\어제오후9시.vbs") Then
+            shellLink.TargetPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
+            shellLink.Arguments = "//nologo """ & targetDir & "\어제오후9시.vbs"""
+            shellLink.WorkingDirectory = targetDir
+            If fso.FileExists(targetDir & "\MODUMODU.exe") Then shellLink.IconLocation = targetDir & "\MODUMODU.exe,0"
+            shellLink.WindowStyle = 1
+            shellLink.Save
+          End If
+        End If
+      End If
+    End If
+  Next
+  On Error GoTo 0
+End Sub
 
 Sub RepairBrokenNames(folder)
   Dim pairs, i, parts, src, dst

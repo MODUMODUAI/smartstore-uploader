@@ -130,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.33"
+SCREEN_VERSION = "2026.10.28.34"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3673,6 +3673,70 @@ body.master-locked { overflow: hidden; }
 #masterLoginError { min-height: 1.2em; color: #b42318; font-weight: 700; }
 """
 
+MASTER_LOGIN2_JS = r"""
+/* master-login2 */
+(function () {
+  function attach(input) {
+    if (!input || input.dataset.masterPeek === "1") return;
+    input.dataset.masterPeek = "1";
+    input.autocomplete = "new-password";
+    input.value = "";
+    input.inputMode = "numeric";
+    const line = document.createElement("span");
+    line.className = "seller-password-line";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "seller-peek";
+    button.textContent = "보기";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      const open = input.type === "password";
+      input.type = open ? "text" : "password";
+      button.textContent = open ? "가리기" : "보기";
+      button.setAttribute("aria-pressed", open ? "true" : "false");
+      input.focus();
+    });
+    input.before(line);
+    line.append(input, button);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#masterLoginPassword").forEach(attach);
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.masterPeekWatch === "1") return;
+    document.body.dataset.masterPeekWatch = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
+})();
+"""
+
+MASTER_LOGIN2_CSS = """
+/* master-login2 */
+#masterLogin .master-login-card input,
+#masterLogin .master-login-card input:focus {
+  background: #fff !important;
+  color: #111 !important;
+  caret-color: #111;
+  border: 1px solid #98a2b3 !important;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+}
+#masterLogin .master-login-card input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 40px #fff inset !important;
+  -webkit-text-fill-color: #111 !important;
+}
+#masterLogin .seller-password-line { margin-top: 6px; }
+#masterLogin .seller-password-line input { margin-top: 0; }
+"""
+
 SELLER_LOGIN2_CSS = """
 /* seller-login2 */
 #sellerIssuedPassword {
@@ -4310,8 +4374,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "stock-market1")
-    return bump_asset(text, "app.js", "collect-url2")
+    text = bump_asset(text, "styles.css", "master-login2")
+    return bump_asset(text, "app.js", "master-login2")
 
 
 COLLECT_URL_JS = r"""
@@ -5129,8 +5193,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + STOCK_MARKET_JS
     if "/* collect-url2 */" not in text:
         text = text.rstrip() + "\n" + COLLECT_URL2_JS
+    if "/* master-login2 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_LOGIN2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5172,6 +5238,8 @@ def patch_css(text: str) -> str:
         extra += STOCK_LIST_CSS
     if "/* stock-market1 */" not in text:
         extra += STOCK_MARKET_CSS
+    if "/* master-login2 */" not in text:
+        extra += MASTER_LOGIN2_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra
@@ -5904,6 +5972,139 @@ def collect_product(*args, **kwargs):
         save_product(product)
     return product
 '''
+GODO_NAME2_MARKER = "# godo-name2"
+GODO_NAME2_CATALOG_PY = r'''
+# godo-name2
+# Godomall answers goods_list.php without cateCd with "잘못된 접근입니다", so
+# the whole-shop import found no list names. Walk the shop's own categories.
+_godo_known_names = {}
+_godo_bad_name_before_name2 = _godo_bad_name
+
+
+def _godo_bad_name(name, number):
+    return _godo_bad_name_before_name2(name, number) or str(name or "").strip() == "이름 없는 상품"
+
+
+def _godo_cate_links(shop_url):
+    base = _base(shop_url)
+    found = []
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            response = client.get(base + "/")
+        soup = BeautifulSoup(response.text, "lxml")
+        for link in soup.select("a[href*='cateCd']"):
+            code = _godo_cate_from_href(str(link.get("href") or ""))
+            label = " ".join(link.get_text(" ", strip=True).split())
+            if code and code not in [item[0] for item in found]:
+                found.append((code, label))
+    except Exception:
+        return []
+    return found
+
+
+def _godo_all_cates(shop_url):
+    found = _godo_cate_links(shop_url)
+    whole = [code for code, label in found if "전체" in label]
+    top = [code for code, label in found if len(code) <= 3 and code not in whole]
+    rest = [code for code, label in found if code not in whole and code not in top]
+    return whole + top + rest
+
+
+def _godo_whole_shop(shop_url, data, *args, **kwargs):
+    found = _godo_cate_links(shop_url)
+    whole = [code for code, label in found if "전체" in label]
+    top = [code for code, label in found if len(code) <= 3 and code not in whole]
+    seen = {}
+    for group in (whole[:1], top[:60]):
+        for cate in group:
+            part = _godomall_products_before_name(shop_url, cate, *args, **kwargs)
+            for item in (part.get("items") if isinstance(part, dict) else None) or []:
+                if isinstance(item, dict):
+                    seen.setdefault(str(item.get("product_no") or item.get("url") or ""), item)
+        if seen:
+            break
+    if not seen:
+        return data
+    merged = dict(data) if isinstance(data, dict) else {}
+    merged["items"] = list(seen.values())
+    merged["count"] = len(merged["items"])
+    return merged
+
+
+def _godo_names_for(shop_url, category, wanted):
+    names = _godo_list_names(shop_url, category)
+    need = set(wanted) - set(names)
+    if need:
+        for cate in _godo_all_cates(shop_url)[:60]:
+            if cate == str(category or "").strip():
+                continue
+            more = _godo_list_names(shop_url, cate)
+            for number, name in more.items():
+                names.setdefault(number, name)
+            need -= set(more)
+            if not need:
+                break
+    return names
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_name(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not items and str(category or "").strip() in {"", "all"}:
+        data = _godo_whole_shop(shop_url, data, *args, **kwargs)
+        items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return data
+    bad = [item for item in items if isinstance(item, dict) and _godo_bad_name(item.get("name"), item.get("product_no"))]
+    if not bad:
+        return data
+    names = _godo_names_for(shop_url, category, {str(item.get("product_no") or "") for item in bad})
+    _godo_known_names.update(names)
+    for item in bad:
+        name = names.get(str(item.get("product_no") or ""))
+        if name:
+            item["name"] = name
+    return data
+'''
+GODO_NAME2_SERVICE_PY = r'''
+# godo-name2
+_import_wholesale_catalog_before_name2 = import_wholesale_catalog
+
+
+def _godo_repair_saved_names(wholesaler_id):
+    import app.shop_catalog as _godo_catalog
+
+    known = getattr(_godo_catalog, "_godo_known_names", None) or {}
+    bad_name = getattr(_godo_catalog, "_godo_bad_name", None)
+    if not known or bad_name is None:
+        return 0
+    fixed = []
+    for product in list_full_products():
+        if str(product.get("wholesale_id") or "") != str(wholesaler_id or ""):
+            continue
+        number = str(product.get("wholesale_product_no") or "").strip()
+        name = known.get(number)
+        if not name or not bad_name(product.get("name"), number):
+            continue
+        product["name"] = name
+        if bad_name(product.get("original_name"), number):
+            product["original_name"] = name
+        fixed.append(product)
+    if fixed:
+        save_products_batch(fixed)
+    return len(fixed)
+
+
+def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _import_wholesale_catalog_before_name2(wholesaler_id, *args, **kwargs)
+    try:
+        renamed = _godo_repair_saved_names(wholesaler_id)
+        if renamed and isinstance(result, dict):
+            result["renamed"] = renamed
+    except Exception:
+        pass
+    return result
+'''
 COLLECT_URL2_JS = r"""
 /* collect-url2 */
 function collectIdentity(url) {
@@ -6003,7 +6204,15 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(service, GODO_NAME_SERVICE_PY, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_MARKER):
         changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_NAME2_CATALOG_PY, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_NAME2_SERVICE_PY, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_MARKER):
+        changed = True
     return changed
+
+
+GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
+GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
 
 
 def frozen_fix_plan() -> dict:
@@ -6025,9 +6234,11 @@ def frozen_fix_plan() -> dict:
             (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
             (GODO_MARKER, godo_needed, GODO_SERVICE_PY),
             (GODO_NAME_MARKER, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_SERVICE_PY),
+            (GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_SERVICE_PY),
         ],
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),
+            (GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_CATALOG_PY),
         ],
     }
 

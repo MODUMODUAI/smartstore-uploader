@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.25"
+SCREEN_VERSION = "2026.10.28.26"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3805,9 +3805,18 @@ def patch_help(text: str) -> str:
         old = "상품 검색·담기는 <strong>상품담기</strong> 메뉴에서 합니다."
         if old in text:
             text = text.replace(old, old + " " + WHOLESALE_HELP_NOTE, 1)
+    stock_help = (
+        "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 마스터상품과 각 마켓 상품을 본 뒤, "
+        "모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다. "
+        "진행하면 마스터상품과 각 마켓 상품에 함께 적용됩니다."
+    )
     text = text.replace(
         "품절/재판매: 고른 상품의 공급처 재고를 확인한 뒤, 품절로 바꾸기 또는 재판매로 바꾸기를 누릅니다.",
+        stock_help,
+    )
+    text = text.replace(
         "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 목록을 본 뒤, 모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다.",
+        stock_help,
     )
     return text
 
@@ -4290,8 +4299,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "stock-list1")
-    return bump_asset(text, "app.js", "stock-list1")
+    text = bump_asset(text, "styles.css", "stock-market1")
+    return bump_asset(text, "app.js", "stock-market1")
 
 
 COLLECT_URL_JS = r"""
@@ -4738,6 +4747,304 @@ STOCK_LIST_CSS = """
 """
 
 
+STOCK_MARKET_JS = r"""
+/* stock-market1 */
+function stockPlaceLabel(item) {
+  if (!item || !item.market_id) return "마스터";
+  let name = "";
+  if (typeof marketOf === "function") {
+    const market = marketOf(item.market_id);
+    name = (market && (market.name || market.slug)) || "";
+  }
+  return String(name || item.market_name || "마켓");
+}
+
+function stockRows() {
+  const id = String(stockSupplierId || "");
+  const seen = new Set();
+  const take = (item) => {
+    const key = String(item?.id || "");
+    if (!key || seen.has(key)) return null;
+    seen.add(key);
+    return item;
+  };
+  const masters = [];
+  products.forEach((item) => {
+    if (!id || item.market_id || productWholesalerId(item) !== id) return;
+    const row = take(item);
+    if (row) masters.push(row);
+  });
+  const masterIds = new Set(masters.map((item) => String(item.id)));
+  const copies = [];
+  products.forEach((item) => {
+    if (!item || !item.market_id) return;
+    const linked = masterIds.has(String(item.master_id || "")) || productWholesalerId(item) === id;
+    if (!linked) return;
+    const row = take(item);
+    if (row) copies.push(row);
+  });
+  const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  const soldRank = (item) => (item.wholesale_soldout ? 0 : 1);
+  masters.sort((a, b) => soldRank(a) - soldRank(b) || byName(a, b));
+  const grouped = new Map();
+  copies.forEach((item) => {
+    const key = String(item.master_id || "");
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  });
+  const rows = [];
+  masters.forEach((master) => {
+    rows.push(master);
+    const kids = grouped.get(String(master.id)) || [];
+    kids.sort((a, b) => stockPlaceLabel(a).localeCompare(stockPlaceLabel(b), "ko") || byName(a, b));
+    kids.forEach((kid) => rows.push(kid));
+    grouped.delete(String(master.id));
+  });
+  const orphans = [];
+  grouped.forEach((kids) => orphans.push(...kids));
+  orphans.sort((a, b) => soldRank(a) - soldRank(b) || stockPlaceLabel(a).localeCompare(stockPlaceLabel(b), "ko") || byName(a, b));
+  orphans.forEach((item) => rows.push(item));
+  return rows;
+}
+
+function stockSummaryText() {
+  const rows = stockListedRows();
+  const masters = rows.filter((item) => !item.market_id).length;
+  const markets = rows.length - masters;
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  const applied = stockJob?.applied || {};
+  const noun = stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+  const place = markets
+    ? `마스터상품 ${masters}개, 마켓 상품 ${markets}개`
+    : `마스터상품 ${masters}개`;
+  if (!stockJob) {
+    return `아래는 이 공급처의 ${place}입니다. ${noun}를 누른 뒤, 모두 선택한 상태에서 ${stockProceedLabel()}을 누르세요. 진행하면 마스터상품과 각 마켓 상품에 함께 적용됩니다.`;
+  }
+  if (stockJob.status === "running") return "공급처 상품을 확인하는 중입니다. 마스터상품과 각 마켓 상품을 미리 볼 수 있습니다.";
+  if (stockJob.status === "cancelled") return "조회를 중지했습니다.";
+  if (stockJob.status === "error") return stockJob.message || "조회하지 못했습니다.";
+  if (applied[kind] != null) {
+    return kind === "resale"
+      ? `마스터상품과 각 마켓 상품에 재판매를 적용했습니다. ${applied.resale}개 상품의 품절 표시를 바꿨습니다.`
+      : `마스터상품과 각 마켓 상품에 품절을 적용했습니다. ${applied.soldout}개 상품의 품절 표시를 바꿨습니다.`;
+  }
+  const count = stockResultCount();
+  if (!count) {
+    return kind === "resale" ? "재판매로 바꿀 상품이 없습니다." : "품절로 바꿀 상품이 없습니다.";
+  }
+  const action = kind === "resale"
+    ? `공급처에서 다시 판매하는 상품 ${count}개를 마스터상품과 각 마켓 상품에 재판매로 적용합니다.`
+    : `공급처에서 품절로 확인된 상품 ${count}개를 마스터상품과 각 마켓 상품에 품절로 적용합니다.`;
+  if (!stockSelectionComplete()) {
+    return "지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 마스터상품과 각 마켓 상품을 모두 선택한 뒤 진행해 주세요.";
+  }
+  return `${place}입니다. ${action}`;
+}
+
+function renderStockList(force) {
+  ensureStockList();
+  adoptStockRows();
+  const listed = stockListedRows();
+  const stamp = [
+    stockMode,
+    stockSupplierId,
+    stockListQuery,
+    stockJob?.id || "",
+    stockJob?.status || "",
+    stockJob?.soldout_count || 0,
+    stockJob?.resale_count || 0,
+    listed.map((item) => `${item.id}:${item.market_id || ""}:${item.wholesale_soldout ? 1 : 0}:${item.sale_status || ""}`).join(","),
+  ].join("|");
+  const list = $("#stockList");
+  if (list && (force || stamp !== stockListStamp)) {
+    stockListStamp = stamp;
+    const query = stockListQuery.trim().toLowerCase();
+    const rows = listed.filter((item) => {
+      if (!query) return true;
+      const hay = `${item.name || ""} ${item.wholesale_product_no || ""} ${item.seller_code || ""} ${stockPlaceLabel(item)}`.toLowerCase();
+      return hay.includes(query);
+    });
+    if (!rows.length) {
+      const empty = stockListQuery.trim() ? "찾는 상품이 없습니다." : "이 공급처의 마스터상품이 없습니다.";
+      list.innerHTML = `<p class="stock-list-empty">${stockEscape(empty)}</p>`;
+    } else {
+      list.innerHTML = rows.map((item) => {
+        const id = String(item.id);
+        const checked = stockPicked.has(id) ? " checked" : "";
+        const sold = item.wholesale_soldout ? " is-soldout" : "";
+        const role = item.market_id ? " is-market" : " is-master";
+        const no = String(item.wholesale_product_no || "").trim();
+        const price = Number(item.price || 0).toLocaleString("ko-KR");
+        const state = item.wholesale_soldout ? "품절" : "정상";
+        const meta = [no, `${price}원`, state].filter(Boolean).join(" · ");
+        const place = stockEscape(stockPlaceLabel(item));
+        return `<label class="stock-list-row${sold}${role}"><input type="checkbox" data-stock-id="${stockEscape(id)}"${checked} /><span class="stock-list-name"><span class="stock-list-place">${place}</span>${stockEscape(item.name || "이름 없는 상품")}</span><span class="stock-list-meta">${stockEscape(meta)}</span></label>`;
+      }).join("");
+    }
+  }
+  syncStockSelection();
+}
+
+async function openStockDialog(mode = "soldout") {
+  const id = (productFilter && productFilter !== "all" && productFilter !== "url")
+    ? productFilter
+    : selectedWholesalerId();
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (wholesalers.find((row) => row.id === id)?.type === "ownerclan") {
+    throw new Error("오너클랜 상품은 상품담기에서 확인합니다.");
+  }
+  const supplier = wholesalers.find((row) => row.id === id);
+  clearTimeout(stockTimer);
+  stockJob = null;
+  stockMode = mode === "resale" ? "resale" : "soldout";
+  stockSupplierId = id;
+  stockListQuery = "";
+  stockListStamp = "";
+  stockPicked = new Set();
+  stockSeenIds = new Set();
+  ensureStockList();
+  const search = $("#stockListSearch");
+  if (search) search.value = "";
+  $("#stockTitle").textContent = stockModeLabel();
+  $("#stockRowSoldout").hidden = stockMode !== "soldout";
+  $("#stockRowResale").hidden = stockMode !== "resale";
+  $("#stockSupplier").textContent = stockMode === "resale"
+    ? `${supplier?.name || "공급처"}의 마스터상품과 각 마켓 상품을 조회한 뒤, 재판매진행으로 다시 판매합니다.`
+    : `${supplier?.name || "공급처"}의 마스터상품과 각 마켓 상품을 조회한 뒤, 품절진행으로 품절 처리합니다.`;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "조회 전";
+  $("#stockStep").textContent = "";
+  $("#stockChecked").textContent = "";
+  $("#stockProgress").value = 0;
+  $("#stockSoldoutText").textContent = "조회 전";
+  $("#stockResaleText").textContent = "조회 전";
+  $("#stockStop").disabled = true;
+  adoptStockRows();
+  renderStockList(true);
+  const dialog = $("#stockDialog");
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
+function stockSalePatch(kind, item, fallbackStock) {
+  if (kind === "soldout") {
+    const patch = {};
+    if (String(item.sale_status || "").toUpperCase() !== "SUSPENSION") patch.sale_status = "SUSPENSION";
+    if (item.display !== false) patch.display = false;
+    if (String(item.display_status || "").toUpperCase() !== "SUSPENSION") patch.display_status = "SUSPENSION";
+    if (Number(item.stock || 0) !== 0) patch.stock = 0;
+    return patch;
+  }
+  const patch = {};
+  if (String(item.sale_status || "").toUpperCase() !== "SALE") patch.sale_status = "SALE";
+  if (item.display === false) patch.display = true;
+  if (String(item.display_status || "").toUpperCase() !== "ON") patch.display_status = "ON";
+  if (Number(item.stock || 0) === 0) patch.stock = fallbackStock;
+  return patch;
+}
+
+async function applyStockJob(kind) {
+  if (!stockJob) return;
+  const expected = kind === "resale" ? "resale" : "soldout";
+  if (stockMode !== expected) return;
+  if (!stockProceedReady()) {
+    renderStockList(false);
+    toast("지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 마스터상품과 각 마켓 상품을 모두 선택한 뒤 진행해 주세요.", true);
+    return;
+  }
+  const before = new Map(products.map((item) => [String(item.id), !!item.wholesale_soldout]));
+  stockJob = await api(`/api/stock-jobs/${stockJob.id}/apply`, { method: "POST", body: JSON.stringify({ kind }) });
+  await loadProducts();
+  const target = kind === "soldout";
+  const flipped = new Set();
+  products.forEach((item) => {
+    const id = String(item.id || "");
+    if (!before.has(id) || !!item.wholesale_soldout === before.get(id)) return;
+    flipped.add(id);
+  });
+  const flippedMasterIds = new Set();
+  products.forEach((item) => {
+    if (!flipped.has(String(item.id))) return;
+    if (!item.market_id) flippedMasterIds.add(String(item.id));
+    else if (item.master_id) flippedMasterIds.add(String(item.master_id));
+  });
+  const copies = products.filter((item) => {
+    if (!item.market_id || (typeof isMasterProduct === "function" && isMasterProduct(item))) return false;
+    return flipped.has(String(item.id)) || flippedMasterIds.has(String(item.master_id || ""));
+  });
+  let fallbackStock = 999;
+  if (kind === "resale" && copies.some((item) => Number(item.stock || 0) === 0)) {
+    try {
+      const settings = await api("/api/settings", { quiet: true });
+      const parsed = Number(settings?.default_stock || 0);
+      if (parsed > 0) fallbackStock = parsed;
+    } catch (error) {
+      fallbackStock = 999;
+    }
+  }
+  let failed = 0;
+  if (copies.length) setBusy(true, "마스터상품과 각 마켓 상품에 적용하는 중입니다.");
+  try {
+    for (const item of copies) {
+      const patch = stockSalePatch(kind, item, fallbackStock);
+      if (!Object.keys(patch).length) continue;
+      try {
+        const saved = await api(`/api/products/${item.id}`, { method: "PUT", body: JSON.stringify(patch), quiet: true });
+        const index = products.findIndex((row) => row.id === item.id);
+        if (index >= 0 && saved && saved.id) products[index] = saved;
+      } catch (error) {
+        failed += 1;
+      }
+    }
+  } finally {
+    if (copies.length) setBusy(false);
+  }
+  const masterCount = products.filter((item) => !item.market_id && flipped.has(String(item.id)) && !!item.wholesale_soldout === target).length;
+  const flagged = copies.filter((item) => {
+    const saved = products.find((row) => row.id === item.id) || item;
+    return !!saved.wholesale_soldout === target;
+  }).length;
+  const missed = copies.length - flagged;
+  const verb = kind === "soldout" ? "품절" : "재판매";
+  const parts = [];
+  if (masterCount) parts.push(`마스터상품 ${masterCount}개`);
+  if (flagged) parts.push(`마켓 상품 ${flagged}개`);
+  let message = parts.length
+    ? `${parts.join("와 ")}를 ${verb}로 바꿨습니다.`
+    : (kind === "soldout" ? `${stockJob.applied?.[kind] || 0}개 상품을 품절로 바꿨습니다.` : `${stockJob.applied?.[kind] || 0}개 상품을 재판매로 바꿨습니다.`);
+  if (missed) {
+    message += kind === "soldout"
+      ? ` 마켓 상품 ${missed}개는 판매상태만 판매중지로 바꿨습니다.`
+      : ` 마켓 상품 ${missed}개는 판매상태만 판매중으로 바꿨습니다.`;
+  }
+  if (failed) message += ` 마켓 상품 ${failed}개는 바꾸지 못했습니다.`;
+  stockListStamp = "";
+  renderStockJob(stockJob);
+  $("#stockMessage").textContent = message;
+  log(message, "ok");
+  toast(message);
+}
+"""
+
+
+STOCK_MARKET_CSS = """
+/* stock-market1 */
+.stock-list-row.is-market { padding-left: 28px; background: #fafafa; }
+.stock-list-place {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e7eef8;
+  color: #245;
+  font-size: 11px;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+.stock-list-row.is-market .stock-list-place { background: #f3e7d3; color: #643; }
+"""
+
+
 def patch_seller_login_port(text: str) -> str:
     if "async function useAccount()" in text:
         return text
@@ -4807,8 +5114,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + COLLECT_URL_JS
     if "/* stock-list1 */" not in text:
         text = text.rstrip() + "\n" + STOCK_LIST_JS
+    if "/* stock-market1 */" not in text:
+        text = text.rstrip() + "\n" + STOCK_MARKET_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -4848,6 +5157,8 @@ def patch_css(text: str) -> str:
         extra += SELLER_PEEK_CSS
     if "/* stock-list1 */" not in text:
         extra += STOCK_LIST_CSS
+    if "/* stock-market1 */" not in text:
+        extra += STOCK_MARKET_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

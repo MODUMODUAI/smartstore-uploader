@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.18"
+SCREEN_VERSION = "2026.10.28.19"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3364,6 +3364,74 @@ SELLER_PHONE_JS = r"""
 })();
 """
 
+SELLER_PEEK_JS = r"""
+/* seller-peek1 */
+(function () {
+  function attach(input) {
+    if (!input || input.dataset.sellerPeek === "1") return;
+    input.dataset.sellerPeek = "1";
+    input.type = "password";
+    const line = document.createElement("span");
+    line.className = "seller-password-line";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "seller-peek";
+    button.textContent = "미리보기";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      const open = input.type === "password";
+      input.type = open ? "text" : "password";
+      button.textContent = open ? "가리기" : "미리보기";
+      button.setAttribute("aria-pressed", open ? "true" : "false");
+    });
+    input.before(line);
+    line.append(input, button);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#sellerLoginPassword").forEach(attach);
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.sellerPeekWatch === "1") return;
+    document.body.dataset.sellerPeekWatch = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
+})();
+"""
+
+SELLER_PEEK_CSS = """
+/* seller-peek1 */
+.seller-password-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+.seller-password-line input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.seller-peek {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0b5cab;
+  border: 1px solid #0b5cab;
+  font-size: 13px;
+  font-weight: 700;
+}
+"""
+
 SELLER_PORT_JS = r"""
 /* seller-port1 */
 (function () {
@@ -4192,8 +4260,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-phone1")
-    return bump_asset(text, "app.js", "seller-phone1")
+    text = bump_asset(text, "styles.css", "seller-peek1")
+    return bump_asset(text, "app.js", "seller-peek1")
 
 
 def patch_answer(text: str) -> str:
@@ -4235,8 +4303,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + MASTER_LOGIN_JS
     if "/* seller-phone1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_PHONE_JS
+    if "/* seller-peek1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PEEK_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -4272,6 +4342,8 @@ def patch_css(text: str) -> str:
         extra += SELLER_LOGIN2_CSS
     if "/* master-login1 */" not in text:
         extra += MASTER_LOGIN_CSS
+    if "/* seller-peek1 */" not in text:
+        extra += SELLER_PEEK_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

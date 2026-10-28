@@ -68,6 +68,8 @@ func repairBrokenNames(dir string) {
 		}
 		src := filepath.Join(dir, entry.Name())
 		dst := filepath.Join(dir, fixed)
+		_ = os.Chmod(src, 0o666)
+		_ = os.Chmod(dst, 0o666)
 		if _, err := os.Stat(dst); err == nil {
 			if sameBytes(src, dst) || !largerFile(src, dst) {
 				os.Remove(src)

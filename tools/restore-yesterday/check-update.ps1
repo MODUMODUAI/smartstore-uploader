@@ -9,6 +9,40 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $manifestUrl = 'https://github.com/ibccomae-cpu/smartstore-uploader/releases/latest/download/latest.json'
 
+function Repair-BrokenNames([string]$Folder) {
+  if (-not (Test-Path -LiteralPath $Folder)) { return }
+  $cp866 = [Text.Encoding]::GetEncoding(866)
+  $utf8 = [Text.Encoding]::UTF8
+  Get-ChildItem -LiteralPath $Folder -File -Force | ForEach-Object {
+    $bytes = $cp866.GetBytes($_.Name)
+    $fixed = $utf8.GetString($bytes)
+    if ($fixed -eq $_.Name) { return }
+    if ($fixed -notmatch '[\uAC00-\uD7A3]') { return }
+    if ($fixed -match '[\\/]') { return }
+    $dest = Join-Path $Folder $fixed
+    try {
+      $_.Attributes = 'Archive'
+      if (Test-Path -LiteralPath $dest) {
+        $keep = Get-Item -LiteralPath $dest -Force
+        if ($keep.FullName -eq $_.FullName) { return }
+        $keep.Attributes = 'Archive'
+        if ($keep.Length -ge $_.Length) { Remove-Item -LiteralPath $_.FullName -Force }
+        else { Remove-Item -LiteralPath $dest -Force; Move-Item -LiteralPath $_.FullName -Destination $dest -Force }
+      } else {
+        Move-Item -LiteralPath $_.FullName -Destination $dest -Force
+      }
+    } catch {}
+  }
+}
+
+try {
+  Repair-BrokenNames $Dir
+  $spread = Join-Path $Dir '배포'
+  if (Test-Path -LiteralPath $spread) {
+    Get-ChildItem -LiteralPath $spread -Directory -Force | ForEach-Object { Repair-BrokenNames $_.FullName }
+  }
+} catch {}
+
 function Get-Parts([string]$text) {
   if (-not $text) { return @() }
   $text = $text.Trim().TrimStart([char]0xFEFF)
@@ -78,6 +112,7 @@ if ($Mode -eq '-Apply') {
     $src = Find-PackageRoot $extracted
     & robocopy.exe $src $Dir /E /XD data /XF edition.txt update_url.txt license_url.txt launcher.log /R:8 /W:2 /NFL /NDL /NJH /NJS /NP
     if ($LASTEXITCODE -ge 8) { throw 'copy failed' }
+    Repair-BrokenNames $Dir
     exit 0
   } catch {
     exit 1

@@ -123,7 +123,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.7"
+SCREEN_VERSION = "2026.10.28.8"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1612,6 +1612,48 @@ NAME_JS = r"""
   setTimeout(showVersion, 2400);
 })();
 """
+NAME_JS2 = r"""
+/* name-fix2 */
+(function () {
+  const version = "2026.10.28.8";
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    document.title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+  }
+  function hook() {
+    showVersion();
+    if (typeof applyEdition === "function" && !applyEdition.inquiryVersion8) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion = true;
+      wrapped.inquiryVersion3 = true;
+      wrapped.inquiryVersion4 = true;
+      wrapped.inquiryVersion5 = true;
+      wrapped.inquiryVersion6 = true;
+      wrapped.inquiryVersion7 = true;
+      wrapped.inquiryVersion8 = true;
+      wrapped.inquiryStoreName = true;
+      wrapped.inquiryAnswerHook2 = true;
+      window.applyEdition = wrapped;
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 2800);
+  setTimeout(showVersion, 3200);
+})();
+"""
 
 
 def read_text(path: Path) -> tuple[str, str]:
@@ -1682,8 +1724,8 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "name-fix1")
-    return bump_asset(text, "app.js", "name-fix1")
+    text = bump_asset(text, "styles.css", "name-fix2")
+    return bump_asset(text, "app.js", "name-fix2")
 
 
 def patch_answer(text: str) -> str:
@@ -1707,6 +1749,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + INVITE_JS
     if "/* name-fix1 */" not in text:
         text = text.rstrip() + "\n" + NAME_JS
+    if "/* name-fix2 */" not in text:
+        text = text.rstrip() + "\n" + NAME_JS2
     return text
 
 
@@ -1749,8 +1793,60 @@ def write_screen_version(root: Path) -> bool:
     return changed
 
 
+def repaired_filename(name: str) -> str:
+    try:
+        raw = name.encode("cp866")
+    except UnicodeEncodeError:
+        return ""
+    try:
+        fixed = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return ""
+    if fixed == name or not any("\uac00" <= char <= "\ud7a3" for char in fixed):
+        return ""
+    if "/" in fixed or "\\" in fixed or fixed in {".", ".."}:
+        return ""
+    return fixed
+
+
+def repair_broken_names(folder: Path) -> None:
+    if not folder.is_dir():
+        return
+    for path in list(folder.iterdir()):
+        if not path.is_file():
+            continue
+        fixed = repaired_filename(path.name)
+        if not fixed:
+            continue
+        dest = folder / fixed
+        try:
+            path.chmod(0o666)
+            if dest.exists() and dest.resolve() != path.resolve():
+                dest.chmod(0o666)
+                if dest.read_bytes() == path.read_bytes() or dest.stat().st_size >= path.stat().st_size:
+                    path.unlink()
+                else:
+                    dest.unlink()
+                    path.rename(dest)
+            elif not dest.exists():
+                path.rename(dest)
+        except OSError:
+            continue
+
+
+def repair_known_folders(root: Path) -> None:
+    folders = [Path(__file__).resolve().parent, root, root / "배포"]
+    for folder in folders:
+        repair_broken_names(folder)
+        if folder.name != "배포" or not folder.is_dir():
+            continue
+        for child in folder.iterdir():
+            repair_broken_names(child)
+
+
 def main() -> None:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\smartstore uploader")
+    repair_known_folders(root)
     static = root / "app" / "static"
     js_path = static / "app.js"
     html_path = static / "index.html"

@@ -77,10 +77,11 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "설정 도움말에 관리자 관리를 넣었습니다." & vbCrLf & _
-    "배포용과 테스트용은 지우고 셀러용을 만들었습니다." & vbCrLf & _
+  MsgBox "셀러용 설치 프로그램을 만들었습니다." & vbCrLf & _
+    "구매자에게 배포\모두모두AI-셀러용-설치.zip 을 주세요." & vbCrLf & _
+    "구매자는 모두모두AI-셀러용-설치.exe 로 설치하고, 실행할 때 업데이트할 수 있습니다." & vbCrLf & _
     "셀러용에는 로그인 정보와 URL 수집이 없습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.11 입니다.", 64, "모두모두AI"
+    "화면 버전은 v2026.10.28.12 입니다.", 64, "모두모두AI"
 End If
 
 Sub RepairBrokenNames(folder)

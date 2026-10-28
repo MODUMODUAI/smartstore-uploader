@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 MARKER = "/* inquiry-number-links */"
@@ -126,7 +128,8 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.11"
+SCREEN_VERSION = "2026.10.28.12"
+SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -2645,6 +2648,14 @@ SELLER_JS = r"""
       note.textContent = "셀러용에는 로그인 정보와 상품 URL 수집이 없습니다. 마켓 아이디, 패스워드, 관리자키, 공급처 로그인 칸이 없고, 주소로 상품을 수집하는 칸도 없습니다.";
       overview.append(note);
     }
+    if (overview && !document.getElementById("sellerInstallNote")) {
+      const install = document.createElement("p");
+      install.id = "sellerInstallNote";
+      install.textContent = "구매자는 모두모두AI-셀러용-설치.exe 로 설치합니다. 설치한 뒤에는 실행할 때 업데이트를 받을 수 있습니다.";
+      const note = document.getElementById("sellerHelpNote");
+      if (note) note.after(install);
+      else overview.append(install);
+    }
     const nav = document.getElementById("helpNav");
     if (nav && !nav.querySelector("[data-help='help-admins']")) {
       const button = document.createElement("button");
@@ -2802,26 +2813,37 @@ body.edition-seller .seller-secret {
 
 SELLER_HELP = """모두모두AI 셀러용
 
-로그인 정보와 상품 URL 수집이 없는 셀러용입니다.
-마켓 아이디, 패스워드, 관리자키, 공급처 로그인은 나오지 않습니다.
-상품 URL을 넣어 수집하는 기능은 없습니다.
-상품담기와 상품관리, 주문관리, 문의관리, 공급처, 설정은 그대로 있습니다.
+구매자가 설치해서 쓰는 판매용 프로그램입니다.
+로그인 정보와 상품 URL 수집은 없습니다.
+상품담기, 상품관리, 주문관리, 문의관리, 공급처, 설정은 사용할 수 있습니다.
 
-1. MODUMODU.exe 를 더블클릭합니다. 까만 창은 나오지 않습니다.
-2. 브라우저에서 http://127.0.0.1:8788 이 열립니다. 마스터는 8787이라 같이 켤 수 있습니다.
-3. 화면 위쪽에 셀러용이라고 나옵니다.
+설치
+1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
+2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
+3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
 4. 프로그램을 끝낼 때는 화면 위쪽의 종료를 누릅니다.
-5. 설정과 상품은 이 폴더의 data 에 저장됩니다.
 
-바탕화면 바로가기 이름은 모두모두AI 셀러용 입니다.
+업데이트
+새 버전이 있으면 모두모두AI 셀러용을 실행할 때 안내가 나옵니다.
+동의하면 파일을 받고, 이 컴퓨터의 상품과 설정은 그대로 둡니다.
+
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인은 나오지 않습니다.
 """
 
-SELLER_BAT = """@echo off
-cd /d "%~dp0"
-powershell -NoProfile -Command "$dir=(Get-Location).Path; $name='모두모두AI 셀러용'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ($name+'.lnk'))); $s.TargetPath=(Join-Path $dir 'MODUMODU.exe'); $s.WorkingDirectory=$dir; $s.Description=$name; $s.Save(); Write-Output $name"
-echo 바탕화면에 셀러용 바로가기를 만들었습니다.
-pause
+SELLER_README = """모두모두AI 셀러용 설치
+
+1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
+2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
+3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
+4. 새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다. 상품과 설정은 그대로 둡니다.
+
+로그인 정보와 상품 URL 수집은 없습니다.
 """
+
+SELLER_INSTALL_NOTE = (
+    '<p id="sellerInstallNote">구매자는 모두모두AI-셀러용-설치.exe 로 설치합니다. '
+    "설치한 뒤에는 실행할 때 업데이트를 받을 수 있습니다.</p>"
+)
 
 SELLER_NOTE_HTML = (
     "<!-- seller-help1 -->\n"
@@ -2852,6 +2874,11 @@ def patch_help(text: str) -> str:
                 end = text.find(">", pos)
                 if end >= 0:
                     text = text[: end + 1] + "\n" + SELLER_NOTE_HTML + text[end + 1 :]
+    if 'id="sellerInstallNote"' not in text and 'id="sellerHelpNote"' in text:
+        pos = text.find('id="sellerHelpNote"')
+        end = text.find("</p>", pos)
+        if end >= 0:
+            text = text[: end + 4] + "\n" + SELLER_INSTALL_NOTE + text[end + 4 :]
     if 'data-help="help-admins"' not in text:
         needle = 'data-help="help-data"'
         pos = text.find(needle)
@@ -2969,9 +2996,132 @@ def prepare_seller_folder(folder: Path) -> bool:
         if old_help.is_file():
             old_help.unlink()
             changed = True
+    if _ensure_seller_update_url(folder):
+        changed = True
     bat = folder / "설치.bat"
-    if not _same_text(bat, SELLER_BAT):
-        bat.write_bytes(_crlf_bytes(SELLER_BAT))
+    if bat.is_file():
+        bat.unlink()
+        changed = True
+    return changed
+
+
+def _ensure_seller_update_url(folder: Path) -> bool:
+    path = folder / "update_url.txt"
+    current = path.read_text(encoding="utf-8-sig").strip() if path.is_file() else ""
+    if current == SELLER_UPDATE_URL:
+        return False
+    if current.startswith("https://") and "ibccomae-cpu/smartstore-uploader" not in current:
+        return False
+    path.write_bytes((SELLER_UPDATE_URL + "\r\n").encode("utf-8"))
+    return True
+
+
+def _installer_exe() -> Path | None:
+    env = os.environ.get("MODUMODU_SELLER_SETUP_EXE", "").strip()
+    candidates = [Path(env)] if env else []
+    candidates.append(Path(__file__).resolve().parent / "셀러용-설치.exe")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _setup_dir(root: Path) -> Path:
+    parent = root / "배포"
+    if root.parent.name in {"배포", "dist"} and root.resolve() != root.parent.resolve():
+        parent = root.parent
+    return parent / "모두모두AI-셀러용-설치"
+
+
+def _sync_program(src: Path, dest: Path) -> bool:
+    changed = False
+    skip = {"data", "launcher.log", "__pycache__", "설치.bat"}
+    dest.mkdir(parents=True, exist_ok=True)
+    seen: set[str] = set()
+    for path in src.rglob("*"):
+        rel = path.relative_to(src)
+        if any(part in skip for part in rel.parts):
+            continue
+        if _inside(path, dest) or path.resolve() == dest.resolve():
+            continue
+        seen.add(rel.as_posix())
+        target = dest / rel
+        if path.is_dir():
+            if not target.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                changed = True
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        same = False
+        if target.is_file():
+            src_stat = path.stat()
+            dst_stat = target.stat()
+            same = src_stat.st_size == dst_stat.st_size and int(src_stat.st_mtime) == int(dst_stat.st_mtime)
+        if not same:
+            shutil.copy2(path, target)
+            changed = True
+    for path in list(dest.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(dest)
+        if any(part in skip for part in rel.parts):
+            continue
+        if rel.as_posix() not in seen:
+            path.unlink()
+            changed = True
+    data_dir = dest / "data"
+    if data_dir.exists():
+        shutil.rmtree(data_dir)
+        changed = True
+    return changed
+
+
+def _write_setup_zip(setup: Path, dest: Path) -> bool:
+    signature = hashlib.sha256()
+    files = [path for path in sorted(setup.rglob("*")) if path.is_file() and path.name != ".seller-setup.sha"]
+    for path in files:
+        stat = path.stat()
+        signature.update(path.relative_to(setup).as_posix().encode("utf-8"))
+        signature.update(str(stat.st_size).encode("ascii"))
+        signature.update(str(int(stat.st_mtime)).encode("ascii"))
+    digest = signature.hexdigest()
+    stamp = setup / ".seller-setup.sha"
+    if dest.is_file() and stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == digest:
+        return False
+    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in files:
+            info = zipfile.ZipInfo(path.relative_to(setup).as_posix(), date_time=(2026, 10, 28, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.flag_bits |= 0x800
+            archive.writestr(info, path.read_bytes())
+    stamp.write_text(digest + "\n", encoding="utf-8")
+    return True
+
+
+def build_seller_setup(root: Path, source: Path) -> bool:
+    if "셀러용" in root.name:
+        return False
+    setup = _setup_dir(root)
+    if source.resolve() == setup.resolve() or _inside(source.resolve(), setup.resolve()):
+        return False
+    setup.mkdir(parents=True, exist_ok=True)
+    payload = setup / "프로그램"
+    changed = _sync_program(source, payload)
+    if prepare_seller_folder(payload):
+        changed = True
+    readme = setup / "읽어주세요.txt"
+    if not _same_text(readme, SELLER_README):
+        readme.write_bytes(_crlf_bytes(SELLER_README))
+        changed = True
+    exe = _installer_exe()
+    if exe is not None:
+        dest = setup / "모두모두AI-셀러용-설치.exe"
+        data = exe.read_bytes()
+        if not dest.is_file() or dest.read_bytes() != data:
+            dest.write_bytes(data)
+            changed = True
+    zip_path = setup.parent / "모두모두AI-셀러용-설치.zip"
+    if _write_setup_zip(setup, zip_path):
         changed = True
     return changed
 
@@ -3148,6 +3298,15 @@ def arrange_seller_copies(root: Path, desktops=None) -> bool:
         changed = True
     if _refresh_shortcuts(seller_dirs, desktops):
         changed = True
+    setup = _setup_dir(root)
+    sources = []
+    for path in seller_dirs:
+        resolved = path.resolve()
+        if resolved == setup.resolve() or _inside(resolved, setup.resolve()):
+            continue
+        sources.append(path)
+    if sources and build_seller_setup(root, sources[0]):
+        changed = True
     return changed
 
 
@@ -3254,7 +3413,9 @@ def patch_answer(text: str) -> str:
     if "/* seller-edition1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
     text = text.replace("배포용", "셀러용")
-    text = text.replace("2026.10.28.10", SCREEN_VERSION)
+    for old in ("2026.10.28.10", "2026.10.28.11"):
+        if old != SCREEN_VERSION:
+            text = text.replace(old, SCREEN_VERSION)
     return text
 
 

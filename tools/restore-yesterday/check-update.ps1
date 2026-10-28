@@ -7,7 +7,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$manifestUrl = 'https://github.com/ibccomae-cpu/smartstore-uploader/releases/latest/download/latest.json'
+$manifestUrl = 'https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json'
+$urlFile = Join-Path $Dir 'update_url.txt'
+if (Test-Path -LiteralPath $urlFile) {
+  $custom = [IO.File]::ReadAllText($urlFile).Trim().TrimStart([char]0xFEFF)
+  if ($custom -match '^https://') { $manifestUrl = $custom }
+}
 
 function Repair-BrokenNames([string]$Folder) {
   if (-not (Test-Path -LiteralPath $Folder)) { return }

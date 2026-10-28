@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.29"
+SCREEN_VERSION = "2026.10.28.30"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4300,7 +4300,7 @@ def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
     text = bump_asset(text, "styles.css", "stock-market1")
-    return bump_asset(text, "app.js", "godo-login1")
+    return bump_asset(text, "app.js", "collect-url2")
 
 
 COLLECT_URL_JS = r"""
@@ -5116,8 +5116,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + STOCK_LIST_JS
     if "/* stock-market1 */" not in text:
         text = text.rstrip() + "\n" + STOCK_MARKET_JS
+    if "/* collect-url2 */" not in text:
+        text = text.rstrip() + "\n" + COLLECT_URL2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5753,6 +5755,192 @@ def _gallery_ready(item, *args, **kwargs):
 '''
 
 
+GODO_NAME_MARKER = "# godo-name1"
+GODO_NAME_SCRAPER_PY = r'''
+# godo-name1
+def _godo_text(node):
+    return " ".join(node.get_text(" ", strip=True).split()) if node is not None else ""
+
+
+def godo_goods_name(html, page_url=""):
+    number = _godo_goods_no(page_url)
+    if not number:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html or "", "lxml")
+    except Exception:
+        return ""
+    for selector in (
+        ".goods-view .goods-header h2", ".goods-view .goods-header h3", ".goods-view .info h2",
+        ".goods-view .info h3", ".item_detail_tit h3", ".item_detail_tit h2", ".goods_name", "#goodsNm",
+    ):
+        text = _godo_text(soup.select_one(selector))
+        if 2 <= len(text) <= 200 and not text.isdigit():
+            return text
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or img.get("data-src") or "")
+        image = _GODO_IMAGE_RE.search(src)
+        if not image or image.group(1) != number:
+            continue
+        text = " ".join(str(img.get("alt") or img.get("title") or "").split())
+        if 2 <= len(text) <= 200 and not text.isdigit():
+            return text
+    return ""
+
+
+_extract_product_before_godo_name = extract_product
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_name(html, page_url)
+    if not isinstance(data, dict) or not _godo_goods_no(page_url):
+        return data
+    name = godo_goods_name(html if isinstance(html, str) else "", page_url)
+    if name:
+        data["name"] = name
+        data["original_name"] = name
+        warnings = data.get("warnings")
+        if isinstance(warnings, list):
+            data["warnings"] = [text for text in warnings if "상품명을 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_NAME_CATALOG_PY = r'''
+# godo-name1
+def _godo_bad_name(name, number):
+    text = str(name or "").strip()
+    return not text or text.isdigit() or text == str(number or "") or text.startswith("공급처 상품") or text == "품절"
+
+
+def _godo_list_names(shop_url, category):
+    base = _base(shop_url)
+    cate = str(category or "").strip()
+    if cate in {"", "all", "etc"}:
+        cate = ""
+    names = {}
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            for page in range(1, 31):
+                params = {"page": page}
+                if cate:
+                    params["cateCd"] = cate
+                response = client.get(f"{base}/goods/goods_list.php", params=params)
+                if response.status_code >= 400:
+                    break
+                soup = BeautifulSoup(response.text, "lxml")
+                added = 0
+                for link in soup.select("a[href*='goodsNo'], a[href*='goods_view']"):
+                    number = _godo_goods_from_href(str(link.get("href") or ""))
+                    if not number or number in names:
+                        continue
+                    name = ""
+                    img = link.find("img")
+                    if img is not None:
+                        name = " ".join(str(img.get("alt") or img.get("title") or "").split())
+                    if _godo_bad_name(name, number):
+                        box = link.find_parent("li") or link.parent
+                        node = box.select_one(".name, .item_name, .goods_name, .prdName") if box is not None else None
+                        name = " ".join(node.get_text(" ", strip=True).split()) if node is not None else ""
+                    if not _godo_bad_name(name, number):
+                        names[number] = name
+                        added += 1
+                if not added:
+                    break
+    except httpx.HTTPError:
+        return names
+    return names
+
+
+_godomall_products_before_name = _godomall_products
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_name(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return data
+    bad = [item for item in items if isinstance(item, dict) and _godo_bad_name(item.get("name"), item.get("product_no"))]
+    if not bad:
+        return data
+    names = _godo_list_names(shop_url, category)
+    for item in bad:
+        name = names.get(str(item.get("product_no") or ""))
+        if name:
+            item["name"] = name
+    return data
+'''
+GODO_NAME_SERVICE_PY = r'''
+# godo-name1
+_collect_product_before_godo_name = collect_product
+
+
+def collect_product(*args, **kwargs):
+    product = _collect_product_before_godo_name(*args, **kwargs)
+    if not isinstance(product, dict) or not _godo_is_goods_url(product.get("source_url")):
+        return product
+    if str(product.get("wholesale_product_no") or "").strip():
+        return product
+    match = _murray_re.search(r"goodsNo=(\d+)", str(product.get("source_url") or ""), _murray_re.I)
+    if match:
+        product["wholesale_product_no"] = match.group(1)
+        save_product(product)
+    return product
+'''
+COLLECT_URL2_JS = r"""
+/* collect-url2 */
+function collectIdentity(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return { key: "", no: "" };
+  let parsed = null;
+  try { parsed = new URL(raw, location.href); } catch (error) { parsed = null; }
+  const idNames = ["product_no", "productno", "goods_no", "goodsno", "it_id", "product_id", "prdno", "item_id", "branduid", "idx"];
+  if (!parsed) {
+    const plain = raw.replace(/\/+$/, "").toLowerCase().split("?")[0];
+    return { key: plain, no: "" };
+  }
+  let found = "";
+  let foundName = "";
+  idNames.forEach((name) => {
+    if (found) return;
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (String(key).toLowerCase() !== name) continue;
+      if (value && String(value).trim()) {
+        found = String(value).trim();
+        foundName = name;
+        return;
+      }
+    }
+  });
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const pretty = path.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/i);
+  const no = found || (pretty ? pretty[1] : "");
+  const host = parsed.host.replace(/^www\./i, "");
+  const key = found
+    ? `${host}${path}?${foundName}=${found}`.toLowerCase()
+    : `${host}${path}`.toLowerCase();
+  return { key, no };
+}
+function cafe24CollectedKeys(wholesalerId) {
+  const nos = new Set();
+  const urls = new Set();
+  const id = String(wholesalerId || "");
+  products.forEach((item) => {
+    if (!isMasterProduct(item)) return;
+    const owner = String(productWholesalerId(item) || "");
+    if (id && owner && owner !== id) return;
+    const ident = collectIdentity(item.source_url);
+    const no = String(item.wholesale_product_no || "").trim();
+    if (owner) {
+      if (no) nos.add(no);
+      if (ident.no) nos.add(ident.no);
+    }
+    if (ident.key) urls.add(ident.key);
+  });
+  return { nos, urls };
+}
+"""
+
+
 def _append_marked_source(path: Path, snippet: str, required, marker: str = MURRAY_MARKER) -> bool:
     if not path.is_file():
         return False
@@ -5789,6 +5977,13 @@ def patch_murray_sources(root: Path) -> bool:
         "PageSession",
     )
     if _append_marked_source(service, GODO_SERVICE_PY, godo_needed, GODO_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_NAME_SCRAPER_PY, ("def extract_product", GODO_MARKER), GODO_NAME_MARKER):
+        changed = True
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_NAME_CATALOG_PY, catalog_needed, GODO_NAME_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_NAME_SERVICE_PY, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_MARKER):
         changed = True
     return changed
 

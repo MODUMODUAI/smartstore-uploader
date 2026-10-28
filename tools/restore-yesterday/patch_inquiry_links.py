@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.17"
+SCREEN_VERSION = "2026.10.28.18"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3171,7 +3171,8 @@ SELLER_LOGIN2_JS = r"""
     const phone = document.createElement("input");
     phone.id = "sellerLoginPhone";
     phone.type = "tel";
-    phone.autocomplete = "tel";
+    phone.autocomplete = "off";
+    phone.setAttribute("name", "modumodu-seller-phone");
     phone.inputMode = "numeric";
     phone.required = true;
     const check = document.createElement("button");
@@ -3310,6 +3311,56 @@ SELLER_LOGIN2_JS = r"""
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
   else hook();
   setTimeout(hook, 0);
+})();
+"""
+
+SELLER_PHONE_JS = r"""
+/* seller-phone1 */
+(function () {
+  function mailFilled(value) {
+    return /[A-Za-z@]/.test(String(value || ""));
+  }
+
+  function clearMail(input) {
+    if (!mailFilled(input.value) && !mailFilled(input.getAttribute("value"))) return;
+    input.value = "";
+    input.setAttribute("value", "");
+  }
+
+  function harden(input) {
+    if (!input || input.dataset.sellerPhoneGuard === "1") return;
+    input.dataset.sellerPhoneGuard = "1";
+    input.autocomplete = "off";
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("name", "modumodu-seller-phone");
+    input.readOnly = true;
+    const unlock = () => { input.readOnly = false; };
+    input.addEventListener("pointerdown", unlock);
+    input.addEventListener("focus", unlock);
+    input.addEventListener("input", () => clearMail(input));
+    clearMail(input);
+    setTimeout(() => clearMail(input), 50);
+    setTimeout(() => clearMail(input), 400);
+    setTimeout(() => clearMail(input), 1200);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#sellerLoginPhone").forEach(harden);
+    const form = document.querySelector("#sellerLogin form");
+    if (form) form.setAttribute("autocomplete", "off");
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.sellerPhoneGuard === "1") return;
+    document.body.dataset.sellerPhoneGuard = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
 })();
 """
 
@@ -4141,8 +4192,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "master-login1")
-    return bump_asset(text, "app.js", "master-login1")
+    text = bump_asset(text, "styles.css", "seller-phone1")
+    return bump_asset(text, "app.js", "seller-phone1")
 
 
 def patch_answer(text: str) -> str:
@@ -4182,8 +4233,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SELLER_PORT_JS
     if "/* master-login1 */" not in text:
         text = text.rstrip() + "\n" + MASTER_LOGIN_JS
+    if "/* seller-phone1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PHONE_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

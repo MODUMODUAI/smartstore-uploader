@@ -6,8 +6,10 @@ import hashlib
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -128,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.31"
+SCREEN_VERSION = "2026.10.28.32"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5128,7 +5130,7 @@ def patch_answer(text: str) -> str:
     if "/* collect-url2 */" not in text:
         text = text.rstrip() + "\n" + COLLECT_URL2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6183,6 +6185,86 @@ def refresh_master_script(folder: Path) -> bool:
     return True
 
 
+RUNNING_STAMP = "master-running-version.txt"
+
+
+def _windows_processes() -> list[tuple[int, int, str]]:
+    script = (
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+        "Get-CimInstance Win32_Process | ForEach-Object { '{0}`t{1}`t{2}' -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            timeout=60,
+            creationflags=0x08000000,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows = []
+    for line in result.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+            rows.append((int(parts[0]), int(parts[1]), parts[2]))
+    return rows
+
+
+def _norm_cmd(text: str) -> str:
+    return text.replace("/", "\\").lower()
+
+
+def _started_by_idle_update(rows) -> bool:
+    by_pid = {pid: (ppid, cmd) for pid, ppid, cmd in rows}
+    pid = os.getpid()
+    for _ in range(5):
+        entry = by_pid.get(pid)
+        if entry is None:
+            return False
+        parent = by_pid.get(entry[0])
+        if parent is None:
+            return False
+        if "idle-update.vbs" in parent[1].lower():
+            return True
+        pid = entry[0]
+    return False
+
+
+def restart_stale_master(root: Path) -> bool:
+    """launcher.py only reopens the browser when the server is already up, so
+    a server started before an update keeps running the old Python code."""
+    if os.name != "nt":
+        return False
+    data = root / "data"
+    stamp = data / RUNNING_STAMP
+    current = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else ""
+    if current == SCREEN_VERSION:
+        return False
+    rows = _windows_processes()
+    if not rows:
+        return False
+    launcher = _norm_cmd(str(root / "launcher.py"))
+    running = [pid for pid, _ppid, cmd in rows if launcher in _norm_cmd(cmd) and pid != os.getpid()]
+    stopped = False
+    if running and current != SCREEN_VERSION:
+        if _started_by_idle_update(rows):
+            return False
+        for pid in running:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                stopped = True
+            except OSError:
+                pass
+        if stopped:
+            time.sleep(2)
+    try:
+        data.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(SCREEN_VERSION + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return stopped
+
+
 def main() -> None:
     seller_only = "--seller-only" in sys.argv[1:]
     args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
@@ -6200,6 +6282,8 @@ def main() -> None:
     static_changed = apply_static_patches(root)
     version_changed = write_screen_version(root) if root.exists() else False
     murray_changed = patch_murray_sources(root) if root.exists() else False
+    if root.exists():
+        restart_stale_master(root)
     if not seller_changed and not static_changed and not version_changed and not murray_changed:
         if not iter_static_dirs(root):
             raise SystemExit(f"static files not found: {root / 'app' / 'static'}")

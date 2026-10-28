@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.23"
+SCREEN_VERSION = "2026.10.28.24"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4290,6 +4290,66 @@ def patch_html(text: str) -> str:
     return bump_asset(text, "app.js", "seller-peek1")
 
 
+COLLECT_URL_JS = r"""
+/* collect-url1 */
+function collectIdentity(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return { key: "", no: "" };
+  let parsed = null;
+  try { parsed = new URL(raw); } catch (error) { parsed = null; }
+  const idNames = ["product_no", "productno", "goods_no", "goodsno", "it_id", "product_id", "prdno", "item_id", "branduid", "idx"];
+  if (!parsed) {
+    const plain = raw.replace(/\/+$/, "").toLowerCase().split("?")[0];
+    return { key: plain, no: "" };
+  }
+  let found = "";
+  let foundName = "";
+  idNames.forEach((name) => {
+    if (found) return;
+    const value = parsed.searchParams.get(name);
+    if (value && String(value).trim()) {
+      found = String(value).trim();
+      foundName = name;
+    }
+  });
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const pretty = path.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/i);
+  const no = found || (pretty ? pretty[1] : "");
+  const key = found
+    ? `${parsed.origin}${path}?${foundName}=${found}`.toLowerCase()
+    : `${parsed.origin}${path}`.toLowerCase();
+  return { key, no };
+}
+function normalizeCollectUrl(url) {
+  return collectIdentity(url).key;
+}
+function cafe24CollectedKeys(wholesalerId) {
+  const nos = new Set();
+  const urls = new Set();
+  const id = String(wholesalerId || "");
+  products.forEach((item) => {
+    if (!isMasterProduct(item)) return;
+    if (id && productWholesalerId(item) !== id) return;
+    const no = String(item.wholesale_product_no || "").trim();
+    if (no) nos.add(no);
+    const ident = collectIdentity(item.source_url);
+    if (ident.no) nos.add(ident.no);
+    if (ident.key) urls.add(ident.key);
+  });
+  return { nos, urls };
+}
+function isCafe24AlreadyCollected(item, keys) {
+  const no = String(item?.product_no || "").trim();
+  const ident = collectIdentity(item?.url);
+  const itemNo = no || ident.no;
+  if (itemNo && keys.nos.has(itemNo)) return true;
+  if (!ident.key || !keys.urls.has(ident.key)) return false;
+  if (itemNo && !ident.key.includes(itemNo)) return false;
+  return true;
+}
+"""
+
+
 def patch_seller_login_port(text: str) -> str:
     if "async function useAccount()" in text:
         return text
@@ -4355,8 +4415,10 @@ def patch_answer(text: str) -> str:
     if "/* seller-peek1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_PEEK_JS
     text = patch_seller_login_port(text)
+    if "/* collect-url1 */" not in text:
+        text = text.rstrip() + "\n" + COLLECT_URL_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

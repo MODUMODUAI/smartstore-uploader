@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.28"
+SCREEN_VERSION = "2026.10.28.29"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4300,7 +4300,7 @@ def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
     text = bump_asset(text, "styles.css", "stock-market1")
-    return bump_asset(text, "app.js", "murray-price1")
+    return bump_asset(text, "app.js", "godo-login1")
 
 
 COLLECT_URL_JS = r"""
@@ -5117,7 +5117,7 @@ def patch_answer(text: str) -> str:
     if "/* stock-market1 */" not in text:
         text = text.rstrip() + "\n" + STOCK_MARKET_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5538,23 +5538,257 @@ def collect_product(*args, **kwargs):
 '''
 
 
-def _append_marked_source(path: Path, snippet: str, required: str) -> bool:
+GODO_MARKER = "# godo-login1"
+GODO_SCRAPER_PY = r'''
+# godo-login1
+import re as _godo_re
+
+_GODO_IMAGE_RE = _godo_re.compile(r"/goods/(\d+)/image/(detail|magnify|main|list|add\d*)/", _godo_re.I)
+
+
+def _godo_goods_no(page_url):
+    match = _godo_re.search(r"goodsNo=(\d+)", str(page_url or ""), _godo_re.I)
+    return match.group(1) if match else ""
+
+
+def godo_gallery_urls(html, page_url=""):
+    number = _godo_goods_no(page_url)
+    if not number:
+        return []
+    found = []
+    rank = {"magnify": 0, "detail": 1, "main": 2, "list": 3}
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>()]+?\.(?:jpe?g|png|gif|webp)", html or "", _godo_re.I):
+        url = match.group(0)
+        if url.startswith("//"):
+            url = "https:" + url
+        image = _GODO_IMAGE_RE.search(url)
+        if not image or image.group(1) != number:
+            continue
+        if url not in [item[1] for item in found]:
+            found.append((rank.get(image.group(2).lower(), 4), url))
+    found.sort(key=lambda item: item[0])
+    return [url for _, url in found][:10]
+
+
+_extract_product_before_godo = extract_product
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo(html, page_url)
+    if not isinstance(data, dict) or not _godo_goods_no(page_url):
+        return data
+    urls = godo_gallery_urls(html if isinstance(html, str) else "", page_url)
+    if not urls:
+        return data
+    current = [url for url in (data.get("gallery_images") or []) if _GODO_IMAGE_RE.search(str(url or ""))]
+    if current:
+        return data
+    data["gallery_images"] = urls
+    data["images"] = urls + list(data.get("detail_images") or [])
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_SERVICE_PY = r'''
+# godo-login1
+import threading as _godo_threading
+from urllib.parse import urlparse as _godo_urlparse
+
+_godo_jars = {}
+_godo_jar_lock = _godo_threading.Lock()
+_GODO_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+}
+GODO_LOGIN_MESSAGE = (
+    "공급처 회원 로그인이 필요합니다. 공급처관리에서 이 공급처의 아이디와 비밀번호를 저장한 뒤 다시 가져오세요."
+)
+
+
+def _godo_host(url):
+    host = (_godo_urlparse(str(url or "")).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _godo_is_goods_url(url):
+    text = str(url or "").lower()
+    return "/goods/goods_view" in text and "goodsno=" in text
+
+
+def _godo_is_login(html, final_url):
+    if "/member/login" in str(final_url or "").lower():
+        return True
+    text = html or ""
+    return 'id="formLogin"' in text and 'name="loginPwd"' in text and "goodsNo" not in str(final_url or "")
+
+
+def _godo_supplier(url, supplier=None):
+    item = supplier if isinstance(supplier, dict) else None
+    if item is None or not item.get("login_password"):
+        wanted = item.get("id") if item else ""
+        if not wanted:
+            try:
+                wanted = _match_wholesaler_id(url)
+            except Exception:
+                wanted = ""
+        if wanted:
+            try:
+                item = get_wholesaler(wanted, include_secret=True) or item
+            except Exception:
+                pass
+    if not isinstance(item, dict):
+        return None
+    kind = str(item.get("type") or "").lower()
+    if kind and kind != "godomall":
+        return None
+    if _godo_host(item.get("url")) and _godo_host(item.get("url")) != _godo_host(url):
+        return None
+    if not str(item.get("login_id") or "").strip() or not str(item.get("login_password") or ""):
+        return None
+    return item
+
+
+def _godo_base(url):
+    parsed = _godo_urlparse(str(url or ""))
+    return f"{parsed.scheme or 'http'}://{parsed.netloc}"
+
+
+def _godo_login(client, url, supplier):
+    base = _godo_base(url)
+    client.get(base + "/member/login.php")
+    response = client.post(
+        base + "/member/login_ps.php",
+        data={
+            "mode": "login",
+            "returnUrl": "",
+            "loginId": str(supplier.get("login_id") or "").strip(),
+            "loginPwd": str(supplier.get("login_password") or ""),
+        },
+        headers={"Referer": base + "/member/login.php"},
+    )
+    text = response.text or ""
+    if "alert(" in text and ("찾을 수 없" in text or "일치하지" in text or "승인" in text or "잘못" in text):
+        return False
+    return True
+
+
+def _godo_fetch(url, supplier):
+    key = (_godo_host(url), str(supplier.get("login_id") or "").strip())
+    for attempt in range(2):
+        with _godo_jar_lock:
+            jar = dict(_godo_jars.get(key) or {})
+        client = httpx.Client(headers=_GODO_HEADERS, follow_redirects=True, timeout=25.0, cookies=jar)
+        try:
+            if not jar or attempt:
+                if not _godo_login(client, url, supplier):
+                    return None
+            response = client.get(url)
+            html = response.text or ""
+            final_url = str(response.url)
+            if response.status_code < 400 and not _godo_is_login(html, final_url):
+                with _godo_jar_lock:
+                    _godo_jars[key] = dict(client.cookies)
+                return client, html, final_url
+        except httpx.HTTPError:
+            client.close()
+            return None
+        client.close()
+        with _godo_jar_lock:
+            _godo_jars.pop(key, None)
+    return None
+
+
+_load_page_before_godo = _load_page
+
+
+def _load_page(url):
+    if _godo_is_goods_url(url):
+        supplier = _godo_supplier(url)
+        if supplier is not None:
+            fetched = _godo_fetch(url, supplier)
+            if fetched is not None:
+                client, html, final_url = fetched
+                session = PageSession()
+                session._http = client
+                session.html = html
+                session.final_url = final_url
+                session.via = "http"
+                session.extracted = None
+                return session
+    session = _load_page_before_godo(url)
+    if _godo_is_goods_url(url) and session is not None and _godo_is_login(getattr(session, "html", ""), getattr(session, "final_url", "")):
+        try:
+            session.close()
+        except Exception:
+            pass
+        _bad(GODO_LOGIN_MESSAGE)
+    return session
+
+
+_read_supplier_product_before_godo = _read_supplier_product
+
+
+def _read_supplier_product(url, cookies=None, supplier=None, *args, **kwargs):
+    if _godo_is_goods_url(url):
+        found = _godo_supplier(url, supplier)
+        if found is not None:
+            fetched = _godo_fetch(url, found)
+            if fetched is not None:
+                client, html, final_url = fetched
+                client.close()
+                return extract_product(html, final_url)
+            raise RuntimeError(GODO_LOGIN_MESSAGE)
+    return _read_supplier_product_before_godo(url, cookies, supplier, *args, **kwargs)
+
+
+_gallery_ready_before_godo = _gallery_ready
+
+
+def _gallery_ready(item, *args, **kwargs):
+    if isinstance(item, dict) and _godo_is_goods_url(item.get("source_url")) and not int(item.get("cost") or 0):
+        return False
+    return _gallery_ready_before_godo(item, *args, **kwargs)
+'''
+
+
+def _append_marked_source(path: Path, snippet: str, required, marker: str = MURRAY_MARKER) -> bool:
     if not path.is_file():
         return False
     text, newline = read_text(path)
-    if MURRAY_MARKER in text:
+    if marker in text:
         return False
-    if required not in text:
+    needed = (required,) if isinstance(required, str) else tuple(required)
+    if any(name not in text for name in needed):
         return False
-    write_text(path, text.rstrip() + "\n\n" + snippet.strip() + "\n", newline)
+    updated = text.rstrip() + "\n\n" + snippet.strip() + "\n"
+    try:
+        compile(updated, str(path), "exec")
+    except SyntaxError:
+        return False
+    write_text(path, updated, newline)
     return True
 
 
 def patch_murray_sources(root: Path) -> bool:
     changed = False
-    if _append_marked_source(root / "app" / "scraper.py", MURRAY_SCRAPER_PY, "def extract_product"):
+    scraper = root / "app" / "scraper.py"
+    service = root / "app" / "service.py"
+    if _append_marked_source(scraper, MURRAY_SCRAPER_PY, "def extract_product"):
         changed = True
-    if _append_marked_source(root / "app" / "service.py", MURRAY_SERVICE_PY, "def _apply_wholesale_extract"):
+    if _append_marked_source(service, MURRAY_SERVICE_PY, "def _apply_wholesale_extract"):
+        changed = True
+    if _append_marked_source(scraper, GODO_SCRAPER_PY, "def extract_product", GODO_MARKER):
+        changed = True
+    godo_needed = (
+        "def _read_supplier_product",
+        "def _load_page",
+        "def _gallery_ready",
+        "def _match_wholesaler_id",
+        "PageSession",
+    )
+    if _append_marked_source(service, GODO_SERVICE_PY, godo_needed, GODO_MARKER):
         changed = True
     return changed
 

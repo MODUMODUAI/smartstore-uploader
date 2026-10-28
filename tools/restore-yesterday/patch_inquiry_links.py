@@ -130,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.36"
+SCREEN_VERSION = "2026.10.28.37"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5344,7 +5344,7 @@ def patch_answer(text: str) -> str:
     if "/* wholesale-import-all1 */" not in text:
         text = text.rstrip() + "\n" + WHOLESALE_IMPORT_ALL_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6358,9 +6358,99 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(service, GODO_NAME2_SERVICE_PY, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_MARKER):
         changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_SITE1_CATALOG_PY, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_MARKER):
+        changed = True
     return changed
 
 
+GODO_SITE1_MARKER = "# godo-site1"
+GODO_SITE1_CATALOG_PY = r'''
+# godo-site1
+# detect_shop_type returns "" for Godomall home pages such as murray.co.kr, so
+# suppliers were saved as another type and only the home page links (named by
+# goods number) were read. Godomall sites are recognised by their goods links,
+# and https://www. hosts whose certificate does not match fall back to http.
+_godo_site_cache = {}
+_detect_shop_type_before_site = detect_shop_type
+_list_all_products_before_site = list_all_products
+_list_category_before_site = list_category
+_discover_groups_before_site = discover_groups
+
+
+def _godo_site_base(shop_url):
+    raw = str(shop_url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else "http://" + raw)
+    host = (parsed.netloc or "").strip().lower()
+    if not host:
+        return ""
+    if host in _godo_site_cache:
+        return _godo_site_cache[host]
+    bare = host[4:] if host.startswith("www.") else host
+    scheme = parsed.scheme or "http"
+    tries = []
+    for base in (f"{scheme}://{host}", f"http://{host}", f"http://{bare}", f"http://www.{bare}", f"https://{bare}"):
+        if base not in tries:
+            tries.append(base)
+    found = ""
+    for base in tries:
+        try:
+            html = _get(base + "/", timeout=15.0)
+        except Exception:
+            continue
+        if "goods_view.php?goodsNo=" in html or "goods_list.php?cateCd=" in html:
+            found = base
+        break
+    _godo_site_cache[host] = found
+    return found
+
+
+def _godo_site_kind(shop_url, shop_type):
+    kind = str(shop_type or "").strip().lower()
+    if kind in {"cafe24", "imweb"}:
+        return kind, shop_url
+    base = _godo_site_base(shop_url)
+    if base:
+        return "godomall", base
+    return shop_type, shop_url
+
+
+def detect_shop_type(shop_url):
+    kind = _detect_shop_type_before_site(shop_url)
+    if kind:
+        return kind
+    return "godomall" if _godo_site_base(shop_url) else kind
+
+
+def list_all_products(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    if kind == "godomall":
+        items = _godomall_all(url)
+        if items:
+            return items
+    return _list_all_products_before_site(shop_url, shop_type, *args, **kwargs)
+
+
+def list_category(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    return _list_category_before_site(url, kind, *args, **kwargs)
+
+
+def discover_groups(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    return _discover_groups_before_site(url, kind, *args, **kwargs)
+'''
+GODO_SITE1_CATALOG_NEEDED = (
+    "def detect_shop_type",
+    "def list_all_products",
+    "def list_category",
+    "def discover_groups",
+    "def _godomall_all",
+    "def _get",
+    "urlparse",
+    GODO_NAME2_MARKER,
+)
 GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
 GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
 
@@ -6389,6 +6479,7 @@ def frozen_fix_plan() -> dict:
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),
             (GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_CATALOG_PY),
+            (GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_CATALOG_PY),
         ],
     }
 

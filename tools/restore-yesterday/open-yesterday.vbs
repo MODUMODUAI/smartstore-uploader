@@ -171,6 +171,14 @@ End Function
 Function OfferUpdate(folder)
   Dim ps1, exec, rc, offer, ts, remote, local, notes, answer, updatedExe
   OfferUpdate = False
+  updatedExe = folder & "\MODUMODU.exe"
+  If fso.FileExists(updatedExe) Then
+    If fso.GetFile(updatedExe).Size < 8000000 Then
+      shell.Run """" & updatedExe & """", 1, False
+      OfferUpdate = True
+      Exit Function
+    End If
+  End If
   ps1 = folder & "\check-update.ps1"
   If Not fso.FileExists(ps1) Then Exit Function
   On Error Resume Next

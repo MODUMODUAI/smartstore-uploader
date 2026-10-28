@@ -130,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.32"
+SCREEN_VERSION = "2026.10.28.33"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5130,7 +5130,7 @@ def patch_answer(text: str) -> str:
     if "/* collect-url2 */" not in text:
         text = text.rstrip() + "\n" + COLLECT_URL2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6265,25 +6265,45 @@ def restart_stale_master(root: Path) -> bool:
     return stopped
 
 
+def _step(root: Path, name: str, func, *args) -> bool:
+    """One failing step (a locked seller file, say) must not stop the master
+    from getting the rest of the update."""
+    try:
+        return bool(func(*args))
+    except (Exception, SystemExit) as exc:
+        import traceback
+
+        print(f"{name} failed: {exc}")
+        try:
+            log = root / "data" / "patch-errors.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {SCREEN_VERSION} {name}\n")
+                handle.write(traceback.format_exc() + "\n")
+        except OSError:
+            pass
+        return False
+
+
 def main() -> None:
     seller_only = "--seller-only" in sys.argv[1:]
     args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
     root = Path(args[0] if args else r"C:\smartstore uploader")
     if root.exists():
-        repair_known_folders(root)
-    refresh_master_script(Path(__file__).resolve().parent)
-    seller_changed = arrange_seller_copies(root) if root.exists() else False
+        _step(root, "repair names", repair_known_folders, root)
+    _step(root, "master script", refresh_master_script, Path(__file__).resolve().parent)
     if seller_only:
-        if seller_changed:
+        if root.exists() and _step(root, "seller copies", arrange_seller_copies, root):
             print("seller edition")
             raise SystemExit(11 if SETUP_ZIP_BUILT else 0)
         print("already linked")
         return
-    static_changed = apply_static_patches(root)
-    version_changed = write_screen_version(root) if root.exists() else False
-    murray_changed = patch_murray_sources(root) if root.exists() else False
+    static_changed = _step(root, "static", apply_static_patches, root)
+    version_changed = root.exists() and _step(root, "version", write_screen_version, root)
+    murray_changed = root.exists() and _step(root, "sources", patch_murray_sources, root)
+    seller_changed = root.exists() and _step(root, "seller copies", arrange_seller_copies, root)
     if root.exists():
-        restart_stale_master(root)
+        _step(root, "restart", restart_stale_master, root)
     if not seller_changed and not static_changed and not version_changed and not murray_changed:
         if not iter_static_dirs(root):
             raise SystemExit(f"static files not found: {root / 'app' / 'static'}")

@@ -1,12 +1,22 @@
-param(
-  [Parameter(Mandatory = $true, Position = 0)]
-  [string]$Mode,
-  [Parameter(Mandatory = $true, Position = 1)]
-  [string]$Dir
-)
+# Called as "check-update.ps1 -Check <dir>". A param() block would read -Check
+# as a parameter name and stop before running, so the mode comes from $args.
+$Mode = ''
+$Dir = ''
+foreach ($arg in $args) {
+  $text = [string]$arg
+  if (-not $Mode -and ($text -ieq '-Check' -or $text -ieq '-Apply' -or $text -ieq 'Check' -or $text -ieq 'Apply')) {
+    $Mode = '-' + $text.TrimStart('-')
+  } elseif (-not $Dir) {
+    $Dir = $text
+  }
+}
+if (-not $Mode -or -not $Dir) { exit 1 }
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {}
 $manifestUrl = 'https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json'
 $urlFile = Join-Path $Dir 'update_url.txt'
 if (Test-Path -LiteralPath $urlFile) {
@@ -74,7 +84,11 @@ function Test-Newer([string]$remote, [string]$local) {
 
 function Get-Manifest {
   $headers = @{ 'User-Agent' = 'MODUMODU-Updater/1.0' }
-  return Invoke-RestMethod -Uri $manifestUrl -Headers $headers -TimeoutSec 15
+  $response = Invoke-WebRequest -Uri $manifestUrl -Headers $headers -TimeoutSec 15 -UseBasicParsing
+  $stream = New-Object IO.MemoryStream
+  $response.RawContentStream.CopyTo($stream)
+  $text = [Text.Encoding]::UTF8.GetString($stream.ToArray()).TrimStart([char]0xFEFF)
+  return ($text | ConvertFrom-Json)
 }
 
 function Find-PackageRoot([string]$extracted) {
@@ -160,7 +174,7 @@ if ($Mode -eq '-Apply') {
   try {
     $info = Get-Manifest
     $zip = Join-Path $tempRoot 'update.zip'
-    Invoke-WebRequest -Uri $info.url -OutFile $zip -Headers @{ 'User-Agent' = 'MODUMODU-Updater/1.0' } -TimeoutSec 180
+    Invoke-WebRequest -Uri $info.url -OutFile $zip -Headers @{ 'User-Agent' = 'MODUMODU-Updater/1.0' } -TimeoutSec 180 -UseBasicParsing
     $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
     if ($hash -ne ([string]$info.sha256).ToLower()) { throw 'sha256 mismatch' }
     $extracted = Join-Path $tempRoot 'extracted'

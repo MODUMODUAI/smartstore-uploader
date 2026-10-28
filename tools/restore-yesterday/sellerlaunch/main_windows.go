@@ -35,6 +35,7 @@ func main() {
 	}
 	dir := filepath.Dir(exe)
 	_ = tryUpdate(dir)
+	refreshSellerShortcut(exe, dir)
 	target := filepath.Join(dir, "MODUMODU.exe")
 	if _, err := os.Stat(target); err != nil {
 		alert("셀러용 프로그램을 찾지 못했습니다.")
@@ -91,6 +92,16 @@ func tryUpdate(dir string) error {
 		return err
 	}
 	return nil
+}
+
+func refreshSellerShortcut(exe, dir string) {
+	script := "$desk=[Environment]::GetFolderPath('Desktop'); " +
+		"$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $desk '모두모두AI 셀러용.lnk')); " +
+		"$s.TargetPath=$env:SELLER_TARGET; $s.WorkingDirectory=$env:SELLER_WORK; " +
+		"$s.IconLocation=$env:SELLER_ICON; $s.Description='모두모두AI 셀러용'; $s.Save()"
+	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+	cmd.Env = append(os.Environ(), "SELLER_TARGET="+exe, "SELLER_WORK="+dir, "SELLER_ICON="+exe+",0")
+	_ = cmd.Run()
 }
 
 func updateURL(dir string) string {

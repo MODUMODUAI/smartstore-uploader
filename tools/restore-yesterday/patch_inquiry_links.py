@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.12"
+SCREEN_VERSION = "2026.10.28.13"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3204,14 +3204,16 @@ def _desktop_dirs(desktops) -> list[Path]:
 def _create_seller_shortcut(desktop: Path, folder: Path) -> bool:
     if os.name != "nt":
         return False
-    exe = folder / "MODUMODU.exe"
+    exe = folder / "셀러실행.exe"
+    if not exe.is_file():
+        exe = folder / "MODUMODU.exe"
     if not exe.is_file():
         return False
     link = desktop / "모두모두AI 셀러용.lnk"
     script = (
         "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:SELLER_LINK); "
         "$s.TargetPath=$env:SELLER_TARGET; $s.WorkingDirectory=$env:SELLER_WORK; "
-        "$s.Description='모두모두AI 셀러용'; $s.Save()"
+        "$s.IconLocation=$env:SELLER_ICON; $s.Description='모두모두AI 셀러용'; $s.Save()"
     )
     env = os.environ.copy()
     env.update(
@@ -3219,6 +3221,7 @@ def _create_seller_shortcut(desktop: Path, folder: Path) -> bool:
             "SELLER_LINK": str(link),
             "SELLER_TARGET": str(exe),
             "SELLER_WORK": str(folder),
+            "SELLER_ICON": str(exe) + ",0",
         }
     )
     subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=False)
@@ -3413,7 +3416,7 @@ def patch_answer(text: str) -> str:
     if "/* seller-edition1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

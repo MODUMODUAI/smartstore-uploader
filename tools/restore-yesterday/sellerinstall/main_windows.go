@@ -63,9 +63,9 @@ func createDesktopShortcut(target, work string) error {
 	link := filepath.Join(desktop, "모두모두AI 셀러용.lnk")
 	script := "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:SELLER_LINK); " +
 		"$s.TargetPath=$env:SELLER_TARGET; $s.WorkingDirectory=$env:SELLER_WORK; " +
-		"$s.Description='모두모두AI 셀러용'; $s.Save()"
+		"$s.IconLocation=$env:SELLER_ICON; $s.Description='모두모두AI 셀러용'; $s.Save()"
 	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
-	cmd.Env = append(os.Environ(), "SELLER_LINK="+link, "SELLER_TARGET="+target, "SELLER_WORK="+work)
+	cmd.Env = append(os.Environ(), "SELLER_LINK="+link, "SELLER_TARGET="+target, "SELLER_WORK="+work, "SELLER_ICON="+target+",0")
 	return cmd.Run()
 }
 

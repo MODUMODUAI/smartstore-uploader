@@ -130,7 +130,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.34"
+SCREEN_VERSION = "2026.10.28.35"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3737,6 +3737,119 @@ MASTER_LOGIN2_CSS = """
 #masterLogin .seller-password-line input { margin-top: 0; }
 """
 
+MASTER_LOGIN3_CSS = """
+/* master-login3 */
+#masterLogin {
+  background: radial-gradient(circle at 50% 30%, rgba(30, 64, 120, 0.55), rgba(8, 12, 20, 0.82));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#masterLogin .master-login-card {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 34px 30px 26px;
+  border: 0;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  text-align: center;
+}
+#masterLogin .master-login-card::before {
+  content: "M";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0b5cab, #3d9eed);
+  box-shadow: 0 10px 24px rgba(11, 92, 171, 0.35);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+}
+#masterLogin .master-login-card h1 {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+#masterLogin .master-login-card p {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: #8a94a6;
+}
+#masterLogin .master-login-card label {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475467;
+}
+#masterLogin .seller-password-line {
+  position: relative;
+  display: block;
+  margin-top: 8px;
+}
+#masterLogin .master-login-card input,
+#masterLogin .master-login-card input:focus {
+  width: 100%;
+  height: 50px;
+  margin: 0;
+  padding: 0 70px 0 16px;
+  border: 1.5px solid #d0d5dd !important;
+  border-radius: 14px;
+  background: #f8fafc !important;
+  color: #101828 !important;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+#masterLogin .master-login-card input:focus {
+  border-color: #0b5cab !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(11, 92, 171, 0.14);
+}
+#masterLogin .seller-peek {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0b5cab;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#masterLogin .seller-peek:hover { background: #eef4fb; }
+#masterLogin #masterLoginError {
+  min-height: 0;
+  margin: 8px 2px 0;
+  text-align: left;
+  font-size: 12.5px;
+}
+#masterLogin #masterLoginError:empty { display: none; }
+#masterLogin .master-login-card button[type="submit"] {
+  height: 50px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0b5cab, #2f8de4);
+  box-shadow: 0 10px 22px rgba(11, 92, 171, 0.3);
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+}
+#masterLogin .master-login-card button[type="submit"]:hover { filter: brightness(1.06); box-shadow: 0 14px 28px rgba(11, 92, 171, 0.38); }
+#masterLogin .master-login-card button[type="submit"]:active { transform: translateY(1px); }
+"""
+
 SELLER_LOGIN2_CSS = """
 /* seller-login2 */
 #sellerIssuedPassword {
@@ -4374,8 +4487,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "master-login2")
-    return bump_asset(text, "app.js", "master-login2")
+    text = bump_asset(text, "styles.css", "master-login3")
+    return bump_asset(text, "app.js", "master-login3")
 
 
 COLLECT_URL_JS = r"""
@@ -5196,7 +5309,7 @@ def patch_answer(text: str) -> str:
     if "/* master-login2 */" not in text:
         text = text.rstrip() + "\n" + MASTER_LOGIN2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -5240,6 +5353,8 @@ def patch_css(text: str) -> str:
         extra += STOCK_MARKET_CSS
     if "/* master-login2 */" not in text:
         extra += MASTER_LOGIN2_CSS
+    if "/* master-login3 */" not in text:
+        extra += MASTER_LOGIN3_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

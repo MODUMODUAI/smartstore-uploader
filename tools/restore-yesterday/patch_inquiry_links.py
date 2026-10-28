@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.22"
+SCREEN_VERSION = "2026.10.28.23"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3056,7 +3056,31 @@ body.seller-locked { overflow: hidden; }
 SELLER_LOGIN2_JS = r"""
 /* seller-login2 */
 (function () {
-  const accountURL = "http://127.0.0.1:8790";
+  let accountURL = "http://127.0.0.1:8790";
+  const loginPorts = [8790, 8791, 8792, 8793, 8794, 8795, 18790, 28790, 9876, 18081, 29170];
+  async function useAccount() {
+    if (window.__sellerLoginTest) return accountURL;
+    try {
+      const response = await fetch("/static/seller-login-port.txt?v=" + Date.now(), { cache: "no-store" });
+      if (response.ok) {
+        const port = String(await response.text()).trim();
+        if (/^\d+$/.test(port)) {
+          accountURL = "http://127.0.0.1:" + port;
+          return accountURL;
+        }
+      }
+    } catch (error) {}
+    for (const port of loginPorts) {
+      try {
+        const response = await fetch("http://127.0.0.1:" + port + "/api/seller-status", { cache: "no-store" });
+        if (response.ok) {
+          accountURL = "http://127.0.0.1:" + port;
+          return accountURL;
+        }
+      } catch (error) {}
+    }
+    throw new Error(offlineMessage);
+  }
   const sessionKey = "modumodu-seller-session";
   const accountKey = "modumodu-seller-account";
   const offlineMessage = "로그인 서비스를 찾지 못했습니다. 모두모두AI-셀러용-설치.exe 를 다시 실행해 주세요.";
@@ -3104,6 +3128,7 @@ SELLER_LOGIN2_JS = r"""
 
   async function post(path, body) {
     if (window.__sellerLoginTest) return postSync(path, body);
+    await useAccount();
     let response;
     try {
       response = await fetch(accountURL + path, {
@@ -3268,6 +3293,7 @@ SELLER_LOGIN2_JS = r"""
         xhr.send();
         data = JSON.parse(xhr.responseText || "{}");
       } else {
+        await useAccount();
         const response = await fetch(accountURL + "/api/seller-status");
         data = await response.json();
       }
@@ -4264,6 +4290,29 @@ def patch_html(text: str) -> str:
     return bump_asset(text, "app.js", "seller-peek1")
 
 
+def patch_seller_login_port(text: str) -> str:
+    if "async function useAccount()" in text:
+        return text
+    block = SELLER_LOGIN2_JS
+    start = block.find("  let accountURL")
+    end = block.find("  const sessionKey")
+    old = '  const accountURL = "http://127.0.0.1:8790";\n'
+    if start < 0 or end < 0 or old not in text:
+        return text
+    text = text.replace(old, block[start:end], 1)
+    text = text.replace(
+        "    if (window.__sellerLoginTest) return postSync(path, body);\n    let response;",
+        "    if (window.__sellerLoginTest) return postSync(path, body);\n    await useAccount();\n    let response;",
+        1,
+    )
+    text = text.replace(
+        '        const response = await fetch(accountURL + "/api/seller-status");',
+        '        await useAccount();\n        const response = await fetch(accountURL + "/api/seller-status");',
+        1,
+    )
+    return text
+
+
 def patch_answer(text: str) -> str:
     if "/* inquiry-simple2 */" not in text:
         replaced = False
@@ -4305,8 +4354,9 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SELLER_PHONE_JS
     if "/* seller-peek1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_PEEK_JS
+    text = patch_seller_login_port(text)
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

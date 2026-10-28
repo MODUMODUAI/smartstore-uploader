@@ -50,7 +50,7 @@ func main() {
 	refreshSellerShortcut(exe, dir)
 	stopOtherLaunchers(exe)
 	if err := ensureAccountServer(dir); err != nil {
-		alert("로그인 창을 열지 못했습니다. 셀러용 화면은 그대로 엽니다.")
+		alert("로그인 창을 열지 못했습니다.\n" + err.Error())
 	}
 	_ = parkData(dir)
 	if err := startModumodu(dir); err != nil {

@@ -2,10 +2,14 @@ package main
 
 import (
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -99,5 +103,41 @@ func TestAccountHTTP(t *testing.T) {
 	}
 	if !accountServing(server.URL + "/api/seller-status") {
 		t.Fatal("status probe")
+	}
+}
+
+func TestListenAccountSkipsBusyPort(t *testing.T) {
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.Close()
+	free, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	freePort := free.Addr().(*net.TCPAddr).Port
+	free.Close()
+	busyPort := busy.Addr().(*net.TCPAddr).Port
+	root := t.TempDir()
+	got, err := listenAccount(root, []int{busyPort, freePort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != freePort {
+		t.Fatalf("port %d want %d", got, freePort)
+	}
+	written, err := os.ReadFile(filepath.Join(root, "_internal", "app", "static", "seller-login-port.txt"))
+	if err != nil || string(written) != strconv.Itoa(freePort) {
+		t.Fatalf("port file %q %v", written, err)
+	}
+	response, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/seller-status", got))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `"phone"`) {
+		t.Fatalf("%s %s", response.Status, body)
 	}
 }

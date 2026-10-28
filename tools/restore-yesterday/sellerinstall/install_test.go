@@ -70,6 +70,15 @@ func TestWriteSellerConfig(t *testing.T) {
 	if err != nil || string(url) != UpdateURL+"\r\n" {
 		t.Fatalf("url %q %v", url, err)
 	}
+	if err := os.WriteFile(filepath.Join(dst, "어제오후9시.vbs"), []byte("master"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteSellerConfig(dst); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "어제오후9시.vbs")); !os.IsNotExist(err) {
+		t.Fatal("master launcher kept")
+	}
 	if err := os.WriteFile(filepath.Join(dst, "launcher.py"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,9 @@ func TestCopyUpdateKeepsProgramAndData(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(src, "MODUMODU.exe"), []byte("small-updater"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(src, "어제오후9시.vbs"), []byte("master"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(filepath.Join(src, "data"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -54,5 +57,8 @@ func TestCopyUpdateKeepsProgramAndData(t *testing.T) {
 	ver, err := os.ReadFile(filepath.Join(dst, "version.txt"))
 	if err != nil || string(ver) == "" {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "어제오후9시.vbs")); !os.IsNotExist(err) {
+		t.Fatal("master script copied")
 	}
 }

@@ -97,4 +97,7 @@ func TestAccountHTTP(t *testing.T) {
 	if bad.StatusCode != http.StatusUnauthorized {
 		t.Fatal(bad.Status)
 	}
+	if !accountServing(server.URL + "/api/seller-status") {
+		t.Fatal("status probe")
+	}
 }

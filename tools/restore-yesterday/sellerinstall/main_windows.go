@@ -45,7 +45,7 @@ func main() {
 		target = filepath.Join(dest, "launcher.py")
 	}
 	_ = createDesktopShortcut(target, dest)
-	alert("모두모두AI 셀러용을 설치했습니다.\n바탕화면의 모두모두AI 셀러용을 누르면 열립니다.\n새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다.")
+	alert("모두모두AI 셀러용을 설치했습니다.\n바탕화면의 모두모두AI 셀러용을 누르면 로그인 창이 열립니다.\n주소는 http://127.0.0.1:8788 입니다.")
 	if strings.HasSuffix(strings.ToLower(target), ".exe") {
 		cmd := exec.Command(target)
 		cmd.Dir = dest

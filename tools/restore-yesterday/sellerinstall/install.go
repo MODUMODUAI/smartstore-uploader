@@ -101,5 +101,18 @@ func WriteSellerConfig(dst string) error {
 	if err := os.WriteFile(filepath.Join(dst, "edition.txt"), []byte("test\r\n"), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dst, "update_url.txt"), []byte(UpdateURL+"\r\n"), 0o644)
+	if err := os.WriteFile(filepath.Join(dst, "update_url.txt"), []byte(UpdateURL+"\r\n"), 0o644); err != nil {
+		return err
+	}
+	return RemoveMasterLaunchers(dst)
+}
+
+func RemoveMasterLaunchers(dir string) error {
+	for _, name := range []string{"어제오후9시.vbs", "idle-update.vbs"} {
+		path := filepath.Join(dir, name)
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }

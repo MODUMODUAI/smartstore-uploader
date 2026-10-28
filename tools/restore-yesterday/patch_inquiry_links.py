@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.15"
+SCREEN_VERSION = "2026.10.28.16"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3313,6 +3313,50 @@ SELLER_LOGIN2_JS = r"""
 })();
 """
 
+SELLER_PORT_JS = r"""
+/* seller-port1 */
+(function () {
+  function onSellerPort() {
+    return String(location.port || "") === "8788";
+  }
+
+  function markSeller() {
+    document.body.classList.add("edition-seller");
+    document.body.classList.add("edition-test");
+    const badge = document.getElementById("appEdition");
+    if (badge) badge.textContent = "셀러용";
+    const shown = (document.getElementById("appVersion") || {}).textContent || "";
+    const version = String(shown).replace(/^v/, "").trim();
+    document.title = version ? "모두모두AI 셀러용 v" + version : "모두모두AI 셀러용";
+  }
+
+  if (typeof applyEdition === "function" && !applyEdition.sellerPortHook) {
+    const inner = applyEdition;
+    function wrapped(edition, screenVersion) {
+      if (onSellerPort()) edition = "test";
+      const result = inner.call(this, edition, screenVersion);
+      if (onSellerPort()) markSeller();
+      return result;
+    }
+    wrapped.sellerPortHook = true;
+    window.applyEdition = wrapped;
+  }
+
+  function force() {
+    if (!onSellerPort() || typeof applyEdition !== "function") return;
+    const label = document.getElementById("appVersion");
+    const version = label ? String(label.textContent || "").replace(/^v/, "").trim() : "";
+    applyEdition("test", version);
+    markSeller();
+  }
+
+  force();
+  setTimeout(force, 0);
+  setTimeout(force, 400);
+  setTimeout(force, 1200);
+})();
+"""
+
 SELLER_LOGIN2_CSS = """
 /* seller-login2 */
 #sellerIssuedPassword {
@@ -3354,7 +3398,7 @@ SELLER_HELP = """모두모두AI 셀러용
 설치
 1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
 2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
-3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
+3. 브라우저에서 셀러용 로그인 창이 열립니다. 주소는 http://127.0.0.1:8788 입니다.
 4. 프로그램을 끝낼 때는 화면 위쪽의 종료를 누릅니다.
 
 업데이트
@@ -3368,8 +3412,9 @@ SELLER_README = """모두모두AI 셀러용 설치
 
 1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
 2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
-3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
+3. 브라우저에서 셀러용 로그인 창이 열립니다. 주소는 http://127.0.0.1:8788 입니다.
 4. 새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다. 상품과 설정은 그대로 둡니다.
+로그인 창이 뜨지 않으면 모두모두AI-셀러용-설치.exe 를 다시 실행합니다.
 5. 처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.
 
 마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
@@ -3927,8 +3972,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-login2")
-    return bump_asset(text, "app.js", "seller-login2")
+    text = bump_asset(text, "styles.css", "seller-port1")
+    return bump_asset(text, "app.js", "seller-port1")
 
 
 def patch_answer(text: str) -> str:
@@ -3964,8 +4009,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SELLER_LOGIN_JS
     if "/* seller-login2 */" not in text:
         text = text.rstrip() + "\n" + SELLER_LOGIN2_JS
+    if "/* seller-port1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PORT_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text

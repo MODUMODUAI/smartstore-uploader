@@ -7,11 +7,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -40,20 +42,28 @@ func main() {
 	}
 	dir := filepath.Dir(exe)
 	_ = tryUpdate(dir)
+	_ = removeMasterLaunchers(dir)
 	refreshSellerShortcut(exe, dir)
-	if err := startAccountServer(dir); err != nil {
-		alert("로그인 창을 열지 못했습니다.")
-		return
+	stopOtherLaunchers(exe)
+	if err := ensureAccountServer(dir); err != nil {
+		alert("로그인 창을 열지 못했습니다. 셀러용 화면은 그대로 엽니다.")
 	}
 	_ = parkData(dir)
-	target := filepath.Join(dir, "MODUMODU.exe")
-	if _, err := os.Stat(target); err != nil {
+	if err := startModumodu(dir); err != nil {
+		if errors.Is(err, errMasterLauncher) {
+			alert(errMasterLauncher.Error())
+			return
+		}
 		alert("셀러용 프로그램을 찾지 못했습니다.")
-		return
 	}
-	cmd := exec.Command(target)
-	cmd.Dir = dir
-	_ = cmd.Start()
+}
+
+func stopOtherLaunchers(exe string) {
+	script := `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $env:SELLER_SELF) -and ($_.ProcessId -ne [int]$env:SELLER_PID) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+	cmd.Env = append(os.Environ(), "SELLER_SELF="+exe, "SELLER_PID="+itoa(os.Getpid()))
+	_ = cmd.Run()
+	time.Sleep(300 * time.Millisecond)
 }
 
 func stopModumodu(dir string) error {
@@ -66,11 +76,8 @@ func stopModumodu(dir string) error {
 	return nil
 }
 
-func startModumodu(dir string) error {
-	target := filepath.Join(dir, "MODUMODU.exe")
-	cmd := exec.Command(target)
-	cmd.Dir = dir
-	return cmd.Start()
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }
 
 func tryUpdate(dir string) error {

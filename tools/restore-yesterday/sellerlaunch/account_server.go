@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"time"
 )
 
 func accountHandler(root string) http.Handler {
@@ -84,6 +85,27 @@ func startAccountServer(root string) error {
 	server := &http.Server{Handler: accountHandler(root)}
 	go server.Serve(listener)
 	return nil
+}
+
+func accountServing(rawURL string) bool {
+	client := &http.Client{Timeout: 700 * time.Millisecond}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func ensureAccountServer(root string) error {
+	err := startAccountServer(root)
+	if err == nil {
+		return nil
+	}
+	if accountServing("http://127.0.0.1:8790/api/seller-status") {
+		return nil
+	}
+	return err
 }
 
 func readJSON(r *http.Request, dest any) error {

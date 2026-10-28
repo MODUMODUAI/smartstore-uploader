@@ -85,7 +85,15 @@ func copyUpdateTree(src, dst string) error {
 		if entry.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
-		if strings.EqualFold(filepath.Base(target), "MODUMODU.exe") && keepProgramExe(target) {
+		if strings.EqualFold(filepath.Ext(target), ".vbs") {
+			return nil
+		}
+		// The seller program exe is the PyInstaller app. The update package's
+		// MODUMODU.exe is the master updater and would open the master screen.
+		if strings.EqualFold(filepath.Base(target), "MODUMODU.exe") {
+			return nil
+		}
+		if self, err := os.Executable(); err == nil && strings.EqualFold(target, self) {
 			return nil
 		}
 		return copyFile(path, target)

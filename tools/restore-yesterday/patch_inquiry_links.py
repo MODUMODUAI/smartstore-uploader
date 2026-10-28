@@ -131,7 +131,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.41"
+SCREEN_VERSION = "2026.10.28.42"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5426,7 +5426,7 @@ def patch_answer(text: str) -> str:
     if "/* open-login1 */" not in text:
         text = text.rstrip() + "\n" + OPEN_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40", "2026.10.28.41"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6455,6 +6455,8 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(scraper, GODO_IMAGE1_SCRAPER_PY, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_MARKER):
         changed = True
+    if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
+        changed = True
     try:
         write_fix_status(root)
     except OSError:
@@ -6704,6 +6706,26 @@ def _godo_image_for(page_url, number):
     return _godo_known_images.get(number, "")
 """
 GODO_IMAGE1_CATALOG_NEEDED = ("def _godomall_products", "def _godomall_all", "def _base", GODO_SITE1_MARKER)
+TEXT_DECODE1_MARKER = "# subprocess-text1"
+TEXT_DECODE1_CHROME_PY = r"""
+# subprocess-text1
+# kill_profile_chrome reads PowerShell output with text=True, which decodes as
+# cp949 on Korean Windows. Chrome command lines can hold UTF-8 bytes, and the
+# reader threads then print UnicodeDecodeError tracebacks to the console.
+import subprocess as _text_subprocess
+
+if not getattr(_text_subprocess.Popen, "_modumodu_text_errors", False):
+    _text_popen_init = _text_subprocess.Popen.__init__
+
+    def _text_popen_init_replace(self, *args, **kwargs):
+        if kwargs.get("errors") is None and (kwargs.get("text") or kwargs.get("universal_newlines") or kwargs.get("encoding")):
+            kwargs["errors"] = "replace"
+        _text_popen_init(self, *args, **kwargs)
+
+    _text_subprocess.Popen.__init__ = _text_popen_init_replace
+    _text_subprocess.Popen._modumodu_text_errors = True
+"""
+TEXT_DECODE1_CHROME_NEEDED = ("def kill_profile_chrome", "subprocess")
 GODO_OPEN1_MARKER = "# godo-open1"
 GODO_OPEN1_SERVICE_PY = r"""
 # godo-open1
@@ -6887,6 +6909,9 @@ def frozen_fix_plan() -> dict:
             (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
             (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
             (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
+        ],
+        "app.chrome_app": [
+            (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),
         ],
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),

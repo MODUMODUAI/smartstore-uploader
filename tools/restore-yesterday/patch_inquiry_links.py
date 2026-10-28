@@ -131,7 +131,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.40"
+SCREEN_VERSION = "2026.10.28.41"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5426,7 +5426,7 @@ def patch_answer(text: str) -> str:
     if "/* open-login1 */" not in text:
         text = text.rstrip() + "\n" + OPEN_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6451,6 +6451,10 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(service, GODO_LOGIN2_SERVICE_PY, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_MARKER):
         changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE1_CATALOG_PY, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_IMAGE1_SCRAPER_PY, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_MARKER):
+        changed = True
     try:
         write_fix_status(root)
     except OSError:
@@ -6615,6 +6619,91 @@ def _godo_fetch(url, supplier):
     return None
 """
 GODO_LOGIN2_SERVICE_NEEDED = ("def _godo_fetch", "_godo_jar_lock", "_godo_login", GODO_MARKER)
+GODO_IMAGE1_MARKER = "# godo-image1"
+GODO_IMAGE1_SCRAPER_PY = r"""
+# godo-image1
+# Murray pages put long description images ahead of the goods photos, so the
+# first gallery image (the representative) was a detail strip. Keep only this
+# goods number's own photos, falling back to the list page's main image.
+_extract_product_before_godo_image = extract_product
+
+
+def _godo_own_image(url, number):
+    match = _GODO_IMAGE_RE.search(str(url or ""))
+    return bool(match and match.group(1) == number)
+
+
+def _godo_list_image(page_url, number):
+    try:
+        import app.shop_catalog as _godo_catalog
+
+        return _godo_catalog._godo_image_for(page_url, number)
+    except Exception:
+        return ""
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    gallery = [str(url) for url in (data.get("gallery_images") or []) if url]
+    own = [url for url in gallery if _godo_own_image(url, number)]
+    if not own:
+        own = godo_gallery_urls(html if isinstance(html, str) else "", page_url)
+    if not own:
+        main = _godo_list_image(page_url, number)
+        own = [main] if main else []
+    if not own:
+        return data
+    detail = [str(url) for url in (data.get("detail_images") or []) if url and str(url) not in own]
+    for url in gallery:
+        if url not in own and url not in detail and not _GODO_IMAGE_RE.search(url):
+            detail.append(url)
+    data["gallery_images"] = own
+    data["detail_images"] = detail
+    data["images"] = own + detail
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+"""
+GODO_IMAGE1_SCRAPER_NEEDED = ("def extract_product", "def godo_gallery_urls", "_GODO_IMAGE_RE", GODO_MARKER)
+GODO_IMAGE1_CATALOG_PY = r"""
+# godo-image1
+import threading as _godo_threading
+
+_godo_known_images = {}
+_godo_image_sites = set()
+_godo_image_lock = _godo_threading.Lock()
+_godomall_products_before_image = _godomall_products
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image(shop_url, category, *args, **kwargs)
+    for item in (data.get("items") if isinstance(data, dict) else None) or []:
+        if isinstance(item, dict) and item.get("product_no") and item.get("image"):
+            _godo_known_images[str(item.get("product_no"))] = str(item.get("image"))
+    return data
+
+
+def _godo_image_for(page_url, number):
+    number = str(number or "")
+    if number in _godo_known_images:
+        return _godo_known_images[number]
+    finder = globals().get("_godo_site_base")
+    base = (finder(page_url) if finder else "") or _base(page_url)
+    with _godo_image_lock:
+        if base in _godo_image_sites:
+            return _godo_known_images.get(number, "")
+        _godo_image_sites.add(base)
+        try:
+            _godomall_all(base)
+        except Exception:
+            pass
+    return _godo_known_images.get(number, "")
+"""
+GODO_IMAGE1_CATALOG_NEEDED = ("def _godomall_products", "def _godomall_all", "def _base", GODO_SITE1_MARKER)
 GODO_OPEN1_MARKER = "# godo-open1"
 GODO_OPEN1_SERVICE_PY = r"""
 # godo-open1
@@ -6736,7 +6825,7 @@ def write_fix_status(root: Path) -> bool:
     catalog = root / "app" / "shop_catalog.py"
     service = root / "app" / "service.py"
     static = root / "app" / "static"
-    if not catalog.is_file() or not service.is_file() or not static.is_dir():
+    if not catalog.is_file() or not service.is_file() or not (root / "app" / "scraper.py").is_file() or not static.is_dir():
         return False
     catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
     checks = {
@@ -6744,6 +6833,10 @@ def write_fix_status(root: Path) -> bool:
             (catalog, GODO_NAME_MARKER, catalog_needed),
             (catalog, GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED),
             (catalog, GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED),
+        ),
+        "scraper.py": (
+            (root / "app" / "scraper.py", GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED),
         ),
         "service.py": (
             (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
@@ -6784,6 +6877,7 @@ def frozen_fix_plan() -> dict:
             (MURRAY_MARKER, ("def extract_product",), MURRAY_SCRAPER_PY),
             (GODO_MARKER, ("def extract_product",), GODO_SCRAPER_PY),
             (GODO_NAME_MARKER, ("def extract_product", GODO_MARKER), GODO_NAME_SCRAPER_PY),
+            (GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_SCRAPER_PY),
         ],
         "app.service": [
             (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
@@ -6798,6 +6892,7 @@ def frozen_fix_plan() -> dict:
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),
             (GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_CATALOG_PY),
             (GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_CATALOG_PY),
+            (GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_CATALOG_PY),
         ],
     }
 

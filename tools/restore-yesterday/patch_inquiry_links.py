@@ -131,7 +131,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.38"
+SCREEN_VERSION = "2026.10.28.39"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3752,6 +3752,31 @@ WHOLESALE_IMPORT_ALL_JS = r"""
 })();
 """
 
+OPEN_LOGIN_JS = r"""
+/* open-login1 */
+openSupplierProductUrl = async function (url, wholesalerId, emptyMessage) {
+  const target = String(url || "").trim();
+  if (!looksLikeUrl(target)) {
+    toast(emptyMessage || "열 상품 주소가 없습니다.", true);
+    return false;
+  }
+  const id = String(wholesalerId || "").trim();
+  if (!id) return openUrl(target, emptyMessage);
+  toast("공급처에 로그인한 Chrome에서 상품을 여는 중입니다.");
+  try {
+    const result = await api(`/api/wholesalers/${encodeURIComponent(id)}/open-product`, {
+      method: "POST",
+      body: JSON.stringify({ url: target }),
+      signal: AbortSignal.timeout(90000),
+    });
+    toast(result?.message || "로그인 Chrome에서 공급사 상품을 열었습니다.");
+    return true;
+  } catch (error) {
+    toast(`${error.message || "공급사 상품을 열지 못했습니다."} 잠깐 뒤에 다시 눌러 주세요.`, true);
+    return false;
+  }
+};
+"""
 SERVER_FIX_CHECK_JS = r"""
 /* server-fix-check1 */
 (function () {
@@ -4573,8 +4598,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "server-fix1")
-    return bump_asset(text, "app.js", "server-fix1")
+    text = bump_asset(text, "styles.css", "open-login1")
+    return bump_asset(text, "app.js", "open-login1")
 
 
 COLLECT_URL_JS = r"""
@@ -5398,8 +5423,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + WHOLESALE_IMPORT_ALL_JS
     if "/* server-fix-check1 */" not in text:
         text = text.rstrip() + "\n" + SERVER_FIX_CHECK_JS
+    if "/* open-login1 */" not in text:
+        text = text.rstrip() + "\n" + OPEN_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6417,6 +6444,8 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(service, GODO_SITE2_SERVICE_PY, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_MARKER):
         changed = True
+    if _append_marked_source(service, GODO_OPEN1_SERVICE_PY, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_MARKER):
+        changed = True
     try:
         write_fix_status(root)
     except OSError:
@@ -6543,6 +6572,119 @@ def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
         result["server_fixes"] = _godo_server_fixes()
     return result
 """
+GODO_OPEN1_MARKER = "# godo-open1"
+GODO_OPEN1_SERVICE_PY = r"""
+# godo-open1
+# open_wholesale_product only opened the URL, so Godomall shops such as Murray
+# showed their login page. Godomall forms use loginId/loginPwd, which the
+# cafe24 login filler does not know, so log in here with the saved account.
+_open_wholesale_product_before_godo = open_wholesale_product
+_GODO_LOGIN_ID = ("#loginId", "input[name='loginId']", "#member_id", "input[name='member_id']", "input[name='userid']")
+_GODO_LOGIN_PW = ("#loginPwd", "input[name='loginPwd']", "#member_passwd", "input[name='member_passwd']", "input[type='password']")
+_GODO_LOGIN_SUBMIT = ("#formLogin button[type='submit']", "#formLogin input[type='submit']", "button.l-login", "a[onclick*='MemberAction.login']")
+
+
+def _godo_first(page, selectors):
+    for selector in selectors:
+        try:
+            found = page.query_selector(selector)
+        except Exception:
+            found = None
+        if found is not None:
+            return found
+    return None
+
+
+def _godo_open_base(supplier, url):
+    import app.shop_catalog as _godo_catalog
+
+    finder = getattr(_godo_catalog, "_godo_site_base", None)
+    kind = str(supplier.get("type") or "").strip().lower()
+    if kind in {"cafe24", "imweb", "ownerclan"}:
+        return ""
+    for source in (supplier.get("url"), url):
+        base = finder(source) if finder else ""
+        if base:
+            return base
+    if kind == "godomall":
+        return _godo_catalog._base(str(supplier.get("url") or url))
+    return ""
+
+
+def _godo_on_login(page):
+    try:
+        return "/member/login" in (page.url or "")
+    except Exception:
+        return False
+
+
+def _godo_open_logged_in(url, base, login_id, password):
+    from playwright.sync_api import sync_playwright
+    from app.chrome_app import connect_cdp, existing_context
+
+    playwright = sync_playwright().start()
+    try:
+        browser = connect_cdp(playwright)
+        context = existing_context(browser)
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        if _godo_on_login(page) or page.query_selector("a[href*='logout']") is None:
+            if not _godo_on_login(page):
+                page.goto(base + "/member/login.php", wait_until="domcontentloaded", timeout=25000)
+            user_box = _godo_first(page, _GODO_LOGIN_ID) if _godo_on_login(page) else None
+            pass_box = _godo_first(page, _GODO_LOGIN_PW) if user_box is not None else None
+            if pass_box is not None:
+                user_box.fill(login_id)
+                pass_box.fill(password)
+                pass_box.press("Enter")
+                left = "() => !location.pathname.includes('/member/login')"
+                try:
+                    page.wait_for_function(left, timeout=6000)
+                except Exception:
+                    button = _godo_first(page, _GODO_LOGIN_SUBMIT)
+                    if button is not None and _godo_on_login(page):
+                        try:
+                            button.click(force=True, timeout=5000)
+                            page.wait_for_function(left, timeout=10000)
+                        except Exception:
+                            pass
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        if _godo_on_login(page):
+            return False
+        return True if page.query_selector("a[href*='logout']") is not None else None
+    finally:
+        playwright.stop()
+
+
+def open_wholesale_product(wholesaler_id, url, *args, **kwargs):
+    supplier = get_wholesaler(wholesaler_id, include_secret=True) or {}
+    target = str(url or "").strip()
+    base = _godo_open_base(supplier, target) if supplier and target.startswith("http") else ""
+    if not base:
+        return _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+    name = str(supplier.get("name") or "공급처")
+    login_id = str(supplier.get("login_id") or "").strip()
+    password = str(supplier.get("login_password") or "")
+    if not login_id or not password:
+        result = _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+        if isinstance(result, dict):
+            result["message"] = f"{name} 아이디와 비밀번호가 저장돼 있지 않아 로그인 없이 열었습니다. 공급처관리에서 저장해 주세요."
+        return result
+    try:
+        logged_in = _godo_open_logged_in(target, base, login_id, password)
+    except Exception:
+        return _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+    if logged_in:
+        return {"ok": True, "message": f"{name}에 로그인한 Chrome에서 상품을 열었습니다."}
+    if logged_in is None:
+        return {"ok": True, "message": f"{name} 상품을 열었지만 로그인이 됐는지 확인하지 못했습니다. 공급처관리에서 아이디와 비밀번호를 확인해 주세요."}
+    return {"ok": True, "message": f"{name} 로그인에 실패했습니다. 공급처관리에서 아이디와 비밀번호를 확인해 주세요."}
+"""
+GODO_OPEN1_SERVICE_NEEDED = ("def open_wholesale_product", "def get_wholesaler", GODO_NAME2_MARKER)
 GODO_SITE2_SERVICE_NEEDED = ("def list_wholesale_catalog", "def import_wholesale_catalog", GODO_NAME2_MARKER)
 FIX_STATUS_FILE = "modumodu-fixes.json"
 
@@ -6563,6 +6705,7 @@ def write_fix_status(root: Path) -> bool:
         "service.py": (
             (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
             (service, GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED),
+            (service, GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED),
         ),
     }
     files = {}
@@ -6604,6 +6747,7 @@ def frozen_fix_plan() -> dict:
             (GODO_NAME_MARKER, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_SERVICE_PY),
             (GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_SERVICE_PY),
             (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
+            (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
         ],
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),

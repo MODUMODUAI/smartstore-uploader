@@ -35,7 +35,10 @@ func main() {
 		alert("셀러용 설정을 쓰지 못했습니다.")
 		return
 	}
-	target := filepath.Join(dest, "MODUMODU.exe")
+	target := filepath.Join(dest, "셀러실행.exe")
+	if _, err := os.Stat(target); err != nil {
+		target = filepath.Join(dest, "MODUMODU.exe")
+	}
 	if _, err := os.Stat(target); err != nil {
 		target = filepath.Join(dest, "launcher.py")
 	}

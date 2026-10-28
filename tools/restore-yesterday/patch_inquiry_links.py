@@ -3515,8 +3515,23 @@ def repair_known_folders(root: Path) -> None:
             repair_broken_names(child)
 
 
+def iter_static_dirs(root: Path) -> list[Path]:
+    found = []
+    for static in (root / "app" / "static", root / "_internal" / "app" / "static"):
+        if (static / "app.js").is_file() and (static / "index.html").is_file():
+            found.append(static)
+    return found
+
+
 def apply_static_patches(root: Path) -> bool:
-    static = root / "app" / "static"
+    changed = False
+    for static in iter_static_dirs(root):
+        if _apply_one_static(static):
+            changed = True
+    return changed
+
+
+def _apply_one_static(static: Path) -> bool:
     js_path = static / "app.js"
     html_path = static / "index.html"
     css_path = static / "styles.css"
@@ -3565,7 +3580,7 @@ def main() -> None:
     static_changed = apply_static_patches(root)
     version_changed = write_screen_version(root) if root.exists() else False
     if not seller_changed and not static_changed and not version_changed:
-        if not (root / "app" / "static" / "app.js").is_file():
+        if not iter_static_dirs(root):
             raise SystemExit(f"static files not found: {root / 'app' / 'static'}")
         print("already linked")
         return

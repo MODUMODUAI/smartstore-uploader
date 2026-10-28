@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -130,7 +131,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.37"
+SCREEN_VERSION = "2026.10.28.38"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3751,6 +3752,58 @@ WHOLESALE_IMPORT_ALL_JS = r"""
 })();
 """
 
+SERVER_FIX_CHECK_JS = r"""
+/* server-fix-check1 */
+(function () {
+  if (typeof api !== "function") return;
+  const original = api;
+  let checked = false;
+  async function fixStatus() {
+    try {
+      const response = await fetch(`/static/modumodu-fixes.json?t=${Date.now()}`, { cache: "no-store" });
+      return response.ok ? await response.json() : null;
+    } catch (error) {
+      return null;
+    }
+  }
+  async function warn(fixes) {
+    if (checked) return;
+    checked = true;
+    const status = await fixStatus();
+    const missing = [];
+    Object.entries(status?.files || {}).forEach(([file, marks]) => {
+      Object.entries(marks || {}).forEach(([mark, state]) => {
+        if (state !== "ok") missing.push(`${file} ${mark}: ${[].concat(state).join(", ")}`);
+      });
+    });
+    if (missing.length) {
+      alert(`공급처 상품명 수정이 프로그램 코드에 들어가지 못했습니다.\n이 창을 캡처해서 보내 주세요.\n\n${missing.join("\n")}`);
+      return;
+    }
+    if (fixes) {
+      const off = Object.entries(fixes).filter(([, on]) => !on).map(([name]) => name);
+      alert(`공급처 상품명 수정 일부가 실행 중인 프로그램에 없습니다.\n이 창을 캡처해서 보내 주세요.\n\n${off.join(", ")}`);
+      return;
+    }
+    const quit = confirm("프로그램이 아직 예전 코드로 실행 중이라 공급처 상품명이 번호로 나올 수 있습니다.\n\n'확인'을 누르면 프로그램을 종료합니다. 그다음 바탕화면의 모두모두AI 아이콘을 다시 눌러 주세요.");
+    if (!quit) return;
+    try {
+      await original("/api/shutdown", { method: "POST", quiet: true });
+      toast("프로그램을 종료했습니다. 바탕화면의 모두모두AI 아이콘을 다시 눌러 주세요.");
+    } catch (error) {
+      toast(error.message || "종료하지 못했습니다.", true);
+    }
+  }
+  api = async function (path, options) {
+    const data = await original(path, options);
+    if (/^\/api\/wholesalers\/[^/]+\/(catalog|import)(\?|$)/.test(String(path || "")) && data && typeof data === "object") {
+      const fixes = data.server_fixes;
+      if (!fixes || !fixes.godo_name || !fixes.godo_site) warn(fixes).catch(() => {});
+    }
+    return data;
+  };
+})();
+"""
 MASTER_LOGIN2_CSS = """
 /* master-login2 */
 #masterLogin .master-login-card input,
@@ -4520,8 +4573,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "import-all1")
-    return bump_asset(text, "app.js", "import-all1")
+    text = bump_asset(text, "styles.css", "server-fix1")
+    return bump_asset(text, "app.js", "server-fix1")
 
 
 COLLECT_URL_JS = r"""
@@ -5343,8 +5396,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + MASTER_LOGIN2_JS
     if "/* wholesale-import-all1 */" not in text:
         text = text.rstrip() + "\n" + WHOLESALE_IMPORT_ALL_JS
+    if "/* server-fix-check1 */" not in text:
+        text = text.rstrip() + "\n" + SERVER_FIX_CHECK_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -6360,6 +6415,12 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(root / "app" / "shop_catalog.py", GODO_SITE1_CATALOG_PY, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_MARKER):
         changed = True
+    if _append_marked_source(service, GODO_SITE2_SERVICE_PY, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_MARKER):
+        changed = True
+    try:
+        write_fix_status(root)
+    except OSError:
+        pass
     return changed
 
 
@@ -6451,6 +6512,73 @@ GODO_SITE1_CATALOG_NEEDED = (
     "urlparse",
     GODO_NAME2_MARKER,
 )
+GODO_SITE2_MARKER = "# godo-site2"
+GODO_SITE2_SERVICE_PY = r"""
+# godo-site2
+# The screen reads server_fixes to tell an old server process (needs a restart)
+# from a source the fixes could not be added to.
+_list_wholesale_catalog_before_site2 = list_wholesale_catalog
+_import_wholesale_catalog_before_site2 = import_wholesale_catalog
+
+
+def _godo_server_fixes():
+    import app.shop_catalog as _godo_catalog
+
+    return {
+        "godo_name": hasattr(_godo_catalog, "_godo_names_for"),
+        "godo_site": hasattr(_godo_catalog, "_godo_site_base"),
+    }
+
+
+def list_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _list_wholesale_catalog_before_site2(wholesaler_id, *args, **kwargs)
+    if isinstance(result, dict):
+        result["server_fixes"] = _godo_server_fixes()
+    return result
+
+
+def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _import_wholesale_catalog_before_site2(wholesaler_id, *args, **kwargs)
+    if isinstance(result, dict):
+        result["server_fixes"] = _godo_server_fixes()
+    return result
+"""
+GODO_SITE2_SERVICE_NEEDED = ("def list_wholesale_catalog", "def import_wholesale_catalog", GODO_NAME2_MARKER)
+FIX_STATUS_FILE = "modumodu-fixes.json"
+
+
+def write_fix_status(root: Path) -> bool:
+    catalog = root / "app" / "shop_catalog.py"
+    service = root / "app" / "service.py"
+    static = root / "app" / "static"
+    if not catalog.is_file() or not service.is_file() or not static.is_dir():
+        return False
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    checks = {
+        "shop_catalog.py": (
+            (catalog, GODO_NAME_MARKER, catalog_needed),
+            (catalog, GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED),
+            (catalog, GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED),
+        ),
+        "service.py": (
+            (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
+            (service, GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED),
+        ),
+    }
+    files = {}
+    for label, rows in checks.items():
+        for path, marker, needed in rows:
+            text = read_text(path)[0]
+            state = "ok" if marker in text else [name for name in needed if name not in text] or ["not added"]
+            files.setdefault(label, {})[marker.lstrip("# ")] = state
+    payload = json.dumps({"version": SCREEN_VERSION, "files": files}, ensure_ascii=False, indent=1) + "\n"
+    target = static / FIX_STATUS_FILE
+    if target.is_file() and target.read_text(encoding="utf-8") == payload:
+        return False
+    target.write_text(payload, encoding="utf-8")
+    return True
+
+
 GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
 GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
 
@@ -6475,6 +6603,7 @@ def frozen_fix_plan() -> dict:
             (GODO_MARKER, godo_needed, GODO_SERVICE_PY),
             (GODO_NAME_MARKER, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_SERVICE_PY),
             (GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_SERVICE_PY),
+            (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
         ],
         "app.shop_catalog": [
             (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),

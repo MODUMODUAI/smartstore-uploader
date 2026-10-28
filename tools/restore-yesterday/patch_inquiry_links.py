@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.13"
+SCREEN_VERSION = "2026.10.28.14"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -2811,10 +2811,258 @@ body.edition-seller .seller-secret {
 }
 """
 
+SELLER_LOGIN_JS = r"""
+/* seller-login1 */
+(function () {
+  const storageKey = "modumodu-seller-session";
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function digits(value) {
+    let number = String(value || "").replace(/\D/g, "");
+    if (number.startsWith("82") && number.length >= 11) number = "0" + number.slice(2);
+    return number;
+  }
+
+  function validPhone(value) {
+    return /^01[016789]\d{7,8}$/.test(digits(value));
+  }
+
+  function formatPhone(value) {
+    const number = digits(value);
+    if (number.length === 11) return number.slice(0, 3) + "-" + number.slice(3, 7) + "-" + number.slice(7);
+    if (number.length === 10) return number.slice(0, 3) + "-" + number.slice(3, 6) + "-" + number.slice(6);
+    return number;
+  }
+
+  function readPhone() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "");
+      if (saved && validPhone(saved.phone)) return digits(saved.phone);
+    } catch (error) {}
+    return "";
+  }
+
+  function savePhone(phone) {
+    localStorage.setItem(storageKey, JSON.stringify({ phone: digits(phone) }));
+  }
+
+  function clearPhone() {
+    localStorage.removeItem(storageKey);
+  }
+
+  function field(labelText, id, type, autocomplete) {
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = labelText;
+    const input = document.createElement("input");
+    input.id = id;
+    input.type = type;
+    input.autocomplete = autocomplete;
+    input.required = true;
+    if (type === "tel") input.inputMode = "numeric";
+    label.append(input);
+    return label;
+  }
+
+  function ensureGate() {
+    let gate = document.getElementById("sellerLogin");
+    if (gate) return gate;
+    gate = document.createElement("div");
+    gate.id = "sellerLogin";
+    gate.role = "dialog";
+    gate.setAttribute("aria-modal", "true");
+    gate.setAttribute("aria-labelledby", "sellerLoginTitle");
+    const card = document.createElement("form");
+    card.className = "seller-login-card";
+    const title = document.createElement("h1");
+    title.id = "sellerLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 셀러용"));
+    const lead = document.createElement("p");
+    lead.textContent = "시험 단계입니다. 본인 전화번호와 비밀번호를 입력하면 들어갑니다.";
+    const error = document.createElement("p");
+    error.id = "sellerLoginError";
+    error.setAttribute("role", "alert");
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "들어가기";
+    card.append(title, lead, field("전화번호", "sellerLoginPhone", "tel", "tel"), field("비밀번호", "sellerLoginPassword", "password", "current-password"), error, submit);
+    card.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const phone = document.getElementById("sellerLoginPhone").value;
+      const password = document.getElementById("sellerLoginPassword").value;
+      if (!validPhone(phone)) {
+        error.textContent = "본인 전화번호를 입력해 주세요.";
+        return;
+      }
+      if (!String(password || "").trim()) {
+        error.textContent = "비밀번호를 입력해 주세요.";
+        return;
+      }
+      savePhone(phone);
+      document.getElementById("sellerLoginPassword").value = "";
+      error.textContent = "";
+      paint();
+    });
+    gate.append(card);
+    document.body.append(gate);
+    return gate;
+  }
+
+  function ensureAccount() {
+    let account = document.getElementById("sellerAccount");
+    if (account) return account;
+    const bar = document.querySelector(".titlebar");
+    if (!bar) return null;
+    account = document.createElement("span");
+    account.id = "sellerAccount";
+    account.className = "seller-account";
+    const phone = document.createElement("span");
+    phone.id = "sellerAccountPhone";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "sellerLogout";
+    button.textContent = "로그아웃";
+    button.addEventListener("click", () => {
+      clearPhone();
+      paint();
+    });
+    account.append(phone, button);
+    const quit = document.getElementById("appQuit");
+    if (quit) quit.before(account);
+    else bar.append(account);
+    return account;
+  }
+
+  function ensureLoginNote() {
+    const overview = document.getElementById("help-overview");
+    if (!overview || document.getElementById("sellerLoginNote")) return;
+    const note = document.createElement("p");
+    note.id = "sellerLoginNote";
+    note.textContent = "프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.";
+    const install = document.getElementById("sellerInstallNote");
+    const help = document.getElementById("sellerHelpNote");
+    if (install) install.after(note);
+    else if (help) help.after(note);
+    else overview.append(note);
+  }
+
+  function paint() {
+    const seller = isSeller();
+    const phone = seller ? readPhone() : "";
+    const locked = seller && !phone;
+    document.body.classList.toggle("seller-locked", locked);
+    if (locked) {
+      const gate = ensureGate();
+      gate.hidden = false;
+      const input = document.getElementById("sellerLoginPhone");
+      if (input && document.activeElement === document.body) input.focus();
+    } else {
+      const gate = document.getElementById("sellerLogin");
+      if (gate) gate.hidden = true;
+    }
+    const account = seller && phone ? ensureAccount() : document.getElementById("sellerAccount");
+    if (account) {
+      account.hidden = !phone;
+      const label = document.getElementById("sellerAccountPhone");
+      if (label) label.textContent = formatPhone(phone);
+    }
+    if (seller) ensureLoginNote();
+    [...document.body.children].forEach((child) => {
+      if (child.id === "sellerLogin") return;
+      if (locked) child.setAttribute("inert", "");
+      else child.removeAttribute("inert");
+    });
+  }
+
+  function hook() {
+    paint();
+    if (document.body.dataset.sellerLoginWatch === "1") return;
+    document.body.dataset.sellerLoginWatch = "1";
+    new MutationObserver(() => paint()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paint, 400);
+  setTimeout(paint, 1200);
+})();
+"""
+
+SELLER_LOGIN_CSS = """
+/* seller-login1 */
+body.seller-locked { overflow: hidden; }
+#sellerLogin {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.48);
+}
+#sellerLogin[hidden] { display: none !important; }
+.seller-login-card {
+  width: min(420px, 100%);
+  margin: 0;
+  padding: 28px 24px 22px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+.seller-login-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.seller-login-card .brand-a { color: #0b5cab; }
+.seller-login-card .brand-b { color: #3d9eed; }
+.seller-login-card .brand-ai { color: #111; }
+.seller-login-card p { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; font-weight: 400; }
+.seller-login-card label { font-size: 13px; font-weight: 700; }
+.seller-login-card input { font-size: 16px; padding: 8px 10px; border-radius: 8px; }
+.seller-login-card button[type="submit"] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border-color: #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+#sellerLoginError { min-height: 1.2em; color: #b42318; font-weight: 700; }
+.seller-account { display: inline-flex; align-items: center; gap: 6px; }
+#sellerAccount[hidden] { display: none !important; }
+#sellerLogout { padding: 3px 8px; }
+"""
+
+SELLER_LOGIN_NOTE = (
+    '<p id="sellerLoginNote">프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. '
+    "시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.</p>"
+)
+
 SELLER_HELP = """모두모두AI 셀러용
 
 구매자가 설치해서 쓰는 판매용 프로그램입니다.
-로그인 정보와 상품 URL 수집은 없습니다.
+열 때 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 들어갑니다.
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
 상품담기, 상품관리, 주문관리, 문의관리, 공급처, 설정은 사용할 수 있습니다.
 
 설치
@@ -2836,8 +3084,9 @@ SELLER_README = """모두모두AI 셀러용 설치
 2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
 3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
 4. 새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다. 상품과 설정은 그대로 둡니다.
+5. 처음 열면 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 들어갑니다.
 
-로그인 정보와 상품 URL 수집은 없습니다.
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
 """
 
 SELLER_INSTALL_NOTE = (
@@ -2879,6 +3128,12 @@ def patch_help(text: str) -> str:
         end = text.find("</p>", pos)
         if end >= 0:
             text = text[: end + 4] + "\n" + SELLER_INSTALL_NOTE + text[end + 4 :]
+    if 'id="sellerLoginNote"' not in text and 'id="sellerHelpNote"' in text:
+        anchor = 'id="sellerInstallNote"' if 'id="sellerInstallNote"' in text else 'id="sellerHelpNote"'
+        pos = text.find(anchor)
+        end = text.find("</p>", pos)
+        if end >= 0:
+            text = text[: end + 4] + "\n" + SELLER_LOGIN_NOTE + text[end + 4 :]
     if 'data-help="help-admins"' not in text:
         needle = 'data-help="help-data"'
         pos = text.find(needle)
@@ -3382,8 +3637,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-edition1")
-    return bump_asset(text, "app.js", "seller-edition1")
+    text = bump_asset(text, "styles.css", "seller-login1")
+    return bump_asset(text, "app.js", "seller-login1")
 
 
 def patch_answer(text: str) -> str:
@@ -3415,8 +3670,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + ADMIN_MENU_JS
     if "/* seller-edition1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
+    if "/* seller-login1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -3446,6 +3703,8 @@ def patch_css(text: str) -> str:
         extra += ADMIN_MENU_CSS
     if "/* seller-edition1 */" not in text:
         extra += SELLER_CSS
+    if "/* seller-login1 */" not in text:
+        extra += SELLER_LOGIN_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

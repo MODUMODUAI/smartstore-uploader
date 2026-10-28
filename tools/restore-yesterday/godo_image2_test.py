@@ -148,5 +148,157 @@ class GodoImage2Test(unittest.TestCase):
         self.assertFalse(any("esmplus.com" in url for url in data["gallery_images"]))
 
 
+class GodoImage3Test(unittest.TestCase):
+    def setUp(self):
+        self.ns = {
+            "extract_product": lambda html, page_url="": {
+                "gallery_images": [],
+                "detail_images": [],
+                "images": [],
+                "warnings": ["이미지를 찾지 못했습니다"],
+            }
+        }
+        for snippet in (
+            patch.GODO_SCRAPER_PY,
+            patch.GODO_IMAGE1_SCRAPER_PY,
+            patch.GODO_IMAGE2_SCRAPER_PY,
+            patch.GODO_IMAGE3_SCRAPER_PY,
+        ):
+            exec(compile(snippet, "<godo>", "exec"), self.ns)
+        self.catalog = {
+            "_godomall_products": lambda shop_url, category=None, *args, **kwargs: {"items": []},
+            "_godo_known_images": {},
+            "_base": lambda url: "http://murray.co.kr",
+            "_godo_all_cates": lambda url: [],
+            "httpx": None,
+            "PAGE_HEADERS": {},
+        }
+        exec(compile(patch.GODO_IMAGE3_CATALOG_PY, "<catalog>", "exec"), self.catalog)
+
+    def test_detail_slot_is_not_the_list_image(self):
+        html = """
+        <img src="https://cdn.example/goods/1000000195/image/detail/1000000195_detail_092.jpg">
+        <img src="https://cdn.example/goods/1000000195/image/magnify/1000000195_magnify_078.jpg">
+        <img src="http://gi.esmplus.com/murraymall/detail/long.jpg">
+        """
+        data = self.ns["extract_product"](html, "http://murray.co.kr/goods/goods_view.php?goodsNo=1000000195")
+        self.assertIn("/image/magnify/", data["gallery_images"][0])
+        self.assertFalse(any("/image/detail/" in url for url in data["gallery_images"]))
+        self.assertTrue(any("/image/detail/" in url for url in data["detail_images"]))
+        self.assertTrue(any("esmplus.com" in url for url in data["detail_images"]))
+        self.assertFalse(any("esmplus.com" in url for url in data["gallery_images"]))
+
+    def test_main_photo_leads_the_list(self):
+        html = """
+        <img src="https://cdn.example/goods/1000000195/image/detail/1000000195_detail_092.jpg">
+        <img src="https://cdn.example/goods/1000000195/image/main/1000000195_main_01.jpg">
+        <img src="http://gi.esmplus.com/murraymall/detail/long.jpg">
+        """
+        data = self.ns["extract_product"](html, "http://murray.co.kr/goods/goods_view.php?goodsNo=1000000195")
+        self.assertIn("/image/main/", data["gallery_images"][0])
+        self.assertEqual(data["images"][0], data["gallery_images"][0])
+        self.assertNotIn("/image/detail/", data["gallery_images"][0])
+
+    def test_moderate_strip_moves_behind_square_photo(self):
+        product = {
+            "source_url": "http://murray.co.kr/goods/goods_view.php?goodsNo=1000000195",
+            "images": [
+                {
+                    "source_url": "http://gi.esmplus.com/murraymall/detail/long.jpg",
+                    "kind": "gallery",
+                    "representative": True,
+                    "width": 800,
+                    "height": 1224,
+                },
+                {
+                    "source_url": "https://cdn.example/goods/1000000195/image/main/1000000195_main_01.jpg",
+                    "kind": "detail",
+                    "representative": False,
+                    "width": 400,
+                    "height": 400,
+                },
+            ],
+        }
+        self.assertTrue(self.ns["godo_fix_saved_images"](product))
+        self.assertIn("/image/main/", product["images"][0]["source_url"])
+        self.assertTrue(product["images"][0]["representative"])
+        self.assertEqual(product["images"][0]["kind"], "gallery")
+        self.assertEqual(product["images"][1]["kind"], "detail")
+        self.assertFalse(product["images"][1]["representative"])
+        self.assertFalse(self.ns["godo_fix_saved_images"](product))
+
+    def test_catalog_replaces_description_with_list_photo(self):
+        html = Path("/tmp/murray-list.html").read_text("utf-8", "replace") if Path("/tmp/murray-list.html").is_file() else ""
+        if html:
+            mains = self.catalog["_godo3_mains_from_html"](html)
+            self.assertIn("/image/main/", mains["1000000195"])
+        items = [
+            {"product_no": "1000000195", "image": "http://gi.esmplus.com/murraymall/detail/long.jpg"},
+            {"product_no": "1000000555", "image": "https://cdn.example/goods/1000000555/image/detail/1000000555_detail_054.jpg"},
+            {"product_no": "1000000802", "image": "https://cdn.example/goods/1000000802/image/main/1000000802_main_028.jpg"},
+        ]
+        mains = {
+            "1000000195": "https://cdn.example/goods/1000000195/image/main/1000000195_main_01.jpg",
+            "1000000555": "https://cdn.example/goods/1000000555/image/main/1000000555_main_014.jpg",
+            "1000000802": "https://cdn.example/goods/1000000802/image/main/1000000802_main_028.jpg",
+        }
+        self.catalog["_godo3_apply_items"](items, mains)
+        self.assertIn("/image/main/", items[0]["image"])
+        self.assertIn("/image/main/", items[1]["image"])
+        self.assertIn("/image/main/1000000802", items[2]["image"])
+        self.assertEqual(self.catalog["_godo_known_images"]["1000000195"], items[0]["image"])
+
+    def test_relative_list_photo_is_kept(self):
+        html = '<img src="/goods/1000000195/image/main/1000000195_main_01.jpg">'
+        mains = self.catalog["_godo3_mains_from_html"](html, "http://murray.co.kr")
+        self.assertEqual(
+            mains["1000000195"],
+            "http://murray.co.kr/goods/1000000195/image/main/1000000195_main_01.jpg",
+        )
+
+    def test_saved_detail_page_is_replaced_by_cached_list_photo(self):
+        self.ns["_godo3_cached_list"] = lambda number, page_url: (
+            "https://cdn.example/goods/1000000195/image/main/1000000195_main_01.jpg"
+        )
+        product = {
+            "source_url": "http://murray.co.kr/goods/goods_view.php?goodsNo=1000000195",
+            "images": [
+                {
+                    "source_url": "http://gi.esmplus.com/murraymall/detail/long.jpg",
+                    "kind": "gallery",
+                    "representative": True,
+                    "width": 800,
+                    "height": 1224,
+                },
+                {
+                    "source_url": "https://cdn.example/goods/1000000195/image/detail/1000000195_detail_092.jpg",
+                    "kind": "gallery",
+                    "representative": False,
+                    "width": 500,
+                    "height": 500,
+                },
+            ],
+        }
+        self.assertTrue(self.ns["godo_fix_saved_images"](product))
+        self.assertIn("/image/main/", product["images"][0]["source_url"])
+        self.assertTrue(product["images"][0]["representative"])
+        self.assertEqual(product["images"][0]["kind"], "gallery")
+        self.assertTrue(all(image["kind"] == "detail" for image in product["images"][1:]))
+        self.assertFalse(any(image["representative"] for image in product["images"][1:]))
+        self.assertFalse(self.ns["godo_fix_saved_images"](product))
+
+    def test_real_goods_page_keeps_detail_slot_out_of_the_list(self):
+        html_path = Path("/tmp/murray-goods/1000000195.html")
+        if not html_path.is_file():
+            self.skipTest("murray goods fixture not downloaded")
+        html = html_path.read_text("utf-8", "replace")
+        data = self.ns["extract_product"](html, "http://murray.co.kr/goods/goods_view.php?goodsNo=1000000195")
+        self.assertIn("/image/magnify/", data["gallery_images"][0])
+        self.assertNotIn("/thumb/", data["gallery_images"][0])
+        self.assertFalse(any("/image/detail/" in url for url in data["gallery_images"]))
+        self.assertTrue(any("/image/detail/" in url for url in data["detail_images"]))
+        self.assertFalse(any("esmplus.com" in url for url in data["gallery_images"]))
+
+
 if __name__ == "__main__":
     unittest.main()

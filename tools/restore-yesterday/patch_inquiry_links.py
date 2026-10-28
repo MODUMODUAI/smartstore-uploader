@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.44"
+SCREEN_VERSION = "2026.10.28.45"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 44))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 45))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5496,6 +5496,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + OPEN_LOGIN_JS
     if "/* godo-image2 */" not in text:
         text = text.rstrip() + "\n" + GODO_IMAGE2_JS
+    if "/* godo-image3 */" not in text:
+        text = text.rstrip() + "\n" + GODO_IMAGE3_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -6529,6 +6531,10 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE2_CATALOG_PY, GODO_IMAGE2_CATALOG_NEEDED, GODO_IMAGE2_MARKER):
         changed = True
+    if _append_marked_source(scraper, GODO_IMAGE3_SCRAPER_PY, GODO_IMAGE3_SCRAPER_NEEDED, GODO_IMAGE3_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE3_CATALOG_PY, GODO_IMAGE3_CATALOG_NEEDED, GODO_IMAGE3_MARKER):
+        changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
     try:
@@ -7134,6 +7140,485 @@ def _godomall_products(shop_url, category=None, *args, **kwargs):
     return data
 '''
 GODO_IMAGE2_CATALOG_NEEDED = ("def _godomall_products", "_godo_known_images", GODO_IMAGE1_MARKER)
+GODO_IMAGE3_MARKER = "# godo-image3"
+GODO_IMAGE3_JS = r"""
+/* godo-image3 */
+function godoListRank(url, number) {
+  const path = String(url || "").split("#")[0].split("?")[0];
+  const match = path.match(/\/goods\/(\d+)\/image\/(main|list|magnify)\//i);
+  if (!match || String(match[1]) !== String(number) || /\/thumb\//i.test(path)) return null;
+  const kind = match[2].toLowerCase();
+  if (kind === "main") return 0;
+  if (kind === "list") return 1;
+  return 2;
+}
+function godoIsTall(image) {
+  const width = Number(image?.width || 0);
+  const height = Number(image?.height || 0);
+  return width >= 100 && height >= 700 && height >= width * 1.45;
+}
+function godoIsDescription(url) {
+  const text = String(url || "").toLowerCase();
+  return text.indexOf("esmplus.com") >= 0 || text.indexOf("/data/editor/") >= 0;
+}
+function godoApplyRepresentative(product) {
+  const images = product?.images;
+  const number = godoGoodsNumber(product?.source_url);
+  if (!number || !Array.isArray(images) || !images.length) return false;
+  const photos = images.filter((image) => godoListRank(image?.source_url, number) !== null);
+  photos.sort((a, b) => godoListRank(a.source_url, number) - godoListRank(b.source_url, number));
+  let best = photos[0] || null;
+  if (!best) {
+    const squares = images.filter((image) => image && !godoIsTall(image) && !godoIsDescription(image.source_url) && Number(image.width || 0) >= 150 && Number(image.height || 0) >= 150);
+    squares.sort((a, b) => Math.abs(Number(a.width) / Number(a.height) - 1) - Math.abs(Number(b.width) / Number(b.height) - 1));
+    const current = images.find((image) => image?.representative) || images[0];
+    const currentBad = current && (godoIsTall(current) || godoIsDescription(current.source_url) || /\/image\/detail\//i.test(String(current.source_url || "")));
+    if (!squares.length || !currentBad) return false;
+    best = squares[0];
+  }
+  let changed = false;
+  const index = images.indexOf(best);
+  if (index > 0) {
+    images.splice(index, 1);
+    images.unshift(best);
+    changed = true;
+  }
+  images.forEach((image) => {
+    if (!image || typeof image !== "object") return;
+    const rank = godoListRank(image.source_url, number);
+    const wantRep = image === best;
+    let wantKind = image.kind;
+    if (rank !== null || wantRep) wantKind = "gallery";
+    else if (image.source_url || godoIsTall(image) || godoIsDescription(image.source_url)) wantKind = "detail";
+    if (!!image.representative !== wantRep) {
+      image.representative = wantRep;
+      changed = true;
+    }
+    if (wantKind && image.kind !== wantKind) {
+      image.kind = wantKind;
+      changed = true;
+    }
+  });
+  return changed;
+}
+"""
+GODO_IMAGE3_SCRAPER_PY = r'''
+# godo-image3
+# The list image is the goods main photo, then the list photo, then magnify.
+# Detail-slot files and long description images stay detail images. A saved
+# list can still show the description when it is only moderately tall, so move
+# the real list photo to the front.
+_GODO3_LIST_RANK = {"main": 0, "list": 1, "magnify": 2}
+_extract_product_before_godo_image3 = extract_product
+_godo_fix_saved_images_before3 = godo_fix_saved_images
+
+
+def _godo3_list_rank(url, number):
+    rank = _godo_photo_rank(url, number)
+    if rank is None or rank > 2:
+        return None
+    return rank
+
+
+def _godo3_description(url):
+    text = _godo_clean_url(url).lower()
+    return "esmplus.com" in text or "/data/editor/" in text
+
+
+def _godo3_tall(image):
+    if not isinstance(image, dict):
+        return False
+    try:
+        width = int(image.get("width") or 0)
+        height = int(image.get("height") or 0)
+    except (TypeError, ValueError):
+        return False
+    return width >= 100 and height >= 700 and height >= width * 1.45
+
+
+def _godo3_split(html, number, extra):
+    listed = []
+    detail = []
+    seen = set()
+
+    def add(url):
+        url = _godo_clean_url(url)
+        if not url or url in seen or _godo_skip_url(url):
+            return
+        path = url.split("?", 1)[0].lower()
+        if "/thumb/" in path and "/goods/" in path and "/image/" in path:
+            return
+        seen.add(url)
+        rank = _godo3_list_rank(url, number)
+        if rank is not None:
+            listed.append((rank, url))
+        else:
+            detail.append(url)
+
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>\\]+", html or "", _godo_re.I):
+        add(match.group(0))
+    for match in _godo_re.finditer(r"(?:src|data-src|data-original)\s*=\s*[\"']([^\"']+)", html or "", _godo_re.I):
+        add(match.group(1))
+    for url in extra or []:
+        add(url)
+    listed.sort(key=lambda item: item[0])
+    list_urls = []
+    for _, url in listed:
+        if url not in list_urls:
+            list_urls.append(url)
+    return list_urls, detail
+
+
+def _godo3_cached_list(number, page_url):
+    try:
+        import app.shop_catalog as _godo_catalog
+    except Exception:
+        return ""
+    url = ""
+    getter = getattr(_godo_catalog, "_godo3_list_image", None)
+    if getter:
+        try:
+            url = getter(page_url, number) or ""
+        except Exception:
+            url = ""
+    if _godo3_list_rank(url, number) is None:
+        known = getattr(_godo_catalog, "_godo_known_images", {}) or {}
+        url = str(known.get(str(number)) or "")
+    if _godo3_list_rank(url, number) is None:
+        return ""
+    return _godo_clean_url(url)
+
+
+def _godo3_pull_list_photo(product, images, number):
+    if any(
+        isinstance(image, dict) and _godo3_list_rank(_godo_image_url(image), number) == 0
+        for image in images
+    ):
+        return
+    current = next((image for image in images if isinstance(image, dict) and image.get("representative")), None)
+    current_url = _godo_image_url(current) if current is not None else ""
+    if _godo3_list_rank(current_url, number) is not None:
+        return
+    cached = _godo3_cached_list(number, product.get("source_url") or "")
+    if not cached:
+        return
+    for image in images:
+        if isinstance(image, dict) and _godo_image_url(image) == cached:
+            return
+    images.insert(0, {
+        "source_url": cached,
+        "kind": "gallery",
+        "representative": False,
+        "included": True,
+    })
+
+
+def _godo3_same_images(before, images):
+    return before is not None and images == before
+
+
+def godo_fix_saved_images(product):
+    before = None
+    if isinstance(product, dict) and isinstance(product.get("images"), list):
+        before = [dict(image) if isinstance(image, dict) else image for image in product["images"]]
+    changed = bool(_godo_fix_saved_images_before3(product))
+    if not isinstance(product, dict):
+        return changed
+    number = _godo_goods_no(product.get("source_url"))
+    images = product.get("images")
+    if not number or not isinstance(images, list) or not images:
+        return False if _godo3_same_images(before, product.get("images")) else changed
+    _godo3_pull_list_photo(product, images, number)
+    ranked = []
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        rank = _godo3_list_rank(_godo_image_url(image), number)
+        if rank is not None:
+            ranked.append((rank, image))
+    ranked.sort(key=lambda item: item[0])
+    best = ranked[0][1] if ranked else None
+    if best is None:
+        squares = []
+        for image in images:
+            if not isinstance(image, dict) or _godo3_tall(image) or _godo3_description(_godo_image_url(image)):
+                continue
+            try:
+                width = int(image.get("width") or 0)
+                height = int(image.get("height") or 0)
+            except (TypeError, ValueError):
+                continue
+            if width >= 150 and height >= 150:
+                squares.append((abs((width / height) - 1), image))
+        squares.sort(key=lambda item: item[0])
+        current = next((image for image in images if isinstance(image, dict) and image.get("representative")), None)
+        current_url = _godo_image_url(current) if current is not None else ""
+        current_bad = current is not None and (
+            _godo3_tall(current) or _godo3_description(current_url) or _godo_photo_rank(current_url, number) == 3
+        )
+        if squares and current_bad:
+            best = squares[0][1]
+    if best is None:
+        return False if _godo3_same_images(before, product.get("images")) else changed
+    if images[0] is not best:
+        images.remove(best)
+        images.insert(0, best)
+        changed = True
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        url = _godo_image_url(image)
+        rank = _godo3_list_rank(url, number)
+        want_rep = image is best
+        if rank is not None or want_rep:
+            want_kind = "gallery"
+        elif url or _godo3_tall(image) or _godo3_description(url):
+            want_kind = "detail"
+        else:
+            want_kind = image.get("kind")
+        if bool(image.get("representative")) != want_rep:
+            image["representative"] = want_rep
+            changed = True
+        if want_kind and image.get("kind") != want_kind:
+            image["kind"] = want_kind
+            changed = True
+    if _godo3_same_images(before, product.get("images")):
+        return False
+    return changed
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image3(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    html_text = html if isinstance(html, str) else ""
+    extra = []
+    for key in ("detail_images", "gallery_images", "images"):
+        for item in data.get(key) or []:
+            extra.append(_godo_image_url(item))
+    list_urls, detail_urls = _godo3_split(html_text, number, extra)
+    if not any(_godo3_list_rank(url, number) == 0 for url in list_urls):
+        cached = _godo3_cached_list(number, page_url)
+        if cached and cached not in list_urls:
+            list_urls.insert(0, cached)
+    if not list_urls:
+        fallback = [url for url in detail_urls if _godo_photo_rank(url, number) is not None]
+        if fallback:
+            list_urls = [fallback[0]]
+            detail_urls = [url for url in detail_urls if url != fallback[0]]
+    if not list_urls:
+        return data
+    detail_urls = [url for url in detail_urls if url not in list_urls]
+    data["gallery_images"] = list_urls
+    data["detail_images"] = detail_urls
+    images = data.get("images") or []
+    if images and isinstance(images[0], dict):
+        by_url = {}
+        rest = []
+        for image in images:
+            url = _godo_image_url(image) if isinstance(image, dict) else ""
+            if isinstance(image, dict) and url and url not in by_url:
+                by_url[url] = image
+            else:
+                rest.append(image)
+        ordered = []
+        for url in list_urls + detail_urls:
+            image = by_url.pop(url, None)
+            if image is None:
+                image = {"source_url": url, "kind": "gallery" if url in list_urls else "detail", "representative": False}
+            ordered.append(image)
+        ordered.extend(by_url.values())
+        ordered.extend(item for item in rest if item not in ordered)
+        data["images"] = ordered
+        godo_fix_saved_images({"source_url": page_url, "images": data["images"]})
+    else:
+        data["images"] = list_urls + detail_urls
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_IMAGE3_SCRAPER_NEEDED = ("def extract_product", "def godo_fix_saved_images", "def _godo_photo_rank", GODO_IMAGE2_MARKER)
+GODO_IMAGE3_CATALOG_PY = r'''
+# godo-image3
+# Some list rows keep the detail page or the detail-slot file as item.image.
+# The list page's own main/list photo is the list image.
+import re as _godo3_re
+
+_GODO3_ABS = _godo3_re.compile(
+    r"(?:https?:)?//[^\"'\s<>\\]+/goods/(\d+)/image/(main|list|magnify)/[^\"'\s<>\\]+",
+    _godo3_re.I,
+)
+_GODO3_RANK = {"main": 0, "list": 1, "magnify": 2}
+_godo3_main_cache = {}
+_godomall_products_before_image3 = _godomall_products
+
+
+def _godo3_rank(url, number):
+    path = str(url or "").split("#", 1)[0].split("?", 1)[0]
+    match = _GODO3_ABS.search(path if "://" in path or path.startswith("//") else "//" + path)
+    if match is None:
+        match = _godo3_re.search(r"/goods/(\d+)/image/(main|list|magnify)/", path, _godo3_re.I)
+        if match is None or match.group(1) != str(number or "") or "/thumb/" in path.lower():
+            return None
+        return _GODO3_RANK.get(match.group(2).lower())
+    if match.group(1) != str(number or "") or "/thumb/" in path.lower():
+        return None
+    return _GODO3_RANK.get(match.group(2).lower())
+
+
+def _godo3_description(url):
+    text = str(url or "").lower()
+    return "esmplus.com" in text or "/data/editor/" in text
+
+
+def _godo3_mains_from_html(html, base=""):
+    found = {}
+
+    def consider(url, number, kind):
+        url = str(url or "").strip()
+        if not url or "/thumb/" in url.lower():
+            return
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/") and base:
+            url = str(base).rstrip("/") + url
+        elif not url.startswith("http"):
+            return
+        rank = _GODO3_RANK.get(str(kind or "").lower(), 9)
+        prev = found.get(number)
+        if prev is None or rank < prev[0]:
+            found[number] = (rank, url)
+
+    for match in _GODO3_ABS.finditer(html or ""):
+        consider(match.group(0), match.group(1), match.group(2))
+    for match in _godo3_re.finditer(
+        r"[\"']([^\"']*?/goods/(\d+)/image/(main|list|magnify)/[^\"']+)",
+        html or "",
+        _godo3_re.I,
+    ):
+        consider(match.group(1), match.group(2), match.group(3))
+    return {number: url for number, (_, url) in found.items()}
+
+
+def _godo3_fetch_mains(shop_url, category):
+    key = (str(shop_url or ""), str(category or ""))
+    if key in _godo3_main_cache:
+        return _godo3_main_cache[key]
+    base = _base(shop_url)
+    cate = str(category or "").strip()
+    if cate in {"", "all", "etc"}:
+        cate = ""
+    found = {}
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            for page in range(1, 9):
+                params = {"page": page}
+                if cate:
+                    params["cateCd"] = cate
+                response = client.get(f"{base}/goods/goods_list.php", params=params)
+                if response.status_code >= 400:
+                    break
+                html = response.text or ""
+                before = len(found)
+                found.update(_godo3_mains_from_html(html, base))
+                if "goodsNo=" not in html or len(found) == before:
+                    break
+    except Exception:
+        found = found or {}
+    _godo3_main_cache[key] = found
+    return found
+
+
+def _godo3_mains_for(shop_url, category, items):
+    wanted = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if number and _godo3_rank(item.get("image"), number) != 0:
+            wanted.add(number)
+    if not wanted:
+        return {}
+    cates = []
+    chosen = str(category or "").strip()
+    if chosen and chosen not in {"all", "etc"}:
+        cates = [chosen]
+    getter = globals().get("_godo_all_cates")
+    if getter and (not cates or len(wanted) > 0):
+        try:
+            more = list(getter(shop_url) or [])
+        except Exception:
+            more = []
+        for cate in more:
+            if cate not in cates:
+                cates.append(cate)
+            if len(cates) >= 12:
+                break
+    if not cates:
+        cates = [chosen]
+    found = {}
+    for cate in cates:
+        if not wanted:
+            break
+        for number, url in _godo3_fetch_mains(shop_url, cate).items():
+            found.setdefault(number, url)
+            wanted.discard(number)
+    return found
+
+
+def _godo3_apply_items(items, mains):
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if not number:
+            continue
+        image = str(item.get("image") or "")
+        better = str((mains or {}).get(number) or "")
+        rank = _godo3_rank(image, number)
+        better_rank = _godo3_rank(better, number)
+        if better and better_rank is not None and (rank is None or better_rank < rank):
+            item["image"] = better
+            image = better
+            rank = better_rank
+        if rank is not None:
+            _godo_known_images[number] = image
+        elif _godo3_description(image):
+            _godo_known_images.pop(number, None)
+            item["image"] = ""
+
+
+def _godo3_list_image(page_url, number):
+    number = str(number or "")
+    known = str(_godo_known_images.get(number) or "")
+    if _godo3_rank(known, number) == 0:
+        return known
+    found = _godo3_mains_for(page_url, "", [{"product_no": number, "image": known}])
+    url = str(found.get(number) or "")
+    if _godo3_rank(url, number) is None:
+        url = known if _godo3_rank(known, number) is not None else ""
+    if url:
+        _godo_known_images[number] = url
+    return url
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image3(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list) or not items:
+        return data
+    mains = {}
+    if any(isinstance(item, dict) and _godo3_rank(item.get("image"), item.get("product_no")) != 0 for item in items):
+        try:
+            mains = _godo3_mains_for(shop_url, category, items)
+        except Exception:
+            mains = {}
+    _godo3_apply_items(items, mains)
+    return data
+'''
+GODO_IMAGE3_CATALOG_NEEDED = ("def _godomall_products", "_godo_known_images", "def _base", "httpx", GODO_IMAGE2_MARKER)
 TEXT_DECODE1_MARKER = "# subprocess-text1"
 TEXT_DECODE1_CHROME_PY = r"""
 # subprocess-text1
@@ -7285,10 +7770,12 @@ def write_fix_status(root: Path) -> bool:
             (catalog, GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED),
             (catalog, GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED),
             (catalog, GODO_IMAGE2_MARKER, GODO_IMAGE2_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE3_MARKER, GODO_IMAGE3_CATALOG_NEEDED),
         ),
         "scraper.py": (
             (root / "app" / "scraper.py", GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED),
             (root / "app" / "scraper.py", GODO_IMAGE2_MARKER, GODO_IMAGE2_SCRAPER_NEEDED),
+            (root / "app" / "scraper.py", GODO_IMAGE3_MARKER, GODO_IMAGE3_SCRAPER_NEEDED),
         ),
         "service.py": (
             (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
@@ -7332,6 +7819,7 @@ def frozen_fix_plan() -> dict:
             (GODO_NAME_MARKER, ("def extract_product", GODO_MARKER), GODO_NAME_SCRAPER_PY),
             (GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_SCRAPER_PY),
             (GODO_IMAGE2_MARKER, GODO_IMAGE2_SCRAPER_NEEDED, GODO_IMAGE2_SCRAPER_PY),
+            (GODO_IMAGE3_MARKER, GODO_IMAGE3_SCRAPER_NEEDED, GODO_IMAGE3_SCRAPER_PY),
         ],
         "app.service": [
             (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
@@ -7352,6 +7840,7 @@ def frozen_fix_plan() -> dict:
             (GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_CATALOG_PY),
             (GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_CATALOG_PY),
             (GODO_IMAGE2_MARKER, GODO_IMAGE2_CATALOG_NEEDED, GODO_IMAGE2_CATALOG_PY),
+            (GODO_IMAGE3_MARKER, GODO_IMAGE3_CATALOG_NEEDED, GODO_IMAGE3_CATALOG_PY),
         ],
     }
 

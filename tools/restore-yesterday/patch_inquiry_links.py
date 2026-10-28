@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.16"
+SCREEN_VERSION = "2026.10.28.17"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3357,6 +3357,175 @@ SELLER_PORT_JS = r"""
 })();
 """
 
+MASTER_LOGIN_JS = r"""
+/* master-login1 */
+(function () {
+  const storageKey = "modumodu-master-gate";
+  const password = "9020917";
+
+  function isSellerScreen() {
+    if (String(location.port || "") === "8788") return true;
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function unlocked() {
+    try {
+      return sessionStorage.getItem(storageKey) === "1";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function ensureGate() {
+    let gate = document.getElementById("masterLogin");
+    if (gate) return gate;
+    gate = document.createElement("div");
+    gate.id = "masterLogin";
+    gate.role = "dialog";
+    gate.setAttribute("aria-modal", "true");
+    gate.setAttribute("aria-labelledby", "masterLoginTitle");
+    const card = document.createElement("form");
+    card.className = "master-login-card";
+    const title = document.createElement("h1");
+    title.id = "masterLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 마스터"));
+    const lead = document.createElement("p");
+    lead.textContent = "비밀번호를 입력하면 들어갑니다.";
+    const label = document.createElement("label");
+    label.htmlFor = "masterLoginPassword";
+    label.textContent = "비밀번호";
+    const input = document.createElement("input");
+    input.id = "masterLoginPassword";
+    input.type = "password";
+    input.autocomplete = "current-password";
+    input.required = true;
+    label.append(input);
+    const error = document.createElement("p");
+    error.id = "masterLoginError";
+    error.setAttribute("role", "alert");
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "들어가기";
+    card.append(title, lead, label, error, submit);
+    card.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const typed = String(input.value || "").trim();
+      if (typed !== password) {
+        error.textContent = "비밀번호가 맞지 않습니다.";
+        input.focus();
+        return;
+      }
+      try { sessionStorage.setItem(storageKey, "1"); } catch (error) {}
+      input.value = "";
+      error.textContent = "";
+      document.body.dataset.masterEntered = "1";
+      paint();
+    });
+    gate.append(card);
+    document.body.append(gate);
+    return gate;
+  }
+
+  function paint() {
+    const locked = !isSellerScreen() && !unlocked();
+    document.body.classList.toggle("master-locked", locked);
+    if (locked) {
+      const gate = ensureGate();
+      gate.hidden = false;
+      const input = document.getElementById("masterLoginPassword");
+      if (input && document.activeElement === document.body) input.focus();
+    } else {
+      const gate = document.getElementById("masterLogin");
+      if (gate) gate.hidden = true;
+    }
+    [...document.body.children].forEach((child) => {
+      if (child.id === "masterLogin" || child.id === "sellerLogin") return;
+      if (locked) child.setAttribute("inert", "");
+      else if (!document.body.classList.contains("seller-locked")) child.removeAttribute("inert");
+    });
+  }
+
+  function hook() {
+    paint();
+    if (document.body.dataset.masterLoginWatch === "1") return;
+    document.body.dataset.masterLoginWatch = "1";
+    new MutationObserver(() => paint()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paint, 400);
+})();
+"""
+
+MASTER_LOGIN_CSS = """
+/* master-login1 */
+body.master-locked { overflow: hidden; }
+#masterLogin {
+  position: fixed;
+  inset: 0;
+  z-index: 8100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.48);
+}
+#masterLogin[hidden] { display: none !important; }
+.master-login-card {
+  width: min(420px, 100%);
+  margin: 0;
+  padding: 28px 24px 22px;
+  background: #fff;
+  color: #111;
+  border: 1px solid #e4e4e4;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+.master-login-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.master-login-card .brand-a { color: #0b5cab; }
+.master-login-card .brand-b { color: #3d9eed; }
+.master-login-card .brand-ai { color: #111; }
+.master-login-card p { margin: 0 0 14px; color: #667085; font-size: 13px; line-height: 1.5; font-weight: 400; }
+.master-login-card label { display: block; font-size: 13px; font-weight: 700; }
+.master-login-card input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font-size: 16px;
+  padding: 8px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+}
+.master-login-card button[type="submit"] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border: 1px solid #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+#masterLoginError { min-height: 1.2em; color: #b42318; font-weight: 700; }
+"""
+
 SELLER_LOGIN2_CSS = """
 /* seller-login2 */
 #sellerIssuedPassword {
@@ -3972,8 +4141,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-port1")
-    return bump_asset(text, "app.js", "seller-port1")
+    text = bump_asset(text, "styles.css", "master-login1")
+    return bump_asset(text, "app.js", "master-login1")
 
 
 def patch_answer(text: str) -> str:
@@ -4011,8 +4180,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SELLER_LOGIN2_JS
     if "/* seller-port1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_PORT_JS
+    if "/* master-login1 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_LOGIN_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -4046,6 +4217,8 @@ def patch_css(text: str) -> str:
         extra += SELLER_LOGIN_CSS
     if "/* seller-login2 */" not in text:
         extra += SELLER_LOGIN2_CSS
+    if "/* master-login1 */" not in text:
+        extra += MASTER_LOGIN_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

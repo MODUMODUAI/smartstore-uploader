@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -123,7 +126,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.10"
+SCREEN_VERSION = "2026.10.28.11"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -2545,6 +2548,609 @@ body.admin-locked #wholesaleForm label:has(input[name="login_password"]) {
 """
 
 
+_OLD_LINK = "모두모두AI 배포용".encode("utf-8")
+_NEW_LINK = "모두모두AI 셀러용".encode("utf-8")
+if len(_OLD_LINK) != len(_NEW_LINK):
+    raise RuntimeError("seller shortcut byte length mismatch")
+
+SELLER_JS = r"""
+/* seller-edition1 */
+(function () {
+  const version = "2026.10.28.11";
+  const secretNames = ["login_id", "login_password", "api_key", "api_secret", "vendor_code", "esm_id", "naver_account_id"];
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    const seller = isSeller();
+    const editionName = seller ? "셀러용" : "마스터";
+    if (label && label.textContent !== "v" + version) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const badge = document.getElementById("appEdition");
+    if (badge && seller && badge.textContent !== "셀러용") badge.textContent = "셀러용";
+    const title = "모두모두AI " + editionName + " v" + version;
+    if (document.title !== title) document.title = title;
+  }
+
+  function takeVersionLabel() {
+    const label = document.getElementById("appVersion");
+    if (!label || label.dataset.sellerVersion === "1") return;
+    const fresh = label.cloneNode(true);
+    fresh.dataset.sellerVersion = "1";
+    label.replaceWith(fresh);
+    new MutationObserver(() => showVersion()).observe(fresh, { childList: true, characterData: true, subtree: true });
+  }
+
+  function isSecretHeader(cell) {
+    const text = (cell.textContent || "").replace(/\s+/g, "");
+    if (!text || text.length > 24) return false;
+    return /아이디|패스워드|비밀번호|아이디키|시크릿키|관리자키|업체코드|ESMID|로그인/.test(text);
+  }
+
+  function hideSecrets() {
+    if (!isSeller()) return;
+    secretNames.forEach((name) => {
+      document.querySelectorAll("[name='" + name + "']").forEach((input) => {
+        const row = input.closest(".delivery-row, label, tr");
+        if (row) row.classList.add("seller-secret");
+        input.disabled = true;
+        input.readOnly = true;
+      });
+    });
+    document.querySelectorAll("table").forEach((table) => {
+      const headerRows = table.tHead ? [...table.tHead.rows] : [...table.rows].filter((row) => [...row.cells].some((cell) => cell.tagName === "TH"));
+      const secretIndex = new Set();
+      headerRows.forEach((row) => {
+        [...row.cells].forEach((cell, index) => {
+          if (!isSecretHeader(cell)) return;
+          secretIndex.add(index);
+          cell.classList.add("seller-secret");
+        });
+      });
+      if (!secretIndex.size) return;
+      [...table.tBodies].forEach((body) => {
+        [...body.rows].forEach((row) => {
+          if (row.cells.length === 1 && row.cells[0].colSpan > 1) return;
+          secretIndex.forEach((index) => {
+            const cell = row.cells[index];
+            if (!cell || cell.querySelector("input, select, textarea")) return;
+            cell.classList.add("seller-secret");
+            cell.textContent = "";
+          });
+        });
+      });
+    });
+  }
+
+  function watchTables() {
+    ["marketTableBody", "wholesaleTable"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.sellerWatch === "1") return;
+      el.dataset.sellerWatch = "1";
+      new MutationObserver(() => hideSecrets()).observe(el, { childList: true });
+    });
+  }
+
+  function ensureHelp() {
+    const overview = document.getElementById("help-overview");
+    if (overview && !document.getElementById("sellerHelpNote")) {
+      const note = document.createElement("p");
+      note.id = "sellerHelpNote";
+      note.textContent = "셀러용에는 로그인 정보와 상품 URL 수집이 없습니다. 마켓 아이디, 패스워드, 관리자키, 공급처 로그인 칸이 없고, 주소로 상품을 수집하는 칸도 없습니다.";
+      overview.append(note);
+    }
+    const nav = document.getElementById("helpNav");
+    if (nav && !nav.querySelector("[data-help='help-admins']")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.help = "help-admins";
+      button.textContent = "관리자 관리";
+      const data = nav.querySelector("[data-help='help-data']");
+      if (data) data.before(button);
+      else nav.append(button);
+    }
+    const body = document.getElementById("helpBody");
+    if (body && !document.getElementById("help-admins")) {
+      const section = document.createElement("section");
+      section.className = "help-panel";
+      section.id = "help-admins";
+      section.dataset.helpPanel = "help-admins";
+      section.hidden = true;
+      const title = document.createElement("h2");
+      title.textContent = "관리자 관리";
+      const lead = document.createElement("p");
+      lead.textContent = "설정 > 관리자 관리에서 상품관리, 주문관리, 문의관리 매니저를 초대합니다. 아이디, 패스워드, 관리자키는 그대로 두고, 초대받은 관리자는 맡은 기능만 사용합니다. 상품관리에는 상품담기가 포함됩니다. 목록에서 지워도 이미 보낸 주소는 계속 열립니다.";
+      const extra = document.createElement("p");
+      extra.textContent = "셀러용 화면에는 로그인 정보와 상품 URL 수집이 없습니다.";
+      section.append(title, lead, extra);
+      const data = document.getElementById("help-data");
+      if (data) data.before(section);
+      else body.append(section);
+    }
+  }
+
+  function deny(message) {
+    const error = new Error(message);
+    if (typeof toast === "function") toast(message, true);
+    throw error;
+  }
+
+  function wrapNamed(name, message) {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.sellerHook) return;
+    function wrapped() {
+      if (isSeller()) deny(message);
+      return fn.apply(this, arguments);
+    }
+    wrapped.sellerHook = true;
+    window[name] = wrapped;
+  }
+
+  function blockSecretSaves() {
+    ["marketForm", "wholesaleForm"].forEach((id) => {
+      const form = document.getElementById(id);
+      if (!form || form.dataset.sellerBlock === "1") return;
+      form.dataset.sellerBlock = "1";
+      form.addEventListener("submit", (event) => {
+        if (!isSeller()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        deny("셀러용에는 로그인 정보를 넣을 수 없습니다.");
+      }, true);
+    });
+    const collect = document.getElementById("collectForm");
+    if (collect && collect.dataset.sellerBlock !== "1") {
+      collect.dataset.sellerBlock = "1";
+      collect.addEventListener("submit", (event) => {
+        if (!isSeller()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        deny("셀러용에는 상품 URL 수집이 없습니다.");
+      }, true);
+    }
+  }
+
+  function wrapEdition() {
+    if (typeof applyEdition !== "function" || applyEdition.sellerHook) return;
+    const inner = applyEdition;
+    function wrapped(edition, screenVersion) {
+      const seller = edition === "test" || edition === "seller";
+      const result = inner.call(this, seller ? "test" : edition, screenVersion);
+      document.body.classList.toggle("edition-seller", seller);
+      if (seller) document.body.classList.add("edition-test");
+      paint();
+      return result;
+    }
+    wrapped.sellerHook = true;
+    wrapped.inquiryVersion = true;
+    wrapped.inquiryVersion10 = true;
+    wrapped.adminMenuHook = true;
+    window.applyEdition = wrapped;
+  }
+
+  function paint() {
+    showVersion();
+    ensureHelp();
+    blockSecretSaves();
+    if (isSeller()) hideSecrets();
+    watchTables();
+  }
+
+  function hook() {
+    takeVersionLabel();
+    wrapEdition();
+    wrapNamed("saveMarketForm", "셀러용에는 로그인 정보를 넣을 수 없습니다.");
+    wrapNamed("saveWholesalerForm", "셀러용에는 로그인 정보를 넣을 수 없습니다.");
+    wrapNamed("collectNow", "셀러용에는 상품 URL 수집이 없습니다.");
+    paint();
+    if (typeof loadEdition === "function" && !loadEdition.sellerHook) {
+      const inner = loadEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        const finish = () => paint();
+        if (result && typeof result.then === "function") {
+          return result.then((value) => { finish(); return value; }, (error) => { finish(); throw error; });
+        }
+        finish();
+        return result;
+      }
+      wrapped.sellerHook = true;
+      window.loadEdition = wrapped;
+    }
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 9000);
+  setTimeout(showVersion, 11000);
+})();
+"""
+
+SELLER_CSS = """
+/* seller-edition1 */
+body.edition-seller #collectForm,
+body.edition-seller #helpUrlCollect,
+body.edition-seller #marketLoginIdRow,
+body.edition-seller #marketLoginPwRow,
+body.edition-seller #marketApiKeyRow,
+body.edition-seller #marketApiSecretRow,
+body.edition-seller #marketVendorRow,
+body.edition-seller #marketEsmRow,
+body.edition-seller #marketApiAccountRow,
+body.edition-seller #marketForm label:has(input[name="login_id"]),
+body.edition-seller #marketForm label:has(input[name="login_password"]),
+body.edition-seller #marketForm label:has(input[name="api_key"]),
+body.edition-seller #marketForm label:has(input[name="api_secret"]),
+body.edition-seller #marketForm label:has(input[name="vendor_code"]),
+body.edition-seller #marketForm label:has(input[name="esm_id"]),
+body.edition-seller #marketForm label:has(input[name="naver_account_id"]),
+body.edition-seller #wholesaleForm label:has(input[name="login_id"]),
+body.edition-seller #wholesaleForm label:has(input[name="login_password"]),
+body.edition-seller #collectOpenWholesalers,
+body.edition-seller #collectEmptyOpenWholesalers,
+body.edition-seller .seller-secret {
+  display: none !important;
+}
+"""
+
+SELLER_HELP = """모두모두AI 셀러용
+
+로그인 정보와 상품 URL 수집이 없는 셀러용입니다.
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인은 나오지 않습니다.
+상품 URL을 넣어 수집하는 기능은 없습니다.
+상품담기와 상품관리, 주문관리, 문의관리, 공급처, 설정은 그대로 있습니다.
+
+1. MODUMODU.exe 를 더블클릭합니다. 까만 창은 나오지 않습니다.
+2. 브라우저에서 http://127.0.0.1:8788 이 열립니다. 마스터는 8787이라 같이 켤 수 있습니다.
+3. 화면 위쪽에 셀러용이라고 나옵니다.
+4. 프로그램을 끝낼 때는 화면 위쪽의 종료를 누릅니다.
+5. 설정과 상품은 이 폴더의 data 에 저장됩니다.
+
+바탕화면 바로가기 이름은 모두모두AI 셀러용 입니다.
+"""
+
+SELLER_BAT = """@echo off
+cd /d "%~dp0"
+powershell -NoProfile -Command "$dir=(Get-Location).Path; $name='모두모두AI 셀러용'; $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) ($name+'.lnk'))); $s.TargetPath=(Join-Path $dir 'MODUMODU.exe'); $s.WorkingDirectory=$dir; $s.Description=$name; $s.Save(); Write-Output $name"
+echo 바탕화면에 셀러용 바로가기를 만들었습니다.
+pause
+"""
+
+SELLER_NOTE_HTML = (
+    "<!-- seller-help1 -->\n"
+    '<p id="sellerHelpNote">셀러용에는 로그인 정보와 상품 URL 수집이 없습니다. '
+    "마켓 아이디, 패스워드, 관리자키, 공급처 로그인 칸이 없고, 주소로 상품을 수집하는 칸도 없습니다.</p>"
+)
+ADMIN_HELP_BUTTON = '<button type="button" data-help="help-admins">관리자 관리</button>'
+ADMIN_HELP_SECTION = """<section class="help-panel" id="help-admins" data-help-panel="help-admins" hidden>
+<h2>관리자 관리</h2>
+<p>설정 &gt; 관리자 관리에서 상품관리, 주문관리, 문의관리 매니저를 초대합니다. 아이디, 패스워드, 관리자키는 그대로 두고, 초대받은 관리자는 맡은 기능만 사용합니다. 상품관리에는 상품담기가 포함됩니다. 목록에서 지워도 이미 보낸 주소는 계속 열립니다.</p>
+<p>셀러용 화면에는 로그인 정보와 상품 URL 수집이 없습니다.</p>
+</section>
+"""
+SETTINGS_HELP_NOTE = "셀러용에는 아이디, 패스워드, 아이디키, 시크릿키, 업체코드, ESM ID, 판매자 account_id 칸이 없습니다."
+WHOLESALE_HELP_NOTE = "셀러용에는 로그인 아이디와 비밀번호 칸이 없습니다."
+
+
+def patch_help(text: str) -> str:
+    text = text.replace("배포용", "셀러용")
+    if 'id="sellerHelpNote"' not in text:
+        closing = "프로그램을 끝낼 때는 위쪽의 종료를 누릅니다.</p>"
+        if closing in text:
+            text = text.replace(closing, closing + "\n" + SELLER_NOTE_HTML, 1)
+        else:
+            token = 'id="help-overview"'
+            pos = text.find(token)
+            if pos >= 0:
+                end = text.find(">", pos)
+                if end >= 0:
+                    text = text[: end + 1] + "\n" + SELLER_NOTE_HTML + text[end + 1 :]
+    if 'data-help="help-admins"' not in text:
+        needle = 'data-help="help-data"'
+        pos = text.find(needle)
+        if pos >= 0:
+            start = text.rfind("<button", 0, pos)
+            if start >= 0:
+                text = text[:start] + ADMIN_HELP_BUTTON + "\n        " + text[start:]
+    if 'id="help-admins"' not in text:
+        needle = 'id="help-data"'
+        pos = text.find(needle)
+        if pos >= 0:
+            start = text.rfind("<section", 0, pos)
+            if start >= 0:
+                text = text[:start] + ADMIN_HELP_SECTION + text[start:]
+    if SETTINGS_HELP_NOTE not in text:
+        old = "저장 후 연동 테스트를 누릅니다."
+        if old in text:
+            text = text.replace(old, old + " " + SETTINGS_HELP_NOTE, 1)
+    if WHOLESALE_HELP_NOTE not in text:
+        old = "상품 검색·담기는 <strong>상품담기</strong> 메뉴에서 합니다."
+        if old in text:
+            text = text.replace(old, old + " " + WHOLESALE_HELP_NOTE, 1)
+    return text
+
+
+def _is_program_dir(path: Path) -> bool:
+    return (
+        (path / "MODUMODU.exe").is_file()
+        or (path / "launcher.py").is_file()
+        or (path / "app" / "static" / "index.html").is_file()
+    )
+
+
+def _inside(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _protected_dir(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return True
+    script_dir = Path(__file__).resolve().parent
+    if resolved == script_dir or resolved == root.resolve():
+        return True
+    return _inside(script_dir, resolved)
+
+
+def _search_bases(root: Path) -> list[Path]:
+    bases = [root, root / "배포", root / "dist"]
+    parent = root.parent
+    if parent.name in {"배포", "dist"}:
+        bases.append(parent)
+    return bases
+
+
+def _program_dirs(root: Path) -> list[Path]:
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for base in _search_bases(root):
+        if not base.exists():
+            continue
+        candidates = [base]
+        if base.is_dir():
+            try:
+                candidates.extend(child for child in base.iterdir() if child.is_dir())
+            except OSError:
+                continue
+        for path in candidates:
+            try:
+                key = path.resolve()
+            except OSError:
+                continue
+            if key in seen or not _is_program_dir(path):
+                continue
+            seen.add(key)
+            found.append(path)
+    return found
+
+
+def _crlf_bytes(text: str) -> bytes:
+    return text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
+
+
+def _same_text(path: Path, expected: str) -> bool:
+    if not path.is_file():
+        return False
+    current = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    return current == expected.replace("\r\n", "\n")
+
+
+def prepare_seller_folder(folder: Path) -> bool:
+    changed = False
+    edition = folder / "edition.txt"
+    current = edition.read_text(encoding="utf-8-sig").strip() if edition.is_file() else ""
+    if current != "test":
+        edition.write_bytes(b"test\r\n")
+        changed = True
+    exe = folder / "MODUMODU.exe"
+    if exe.is_file():
+        data = exe.read_bytes()
+        if _OLD_LINK in data:
+            exe.write_bytes(data.replace(_OLD_LINK, _NEW_LINK))
+            changed = True
+    help_path = folder / "사용방법-셀러용.txt"
+    if not _same_text(help_path, SELLER_HELP):
+        help_path.write_bytes(_crlf_bytes(SELLER_HELP))
+        changed = True
+    for name in ("사용방법-배포용.txt", "사용방법-테스트용.txt"):
+        old_help = folder / name
+        if old_help.is_file():
+            old_help.unlink()
+            changed = True
+    bat = folder / "설치.bat"
+    if not _same_text(bat, SELLER_BAT):
+        bat.write_bytes(_crlf_bytes(SELLER_BAT))
+        changed = True
+    return changed
+
+
+def _copy_ignore(dest: Path):
+    dest_resolved = dest.resolve()
+
+    def ignore(dirpath: str, names: list[str]) -> set[str]:
+        skip = {name for name in names if name in {"data", "launcher.log", "__pycache__"}}
+        parent = Path(dirpath)
+        for name in names:
+            candidate = parent / name
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if resolved == dest_resolved or _inside(dest_resolved, resolved):
+                skip.add(name)
+        return skip
+
+    return ignore
+
+
+def _seller_destination(root: Path) -> Path:
+    parent = root.parent
+    if parent.name in {"배포", "dist"} and root.resolve() != parent.resolve():
+        return parent / "MODUMODU-셀러용"
+    return root / "배포" / "MODUMODU-셀러용"
+
+
+def _remove_old_editions(root: Path, keep: set[Path]) -> bool:
+    changed = False
+    keep_resolved = {path.resolve() for path in keep}
+    for base in _search_bases(root):
+        if not base.is_dir():
+            continue
+        targets = []
+        if "배포용" in base.name or "테스트용" in base.name:
+            targets.append(base)
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_dir() and ("배포용" in child.name or "테스트용" in child.name):
+                targets.append(child)
+        for target in targets:
+            if not target.exists():
+                continue
+            if "마스터" in target.name:
+                continue
+            try:
+                resolved = target.resolve()
+            except OSError:
+                continue
+            if resolved in keep_resolved or _protected_dir(target, root):
+                continue
+            shutil.rmtree(target)
+            changed = True
+    return changed
+
+
+def _desktop_dirs(desktops) -> list[Path]:
+    if desktops is not None:
+        return [Path(path) for path in desktops]
+    if os.name != "nt":
+        return []
+    found = []
+    home = Path.home()
+    for name in ("Desktop", "바탕 화면"):
+        path = home / name
+        if path.is_dir():
+            found.append(path)
+    public = Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop"
+    if public.is_dir():
+        found.append(public)
+    return found
+
+
+def _create_seller_shortcut(desktop: Path, folder: Path) -> bool:
+    if os.name != "nt":
+        return False
+    exe = folder / "MODUMODU.exe"
+    if not exe.is_file():
+        return False
+    link = desktop / "모두모두AI 셀러용.lnk"
+    script = (
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:SELLER_LINK); "
+        "$s.TargetPath=$env:SELLER_TARGET; $s.WorkingDirectory=$env:SELLER_WORK; "
+        "$s.Description='모두모두AI 셀러용'; $s.Save()"
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "SELLER_LINK": str(link),
+            "SELLER_TARGET": str(exe),
+            "SELLER_WORK": str(folder),
+        }
+    )
+    subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=False)
+    return link.is_file()
+
+
+def _refresh_shortcuts(seller_dirs: list[Path], desktops) -> bool:
+    changed = False
+    for desktop in _desktop_dirs(desktops):
+        if not desktop.is_dir():
+            continue
+        for name in (
+            "모두모두AI 배포용.lnk",
+            "모두모두AI 테스트용.lnk",
+            "모두모두AI 배포용.url",
+            "모두모두AI 테스트용.url",
+        ):
+            path = desktop / name
+            if path.is_file():
+                path.unlink()
+                changed = True
+        if seller_dirs and _create_seller_shortcut(desktop, seller_dirs[0]):
+            changed = True
+    return changed
+
+
+def arrange_seller_copies(root: Path, desktops=None) -> bool:
+    if not root.exists():
+        return False
+    root = root.resolve()
+    changed = False
+    dirs = _program_dirs(root)
+    seller_dirs = [path for path in dirs if "셀러용" in path.name]
+    removable: list[Path] = []
+    for path in dirs:
+        if "배포용" not in path.name and "테스트용" not in path.name:
+            continue
+        if _protected_dir(path, root):
+            if path not in seller_dirs:
+                seller_dirs.append(path)
+            continue
+        removable.append(path)
+    if not seller_dirs:
+        prefer = [path for path in removable if "배포용" in path.name]
+        pick = prefer[0] if prefer else (removable[0] if removable else None)
+        if pick is not None:
+            new_name = pick.name.replace("배포용", "셀러용").replace("테스트용", "셀러용")
+            dest = pick.with_name(new_name)
+            if not dest.exists():
+                pick.rename(dest)
+                removable = [path for path in removable if path != pick]
+                seller_dirs.append(dest)
+                changed = True
+        else:
+            source = next((path for path in dirs if "마스터" in path.name), None)
+            if source is None and _is_program_dir(root) and "셀러용" not in root.name:
+                source = root
+            if source is not None:
+                dest = _seller_destination(root)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest.exists():
+                    shutil.copytree(source, dest, ignore=_copy_ignore(dest))
+                    seller_dirs.append(dest)
+                    changed = True
+                elif dest not in seller_dirs:
+                    seller_dirs.append(dest)
+    keep = set(seller_dirs)
+    for seller in seller_dirs:
+        if prepare_seller_folder(seller):
+            changed = True
+        if seller.resolve() != root:
+            if apply_static_patches(seller):
+                changed = True
+            if write_screen_version(seller):
+                changed = True
+    if _remove_old_editions(root, keep):
+        changed = True
+    if _refresh_shortcuts(seller_dirs, desktops):
+        changed = True
+    return changed
+
+
 def read_text(path: Path) -> tuple[str, str]:
     raw = path.read_bytes()
     text = raw.decode("utf-8-sig")
@@ -2613,8 +3219,9 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "admin-menu1")
-    return bump_asset(text, "app.js", "admin-menu1")
+    text = patch_help(text)
+    text = bump_asset(text, "styles.css", "seller-edition1")
+    return bump_asset(text, "app.js", "seller-edition1")
 
 
 def patch_answer(text: str) -> str:
@@ -2644,6 +3251,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + INVITE_SETTINGS_JS
     if "/* admin-menu1 */" not in text:
         text = text.rstrip() + "\n" + ADMIN_MENU_JS
+    if "/* seller-edition1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
+    text = text.replace("배포용", "셀러용")
+    text = text.replace("2026.10.28.10", SCREEN_VERSION)
     return text
 
 
@@ -2669,6 +3280,8 @@ def patch_css(text: str) -> str:
         extra += INVITE_SETTINGS_CSS
     if "/* admin-menu1 */" not in text:
         extra += ADMIN_MENU_CSS
+    if "/* seller-edition1 */" not in text:
+        extra += SELLER_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra
@@ -2741,15 +3354,13 @@ def repair_known_folders(root: Path) -> None:
             repair_broken_names(child)
 
 
-def main() -> None:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\smartstore uploader")
-    repair_known_folders(root)
+def apply_static_patches(root: Path) -> bool:
     static = root / "app" / "static"
     js_path = static / "app.js"
     html_path = static / "index.html"
     css_path = static / "styles.css"
     if not js_path.is_file() or not html_path.is_file():
-        raise SystemExit(f"static files not found: {static}")
+        return False
     js, js_nl = read_text(js_path)
     html, html_nl = read_text(html_path)
     css, css_nl = read_text(css_path) if css_path.is_file() else ("", "\n")
@@ -2761,20 +3372,42 @@ def main() -> None:
     new_js = patch_answer(new_js)
     new_html = patch_html(html)
     new_css = patch_css(css) if css else css
-    version_changed = write_screen_version(root)
-    if new_js == js and new_html == html and new_css == css and not version_changed:
-        print("already linked")
-        return
-    for path in (js_path, html_path, css_path):
-        if not path.is_file():
+    changed = False
+    for path, new, old, newline in (
+        (js_path, new_js, js, js_nl),
+        (html_path, new_html, html, html_nl),
+        (css_path, new_css, css, css_nl),
+    ):
+        if not path.is_file() or new == old:
             continue
         backup = path.with_name(path.name + ".bak-inquiry-links")
         if not backup.exists():
             backup.write_bytes(path.read_bytes())
-    write_text(js_path, new_js, js_nl)
-    write_text(html_path, new_html, html_nl)
-    if css_path.is_file():
-        write_text(css_path, new_css, css_nl)
+        write_text(path, new, newline)
+        changed = True
+    return changed
+
+
+def main() -> None:
+    seller_only = "--seller-only" in sys.argv[1:]
+    args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
+    root = Path(args[0] if args else r"C:\smartstore uploader")
+    if root.exists():
+        repair_known_folders(root)
+    seller_changed = arrange_seller_copies(root) if root.exists() else False
+    if seller_only:
+        if seller_changed:
+            print("seller edition")
+            raise SystemExit(10)
+        print("already linked")
+        return
+    static_changed = apply_static_patches(root)
+    version_changed = write_screen_version(root) if root.exists() else False
+    if not seller_changed and not static_changed and not version_changed:
+        if not (root / "app" / "static" / "app.js").is_file():
+            raise SystemExit(f"static files not found: {root / 'app' / 'static'}")
+        print("already linked")
+        return
     print("inquiry links on")
     raise SystemExit(10)
 

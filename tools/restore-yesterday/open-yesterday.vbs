@@ -77,9 +77,10 @@ link.Save
 On Error GoTo 0
 
 If patched = 10 Then
-  MsgBox "설정에 관리자 관리 메뉴를 넣었습니다." & vbCrLf & _
-    "상품관리, 주문관리, 문의관리를 나눠 초대합니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.10 입니다.", 64, "모두모두AI"
+  MsgBox "설정 도움말에 관리자 관리를 넣었습니다." & vbCrLf & _
+    "배포용과 테스트용은 지우고 셀러용을 만들었습니다." & vbCrLf & _
+    "셀러용에는 로그인 정보와 URL 수집이 없습니다." & vbCrLf & _
+    "화면 버전은 v2026.10.28.11 입니다.", 64, "모두모두AI"
 End If
 
 Sub RepairBrokenNames(folder)
@@ -257,10 +258,7 @@ Sub ConsiderKnownData(appRoot)
   paths = Array( _
     appRoot & "\data", _
     appRoot & "\배포\MODUMODU-마스터\data", _
-    appRoot & "\배포\MODUMODU-배포용\data", _
-    appRoot & "\배포\MODUMODU-테스트용\data", _
     appRoot & "\dist\MODUMODU\data", _
-    appRoot & "\dist\모두모두AI 테스트용\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.9\모두모두AI-마스터\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.8\모두모두AI-마스터\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.7\모두모두AI-마스터\data" _

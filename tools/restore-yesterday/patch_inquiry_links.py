@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
+import shutil
+import signal
+import subprocess
 import sys
+import time
+import zipfile
 from pathlib import Path
 
 MARKER = "/* inquiry-number-links */"
@@ -123,7 +131,8 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.9"
+SCREEN_VERSION = "2026.10.28.42"
+SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
     re.S,
@@ -1838,6 +1847,2687 @@ body.invite-remote #settingsInvite { display: none !important; }
 #settingsInvite .invite-title { margin: 12px 0 6px; font-weight: 700; }
 """
 
+ADMIN_MENU_JS = r"""
+/* admin-menu1 */
+(function () {
+  const version = "2026.10.28.10";
+  const storeKey = "modumodu-admin-managers";
+  const rolesKey = "modumodu-invite-roles";
+  const legacyRoleKey = "modumodu-invite-role";
+  const duties = [
+    { id: "products", label: "상품관리", views: ["products", "collect"] },
+    { id: "orders", label: "주문관리", views: ["orders"] },
+    { id: "inquiries", label: "문의관리", views: ["inquiries"] },
+  ];
+  const dutyIds = duties.map((item) => item.id);
+  const state = { roles: new Set(), owner: false, remote: false, pending: false, links: [] };
+  let editingId = "";
+
+  function parseDuties(value) {
+    const found = new Set();
+    String(value || "").split(/[,\s]+/).forEach((item) => {
+      if (dutyIds.includes(item)) found.add(item);
+    });
+    return found;
+  }
+
+  function rememberRoles(roles) {
+    const list = dutyIds.filter((id) => roles.has(id));
+    try {
+      if (list.length) sessionStorage.setItem(rolesKey, list.join(","));
+      else sessionStorage.removeItem(rolesKey);
+    } catch (error) {}
+  }
+
+  function readRoles() {
+    const params = new URLSearchParams(location.search);
+    const listed = parseDuties(params.get("roles"));
+    if (listed.size) {
+      rememberRoles(listed);
+      return listed;
+    }
+    const legacy = params.get("role");
+    if (legacy === "products" || legacy === "orders") {
+      const roles = new Set([legacy]);
+      if (legacy === "orders") roles.add("inquiries");
+      rememberRoles(roles);
+      return roles;
+    }
+    try {
+      const saved = parseDuties(sessionStorage.getItem(rolesKey));
+      if (saved.size) return saved;
+      const old = sessionStorage.getItem(legacyRoleKey);
+      if (old === "products") return new Set(["products"]);
+      if (old === "orders") return new Set(["orders", "inquiries"]);
+    } catch (error) {}
+    return new Set();
+  }
+
+  function isLocked() {
+    if (state.owner || !state.roles.size) return false;
+    return state.remote || state.pending;
+  }
+
+  function viewAllowed(name) {
+    if (name === "help") return true;
+    return duties.some((item) => state.roles.has(item.id) && item.views.includes(name));
+  }
+
+  function gate(name) {
+    if (!isLocked()) return name;
+    if (viewAllowed(name)) return name;
+    for (const item of duties) {
+      if (state.roles.has(item.id)) return item.views[0];
+    }
+    return "help";
+  }
+
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    if (label && label.textContent !== "v" + version) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const test = document.body.classList.contains("edition-test");
+    const title = "모두모두AI " + (test ? "배포용" : "마스터") + " v" + version;
+    if (document.title !== title) document.title = title;
+  }
+
+  function paintLock() {
+    const locked = isLocked();
+    document.body.classList.toggle("admin-locked", locked);
+    duties.forEach((item) => {
+      const on = locked && state.roles.has(item.id);
+      item.views.forEach((view) => document.body.classList.toggle("admin-allow-" + view, on));
+    });
+    const badge = document.getElementById("inviteRoleBadge");
+    if (!locked) {
+      if (badge && badge.dataset.adminMenu === "1") badge.remove();
+      return;
+    }
+    let chip = badge;
+    if (!chip) {
+      chip = document.createElement("span");
+      chip.id = "inviteRoleBadge";
+      const tabs = document.querySelector(".app-tabs");
+      if (tabs) tabs.after(chip);
+    }
+    if (chip) {
+      chip.dataset.adminMenu = "1";
+      chip.textContent = duties.filter((item) => state.roles.has(item.id)).map((item) => item.label).join(" · ");
+    }
+  }
+
+  function currentView() {
+    const names = ["products", "orders", "inquiries", "collect", "wholesalers", "settings", "help"];
+    for (const name of names) {
+      const el = document.getElementById("view" + name.charAt(0).toUpperCase() + name.slice(1));
+      if (el && !el.hidden) return name;
+    }
+    return "products";
+  }
+
+  function settleView() {
+    if (!isLocked() || typeof showAppView !== "function") return;
+    const now = currentView();
+    const next = gate(now);
+    if (next !== now) showAppView(next);
+  }
+
+  function productWrite(item) {
+    return item.includes("/products")
+      || item.includes("/images")
+      || item.includes("/register")
+      || item.includes("/notices")
+      || item.includes("/delivery")
+      || item.includes("/price-sets")
+      || item.includes("/excel-forms")
+      || item.includes("/stock-jobs")
+      || item.includes("/product-refresh")
+      || item.includes("/product-market");
+  }
+
+  function denied(path, method) {
+    if (!isLocked()) return "";
+    const item = String(path || "").split("?")[0];
+    const write = method !== "GET" && method !== "HEAD";
+    const credential = "아이디, 패스워드, 관리자키는 그대로 둡니다.";
+    if (write && (item === "/api/settings" || item.startsWith("/api/settings/"))) return credential;
+    if (write && (item === "/api/markets" || /^\/api\/markets\/[^/]+$/.test(item) || /^\/api\/markets\/[^/]+\/test$/.test(item))) return credential;
+    if (write && (item === "/api/wholesalers" || /^\/api\/wholesalers\/[^/]+$/.test(item))) return "공급처 로그인 정보는 바꿀 수 없습니다.";
+    if (item.includes("/wholesalers/") && item.endsWith("/login")) return "공급처 로그인 정보는 바꿀 수 없습니다.";
+    if (write && !state.roles.has("products") && productWrite(item)) return "상품관리 권한이 없습니다.";
+    if (write && !state.roles.has("products") && item.includes("/wholesalers/") && /\/(import|collect|stock-check|catalog|categories|open-product)/.test(item)) return "상품관리 권한이 없습니다.";
+    if (write && !state.roles.has("orders") && item.includes("/orders")) return "주문관리 권한이 없습니다.";
+    if (write && !state.roles.has("inquiries") && (item.includes("/inquiries") || /\/answer$/.test(item))) return "문의관리 권한이 없습니다.";
+    return "";
+  }
+
+  function wrapApi() {
+    if (typeof api !== "function" || api.adminMenuHook) return;
+    const inner = api;
+    async function wrapped(path, options) {
+      const method = String((options && options.method) || "GET").toUpperCase();
+      const reason = denied(path, method);
+      if (reason) throw new Error(reason);
+      return inner.apply(this, arguments);
+    }
+    wrapped.adminMenuHook = true;
+    window.api = wrapped;
+  }
+
+  function wrapShow() {
+    if (typeof showAppView !== "function" || showAppView.adminMenuHook) return;
+    const inner = showAppView;
+    function wrapped(name) {
+      const next = gate(name);
+      const result = inner.call(this, next);
+      paintLock();
+      if (next === "settings" && state.owner) ensureOwnerUi();
+      return result;
+    }
+    wrapped.adminMenuHook = true;
+    wrapped.inviteHook = true;
+    wrapped.inviteSettingsHook = true;
+    window.showAppView = wrapped;
+  }
+
+  function hideOldCard() {
+    document.querySelectorAll("#settingsInvite, #helpShare #invitePanel").forEach((el) => el.remove());
+  }
+
+  function watchOldCard() {
+    const page = document.querySelector("#viewSettings .settings-page");
+    if (page && page.dataset.adminMenuWatch !== "1") {
+      page.dataset.adminMenuWatch = "1";
+      new MutationObserver(() => hideOldCard()).observe(page, { childList: true });
+    }
+    const help = document.getElementById("helpShare");
+    if (help && help.dataset.adminMenuWatch !== "1") {
+      help.dataset.adminMenuWatch = "1";
+      new MutationObserver(() => hideOldCard()).observe(help, { childList: true });
+    }
+    hideOldCard();
+  }
+
+  function loadManagers() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(storeKey) || "[]");
+      return Array.isArray(parsed) ? parsed.filter((item) => item && item.id && Array.isArray(item.duties)) : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function saveManagers(items) {
+    localStorage.setItem(storeKey, JSON.stringify(items));
+  }
+
+  function dutyLabel(list) {
+    return duties.filter((item) => list.includes(item.id)).map((item) => item.label).join(", ");
+  }
+
+  function formatDate(iso) {
+    const text = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(iso));
+    return text.replaceAll("-", ".") + ".";
+  }
+
+  function buildUrl(base, list) {
+    const url = new URL(base, location.href);
+    const chosen = dutyIds.filter((id) => list.includes(id));
+    url.searchParams.set("roles", chosen.join(","));
+    url.searchParams.delete("role");
+    if (chosen.length === 1 && chosen[0] === "products") url.searchParams.set("role", "products");
+    if (chosen.includes("orders") && chosen.includes("inquiries") && !chosen.includes("products")) url.searchParams.set("role", "orders");
+    return url.toString();
+  }
+
+  function defaultName(list) {
+    const labels = duties.filter((item) => list.includes(item.id)).map((item) => item.label);
+    return (labels.join("·") || "매니저") + " 매니저";
+  }
+
+  async function copyLink(url) {
+    if (typeof copyText === "function") await copyText(url);
+    else if (navigator.clipboard) await navigator.clipboard.writeText(url);
+    else throw new Error("copy");
+  }
+
+  function selectedDuties() {
+    return [...document.querySelectorAll("#adminInviteForm input[name='adminDuty']:checked")].map((input) => input.value);
+  }
+
+  function fillDuties(list) {
+    document.querySelectorAll("#adminInviteForm input[name='adminDuty']").forEach((input) => {
+      input.checked = list.includes(input.value);
+    });
+  }
+
+  function renderManagers() {
+    const body = document.querySelector("#adminManagerTable tbody");
+    const count = document.getElementById("adminManagerCount");
+    if (!body) return;
+    const items = loadManagers();
+    if (count) count.textContent = "관리자 " + items.length + "명";
+    body.replaceChildren();
+    if (!items.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.textContent = "초대한 관리자가 없습니다. 관리자 초대로 매니저를 보내세요.";
+      row.append(cell);
+      body.append(row);
+      return;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("tr");
+      const name = document.createElement("td");
+      name.textContent = item.name || defaultName(item.duties);
+      const work = document.createElement("td");
+      const workText = document.createElement("span");
+      workText.textContent = dutyLabel(item.duties);
+      const change = document.createElement("button");
+      change.type = "button";
+      change.textContent = "변경";
+      change.addEventListener("click", () => openForm(item));
+      work.append(workText, change);
+      const link = document.createElement("td");
+      const url = buildUrl(item.base, item.duties);
+      const shown = document.createElement("span");
+      shown.className = "admin-link";
+      shown.textContent = url;
+      shown.title = url;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "복사";
+      copy.addEventListener("click", async () => {
+        try {
+          await copyLink(url);
+          if (typeof toast === "function") toast("초대 링크를 복사했습니다.");
+        } catch (error) {
+          if (typeof toast === "function") toast("복사에 실패했습니다.", true);
+        }
+      });
+      link.append(shown, copy);
+      const date = document.createElement("td");
+      date.textContent = item.created ? formatDate(item.created) : "";
+      const removeCell = document.createElement("td");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "삭제";
+      remove.addEventListener("click", () => {
+        if (!window.confirm("이 관리자를 목록에서 지울까요? 이미 보낸 주소는 계속 열립니다.")) return;
+        saveManagers(loadManagers().filter((saved) => saved.id !== item.id));
+        renderManagers();
+      });
+      removeCell.append(remove);
+      row.append(name, work, link, date, removeCell);
+      body.append(row);
+    });
+  }
+
+  function openForm(item) {
+    const form = document.getElementById("adminInviteForm");
+    const name = document.getElementById("adminInviteName");
+    const submit = document.getElementById("adminInviteSubmit");
+    if (!form || !name || !submit) return;
+    editingId = item ? item.id : "";
+    name.value = item ? item.name : "";
+    fillDuties(item ? item.duties : []);
+    const picker = document.getElementById("adminInviteBase");
+    if (picker) {
+      picker.replaceChildren();
+      state.links.forEach((link) => {
+        const option = document.createElement("option");
+        option.value = link;
+        option.textContent = link;
+        picker.append(option);
+      });
+      picker.closest("label").hidden = state.links.length < 2;
+      if (item && item.base) picker.value = item.base;
+    }
+    submit.textContent = item ? "수정 링크 복사" : "초대 링크 복사";
+    form.hidden = false;
+    name.focus();
+  }
+
+  function closeForm() {
+    const form = document.getElementById("adminInviteForm");
+    if (form) form.hidden = true;
+    editingId = "";
+  }
+
+  async function submitInvite(event) {
+    event.preventDefault();
+    const chosen = dutyIds.filter((id) => selectedDuties().includes(id));
+    if (!chosen.length) {
+      if (typeof toast === "function") toast("담당업무를 하나 이상 고르세요.", true);
+      return;
+    }
+    const picker = document.getElementById("adminInviteBase");
+    const base = (picker && picker.value) || state.links[0] || "";
+    if (!base) {
+      if (typeof toast === "function") toast("공유 주소를 찾지 못했습니다.", true);
+      return;
+    }
+    const name = document.getElementById("adminInviteName");
+    const items = loadManagers();
+    const current = editingId ? items.find((item) => item.id === editingId) : null;
+    const record = {
+      id: current ? current.id : String(Date.now()),
+      name: (name && name.value.trim()) || defaultName(chosen),
+      duties: chosen,
+      base,
+      created: current ? current.created : new Date().toISOString(),
+    };
+    const next = current ? items.map((item) => item.id === record.id ? record : item) : [record, ...items];
+    saveManagers(next);
+    renderManagers();
+    const url = buildUrl(base, chosen);
+    try {
+      await copyLink(url);
+      if (typeof toast === "function") toast(current ? "담당업무를 바꿔 링크를 복사했습니다." : "관리자 초대 링크를 복사했습니다.");
+    } catch (error) {
+      if (typeof toast === "function") toast("목록에는 넣었지만 복사에 실패했습니다.", true);
+    }
+    closeForm();
+  }
+
+  function ensureOwnerUi() {
+    const tabs = document.querySelector("#viewSettings .settings-tabs");
+    const page = document.querySelector("#viewSettings .settings-page");
+    if (!tabs || !page) return;
+    if (!document.getElementById("settingsTabAdmins")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.id = "settingsTabAdmins";
+      button.className = "tab";
+      button.textContent = "관리자 관리";
+      button.addEventListener("click", () => showAdminPane());
+      tabs.append(button);
+    }
+    if (document.getElementById("settingsPaneAdmins")) return;
+    const pane = document.createElement("div");
+    pane.id = "settingsPaneAdmins";
+    pane.className = "settings-pane";
+    pane.hidden = true;
+    const card = document.createElement("div");
+    card.className = "settings-card";
+    const head = document.createElement("div");
+    head.className = "settings-card-head";
+    const title = document.createElement("h3");
+    title.textContent = "관리자 목록";
+    const invite = document.createElement("button");
+    invite.type = "button";
+    invite.id = "adminInviteOpen";
+    invite.textContent = "관리자 초대";
+    invite.addEventListener("click", () => openForm(null));
+    head.append(title, invite);
+    const notes = document.createElement("ul");
+    notes.className = "admin-manager-notes";
+    [
+      "상품관리, 주문관리, 문의관리 매니저를 나눠 초대합니다.",
+      "아이디, 패스워드, 관리자키는 그대로입니다. 초대받은 화면에는 나오지 않고 바꿀 수 없습니다.",
+      "초대받은 관리자는 맡은 기능만 사용할 수 있습니다. 상품관리에는 상품담기가 포함됩니다.",
+      "목록에서 지워도 이미 보낸 주소는 계속 열립니다.",
+    ].forEach((text) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      notes.append(item);
+    });
+    const form = document.createElement("form");
+    form.id = "adminInviteForm";
+    form.className = "admin-invite-form";
+    form.hidden = true;
+    const nameLabel = document.createElement("label");
+    nameLabel.textContent = "이름";
+    const nameInput = document.createElement("input");
+    nameInput.id = "adminInviteName";
+    nameInput.maxLength = 40;
+    nameInput.placeholder = "예: 상품관리 매니저";
+    nameLabel.append(nameInput);
+    const work = document.createElement("div");
+    work.className = "admin-duty-list";
+    duties.forEach((item) => {
+      const label = document.createElement("label");
+      label.className = "check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.name = "adminDuty";
+      input.value = item.id;
+      label.append(input, document.createTextNode(item.label));
+      work.append(label);
+    });
+    const baseLabel = document.createElement("label");
+    baseLabel.textContent = "보낼 주소";
+    const base = document.createElement("select");
+    base.id = "adminInviteBase";
+    baseLabel.append(base);
+    baseLabel.hidden = true;
+    const actions = document.createElement("div");
+    actions.className = "settings-actions";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.id = "adminInviteSubmit";
+    submit.textContent = "초대 링크 복사";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "취소";
+    cancel.addEventListener("click", () => closeForm());
+    actions.append(submit, cancel);
+    form.append(nameLabel, work, baseLabel, actions);
+    form.addEventListener("submit", (event) => {
+      submitInvite(event).catch((error) => {
+        if (typeof toast === "function") toast(error.message || "초대에 실패했습니다.", true);
+      });
+    });
+    const count = document.createElement("p");
+    count.id = "adminManagerCount";
+    count.className = "admin-manager-count";
+    const wrap = document.createElement("div");
+    wrap.className = "delivery-table-wrap admin-manager-table-wrap";
+    const table = document.createElement("table");
+    table.className = "delivery-table";
+    table.id = "adminManagerTable";
+    const headRow = document.createElement("tr");
+    ["이름", "담당업무", "초대 링크", "초대일", "삭제"].forEach((text) => {
+      const cell = document.createElement("th");
+      cell.textContent = text;
+      headRow.append(cell);
+    });
+    const thead = document.createElement("thead");
+    thead.append(headRow);
+    const tbody = document.createElement("tbody");
+    table.append(thead, tbody);
+    wrap.append(table);
+    card.append(head, notes, form, count, wrap);
+    pane.append(card);
+    page.append(pane);
+    renderManagers();
+  }
+
+  function showAdminPane() {
+    ensureOwnerUi();
+    const pane = document.getElementById("settingsPaneAdmins");
+    const form = document.getElementById("settingsForm");
+    const market = document.getElementById("marketForm");
+    const theme = document.getElementById("setup-theme");
+    if (form) form.hidden = true;
+    if (market) market.hidden = true;
+    if (theme) theme.hidden = true;
+    if (pane) pane.hidden = false;
+    ["settingsTabApi", "settingsTabMarkets", "settingsTabLicense"].forEach((id) => {
+      const tab = document.getElementById(id);
+      if (tab) tab.classList.remove("active");
+    });
+    const tab = document.getElementById("settingsTabAdmins");
+    if (tab) tab.classList.add("active");
+    renderManagers();
+  }
+
+  function hideAdminPane() {
+    const pane = document.getElementById("settingsPaneAdmins");
+    const theme = document.getElementById("setup-theme");
+    const tab = document.getElementById("settingsTabAdmins");
+    if (pane) pane.hidden = true;
+    if (theme) theme.hidden = false;
+    if (tab) tab.classList.remove("active");
+  }
+
+  function wrapSettings() {
+    if (typeof showSettingsPane !== "function" || showSettingsPane.adminMenuHook) return;
+    const inner = showSettingsPane;
+    function wrapped(name) {
+      if (name === "admins") {
+        showAdminPane();
+        return;
+      }
+      hideAdminPane();
+      return inner.apply(this, arguments);
+    }
+    wrapped.adminMenuHook = true;
+    window.showSettingsPane = wrapped;
+  }
+
+  function watchVersion() {
+    const label = document.getElementById("appVersion");
+    if (!label || label.dataset.adminMenuVersion === "1") return;
+    label.dataset.adminMenuVersion = "1";
+    new MutationObserver(() => showVersion()).observe(label, { childList: true, characterData: true, subtree: true });
+  }
+
+  function watchTabs() {
+    const tabs = document.querySelector(".app-tabs");
+    if (!tabs || tabs.dataset.adminMenuClick === "1") return;
+    tabs.dataset.adminMenuClick = "1";
+    const viewById = {
+      appTabProducts: "products",
+      appTabOrders: "orders",
+      appTabInquiries: "inquiries",
+      appTabCollect: "collect",
+      appTabWholesalers: "wholesalers",
+      appTabSettings: "settings",
+      appTabHelp: "help",
+    };
+    tabs.addEventListener("click", (event) => {
+      if (!isLocked()) return;
+      const button = event.target.closest("button");
+      const name = button && viewById[button.id];
+      if (!name || gate(name) === name) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (typeof showAppView === "function") showAppView(gate(name));
+    }, true);
+  }
+
+  async function detect() {
+    if (typeof api !== "function") {
+      state.pending = false;
+      paintLock();
+      settleView();
+      document.documentElement.dataset.adminMenu = "ready";
+      return;
+    }
+    try {
+      const data = await api("/api/share-link", { quiet: true });
+      state.owner = true;
+      state.remote = false;
+      state.pending = false;
+      state.links = (data && data.links) || [];
+      if (typeof cachedShareLinks !== "undefined" && state.links.length) cachedShareLinks = state.links.slice();
+      ensureOwnerUi();
+    } catch (error) {
+      const message = String((error && error.message) || "");
+      if (/이 컴퓨터에서만|공유 주소/.test(message)) {
+        state.remote = true;
+        state.owner = false;
+      }
+      state.pending = false;
+    }
+    paintLock();
+    settleView();
+    document.documentElement.dataset.adminMenu = "ready";
+  }
+
+  function hook() {
+    state.roles = readRoles();
+    if (!state.owner && !state.remote && state.roles.size) state.pending = true;
+    showVersion();
+    watchVersion();
+    wrapApi();
+    wrapShow();
+    wrapSettings();
+    watchTabs();
+    watchOldCard();
+    paintLock();
+    if (typeof applyEdition === "function" && !applyEdition.adminMenuHook) {
+      const inner = applyEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        showVersion();
+        return result;
+      }
+      wrapped.inquiryVersion9 = true;
+      wrapped.inquiryVersion10 = true;
+      wrapped.adminMenuHook = true;
+      window.applyEdition = wrapped;
+    }
+    if (!state.owner && !state.remote) detect();
+    else document.documentElement.dataset.adminMenu = "ready";
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paintLock, 400);
+  setTimeout(paintLock, 1400);
+  setTimeout(showVersion, 6500);
+  setTimeout(showVersion, 8000);
+})();
+"""
+ADMIN_MENU_CSS = """
+/* admin-menu1 */
+#settingsInvite { display: none !important; }
+#helpShare #invitePanel { display: none !important; }
+.admin-manager-count { margin: 0 0 8px; font-weight: 700; }
+.admin-manager-notes {
+  margin: 0 0 12px;
+  padding: 8px 12px 8px 28px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.admin-duty-list { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 8px; }
+.admin-invite-form { margin-bottom: 8px; }
+.admin-manager-table-wrap { height: auto; max-height: none; }
+#adminManagerTable { table-layout: auto; }
+#adminManagerTable tbody tr { cursor: default; }
+#adminManagerTable td { white-space: normal; }
+#adminManagerTable .admin-link {
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-right: 6px;
+}
+#adminManagerTable button { margin-left: 6px; }
+body.admin-locked:not(.admin-allow-products) #appTabProducts,
+body.admin-locked:not(.admin-allow-products) #viewProducts,
+body.admin-locked:not(.admin-allow-collect) #appTabCollect,
+body.admin-locked:not(.admin-allow-collect) #viewCollect,
+body.admin-locked:not(.admin-allow-orders) #appTabOrders,
+body.admin-locked:not(.admin-allow-orders) #viewOrders,
+body.admin-locked:not(.admin-allow-inquiries) #appTabInquiries,
+body.admin-locked:not(.admin-allow-inquiries) #viewInquiries,
+body.admin-locked #appTabWholesalers,
+body.admin-locked #viewWholesalers,
+body.admin-locked #appTabSettings,
+body.admin-locked #viewSettings,
+body.admin-locked #marketSidebarSettings,
+body.admin-locked #collectOpenWholesalers,
+body.admin-locked #collectEmptyOpenWholesalers,
+body.admin-locked #marketLoginIdRow,
+body.admin-locked #marketLoginPwRow,
+body.admin-locked #marketApiKeyRow,
+body.admin-locked #marketApiSecretRow,
+body.admin-locked #marketVendorRow,
+body.admin-locked #marketEsmRow,
+body.admin-locked #marketApiAccountRow,
+body.admin-locked #marketForm label:has(input[name="login_id"]),
+body.admin-locked #marketForm label:has(input[name="login_password"]),
+body.admin-locked #marketForm label:has(input[name="api_key"]),
+body.admin-locked #marketForm label:has(input[name="api_secret"]),
+body.admin-locked #marketForm label:has(input[name="vendor_code"]),
+body.admin-locked #marketForm label:has(input[name="esm_id"]),
+body.admin-locked #marketForm label:has(input[name="naver_account_id"]),
+body.admin-locked #wholesaleForm label:has(input[name="login_id"]),
+body.admin-locked #wholesaleForm label:has(input[name="login_password"]) {
+  display: none !important;
+}
+"""
+
+
+_OLD_LINK = "모두모두AI 배포용".encode("utf-8")
+_NEW_LINK = "모두모두AI 셀러용".encode("utf-8")
+if len(_OLD_LINK) != len(_NEW_LINK):
+    raise RuntimeError("seller shortcut byte length mismatch")
+
+SELLER_JS = r"""
+/* seller-edition1 */
+(function () {
+  const version = "2026.10.28.11";
+  const secretNames = ["login_id", "login_password", "api_key", "api_secret", "vendor_code", "esm_id", "naver_account_id"];
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function showVersion() {
+    const label = document.getElementById("appVersion");
+    const seller = isSeller();
+    const editionName = seller ? "셀러용" : "마스터";
+    if (label && label.textContent !== "v" + version) {
+      label.hidden = false;
+      label.textContent = "v" + version;
+      label.title = "버전 " + version;
+    }
+    const badge = document.getElementById("appEdition");
+    if (badge && seller && badge.textContent !== "셀러용") badge.textContent = "셀러용";
+    const title = "모두모두AI " + editionName + " v" + version;
+    if (document.title !== title) document.title = title;
+  }
+
+  function takeVersionLabel() {
+    const label = document.getElementById("appVersion");
+    if (!label || label.dataset.sellerVersion === "1") return;
+    const fresh = label.cloneNode(true);
+    fresh.dataset.sellerVersion = "1";
+    label.replaceWith(fresh);
+    new MutationObserver(() => showVersion()).observe(fresh, { childList: true, characterData: true, subtree: true });
+  }
+
+  function isSecretHeader(cell) {
+    const text = (cell.textContent || "").replace(/\s+/g, "");
+    if (!text || text.length > 24) return false;
+    return /아이디|패스워드|비밀번호|아이디키|시크릿키|관리자키|업체코드|ESMID|로그인/.test(text);
+  }
+
+  function hideSecrets() {
+    if (!isSeller()) return;
+    secretNames.forEach((name) => {
+      document.querySelectorAll("[name='" + name + "']").forEach((input) => {
+        const row = input.closest(".delivery-row, label, tr");
+        if (row) row.classList.add("seller-secret");
+        input.disabled = true;
+        input.readOnly = true;
+      });
+    });
+    document.querySelectorAll("table").forEach((table) => {
+      const headerRows = table.tHead ? [...table.tHead.rows] : [...table.rows].filter((row) => [...row.cells].some((cell) => cell.tagName === "TH"));
+      const secretIndex = new Set();
+      headerRows.forEach((row) => {
+        [...row.cells].forEach((cell, index) => {
+          if (!isSecretHeader(cell)) return;
+          secretIndex.add(index);
+          cell.classList.add("seller-secret");
+        });
+      });
+      if (!secretIndex.size) return;
+      [...table.tBodies].forEach((body) => {
+        [...body.rows].forEach((row) => {
+          if (row.cells.length === 1 && row.cells[0].colSpan > 1) return;
+          secretIndex.forEach((index) => {
+            const cell = row.cells[index];
+            if (!cell || cell.querySelector("input, select, textarea")) return;
+            cell.classList.add("seller-secret");
+            cell.textContent = "";
+          });
+        });
+      });
+    });
+  }
+
+  function watchTables() {
+    ["marketTableBody", "wholesaleTable"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el || el.dataset.sellerWatch === "1") return;
+      el.dataset.sellerWatch = "1";
+      new MutationObserver(() => hideSecrets()).observe(el, { childList: true });
+    });
+  }
+
+  function ensureHelp() {
+    const overview = document.getElementById("help-overview");
+    if (overview && !document.getElementById("sellerHelpNote")) {
+      const note = document.createElement("p");
+      note.id = "sellerHelpNote";
+      note.textContent = "셀러용에는 로그인 정보와 상품 URL 수집이 없습니다. 마켓 아이디, 패스워드, 관리자키, 공급처 로그인 칸이 없고, 주소로 상품을 수집하는 칸도 없습니다.";
+      overview.append(note);
+    }
+    if (overview && !document.getElementById("sellerInstallNote")) {
+      const install = document.createElement("p");
+      install.id = "sellerInstallNote";
+      install.textContent = "구매자는 모두모두AI-셀러용-설치.exe 로 설치합니다. 설치한 뒤에는 실행할 때 업데이트를 받을 수 있습니다.";
+      const note = document.getElementById("sellerHelpNote");
+      if (note) note.after(install);
+      else overview.append(install);
+    }
+    const nav = document.getElementById("helpNav");
+    if (nav && !nav.querySelector("[data-help='help-admins']")) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.help = "help-admins";
+      button.textContent = "관리자 관리";
+      const data = nav.querySelector("[data-help='help-data']");
+      if (data) data.before(button);
+      else nav.append(button);
+    }
+    const body = document.getElementById("helpBody");
+    if (body && !document.getElementById("help-admins")) {
+      const section = document.createElement("section");
+      section.className = "help-panel";
+      section.id = "help-admins";
+      section.dataset.helpPanel = "help-admins";
+      section.hidden = true;
+      const title = document.createElement("h2");
+      title.textContent = "관리자 관리";
+      const lead = document.createElement("p");
+      lead.textContent = "설정 > 관리자 관리에서 상품관리, 주문관리, 문의관리 매니저를 초대합니다. 아이디, 패스워드, 관리자키는 그대로 두고, 초대받은 관리자는 맡은 기능만 사용합니다. 상품관리에는 상품담기가 포함됩니다. 목록에서 지워도 이미 보낸 주소는 계속 열립니다.";
+      const extra = document.createElement("p");
+      extra.textContent = "셀러용 화면에는 로그인 정보와 상품 URL 수집이 없습니다.";
+      section.append(title, lead, extra);
+      const data = document.getElementById("help-data");
+      if (data) data.before(section);
+      else body.append(section);
+    }
+  }
+
+  function deny(message) {
+    const error = new Error(message);
+    if (typeof toast === "function") toast(message, true);
+    throw error;
+  }
+
+  function wrapNamed(name, message) {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.sellerHook) return;
+    function wrapped() {
+      if (isSeller()) deny(message);
+      return fn.apply(this, arguments);
+    }
+    wrapped.sellerHook = true;
+    window[name] = wrapped;
+  }
+
+  function blockSecretSaves() {
+    ["marketForm", "wholesaleForm"].forEach((id) => {
+      const form = document.getElementById(id);
+      if (!form || form.dataset.sellerBlock === "1") return;
+      form.dataset.sellerBlock = "1";
+      form.addEventListener("submit", (event) => {
+        if (!isSeller()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        deny("셀러용에는 로그인 정보를 넣을 수 없습니다.");
+      }, true);
+    });
+    const collect = document.getElementById("collectForm");
+    if (collect && collect.dataset.sellerBlock !== "1") {
+      collect.dataset.sellerBlock = "1";
+      collect.addEventListener("submit", (event) => {
+        if (!isSeller()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        deny("셀러용에는 상품 URL 수집이 없습니다.");
+      }, true);
+    }
+  }
+
+  function wrapEdition() {
+    if (typeof applyEdition !== "function" || applyEdition.sellerHook) return;
+    const inner = applyEdition;
+    function wrapped(edition, screenVersion) {
+      const seller = edition === "test" || edition === "seller";
+      const result = inner.call(this, seller ? "test" : edition, screenVersion);
+      document.body.classList.toggle("edition-seller", seller);
+      if (seller) document.body.classList.add("edition-test");
+      paint();
+      return result;
+    }
+    wrapped.sellerHook = true;
+    wrapped.inquiryVersion = true;
+    wrapped.inquiryVersion10 = true;
+    wrapped.adminMenuHook = true;
+    window.applyEdition = wrapped;
+  }
+
+  function paint() {
+    showVersion();
+    ensureHelp();
+    blockSecretSaves();
+    if (isSeller()) hideSecrets();
+    watchTables();
+  }
+
+  function hook() {
+    takeVersionLabel();
+    wrapEdition();
+    wrapNamed("saveMarketForm", "셀러용에는 로그인 정보를 넣을 수 없습니다.");
+    wrapNamed("saveWholesalerForm", "셀러용에는 로그인 정보를 넣을 수 없습니다.");
+    wrapNamed("collectNow", "셀러용에는 상품 URL 수집이 없습니다.");
+    paint();
+    if (typeof loadEdition === "function" && !loadEdition.sellerHook) {
+      const inner = loadEdition;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        const finish = () => paint();
+        if (result && typeof result.then === "function") {
+          return result.then((value) => { finish(); return value; }, (error) => { finish(); throw error; });
+        }
+        finish();
+        return result;
+      }
+      wrapped.sellerHook = true;
+      window.loadEdition = wrapped;
+    }
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(showVersion, 9000);
+  setTimeout(showVersion, 11000);
+})();
+"""
+
+SELLER_CSS = """
+/* seller-edition1 */
+body.edition-seller #collectForm,
+body.edition-seller #helpUrlCollect,
+body.edition-seller #marketLoginIdRow,
+body.edition-seller #marketLoginPwRow,
+body.edition-seller #marketApiKeyRow,
+body.edition-seller #marketApiSecretRow,
+body.edition-seller #marketVendorRow,
+body.edition-seller #marketEsmRow,
+body.edition-seller #marketApiAccountRow,
+body.edition-seller #marketForm label:has(input[name="login_id"]),
+body.edition-seller #marketForm label:has(input[name="login_password"]),
+body.edition-seller #marketForm label:has(input[name="api_key"]),
+body.edition-seller #marketForm label:has(input[name="api_secret"]),
+body.edition-seller #marketForm label:has(input[name="vendor_code"]),
+body.edition-seller #marketForm label:has(input[name="esm_id"]),
+body.edition-seller #marketForm label:has(input[name="naver_account_id"]),
+body.edition-seller #wholesaleForm label:has(input[name="login_id"]),
+body.edition-seller #wholesaleForm label:has(input[name="login_password"]),
+body.edition-seller #collectOpenWholesalers,
+body.edition-seller #collectEmptyOpenWholesalers,
+body.edition-seller .seller-secret {
+  display: none !important;
+}
+"""
+
+SELLER_LOGIN_JS = r"""
+/* seller-login1 */
+(function () {
+  const storageKey = "modumodu-seller-session";
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function digits(value) {
+    let number = String(value || "").replace(/\D/g, "");
+    if (number.startsWith("82") && number.length >= 11) number = "0" + number.slice(2);
+    return number;
+  }
+
+  function validPhone(value) {
+    return /^01[016789]\d{7,8}$/.test(digits(value));
+  }
+
+  function formatPhone(value) {
+    const number = digits(value);
+    if (number.length === 11) return number.slice(0, 3) + "-" + number.slice(3, 7) + "-" + number.slice(7);
+    if (number.length === 10) return number.slice(0, 3) + "-" + number.slice(3, 6) + "-" + number.slice(6);
+    return number;
+  }
+
+  function readPhone() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "");
+      if (saved && validPhone(saved.phone)) return digits(saved.phone);
+    } catch (error) {}
+    return "";
+  }
+
+  function savePhone(phone) {
+    localStorage.setItem(storageKey, JSON.stringify({ phone: digits(phone) }));
+  }
+
+  function clearPhone() {
+    localStorage.removeItem(storageKey);
+  }
+
+  function field(labelText, id, type, autocomplete) {
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = labelText;
+    const input = document.createElement("input");
+    input.id = id;
+    input.type = type;
+    input.autocomplete = autocomplete;
+    input.required = true;
+    if (type === "tel") input.inputMode = "numeric";
+    label.append(input);
+    return label;
+  }
+
+  function ensureGate() {
+    let gate = document.getElementById("sellerLogin");
+    if (gate) return gate;
+    gate = document.createElement("div");
+    gate.id = "sellerLogin";
+    gate.role = "dialog";
+    gate.setAttribute("aria-modal", "true");
+    gate.setAttribute("aria-labelledby", "sellerLoginTitle");
+    const card = document.createElement("form");
+    card.className = "seller-login-card";
+    const title = document.createElement("h1");
+    title.id = "sellerLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 셀러용"));
+    const lead = document.createElement("p");
+    lead.textContent = "시험 단계입니다. 본인 전화번호와 비밀번호를 입력하면 들어갑니다.";
+    const error = document.createElement("p");
+    error.id = "sellerLoginError";
+    error.setAttribute("role", "alert");
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "들어가기";
+    card.append(title, lead, field("전화번호", "sellerLoginPhone", "tel", "tel"), field("비밀번호", "sellerLoginPassword", "password", "current-password"), error, submit);
+    card.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const phone = document.getElementById("sellerLoginPhone").value;
+      const password = document.getElementById("sellerLoginPassword").value;
+      if (!validPhone(phone)) {
+        error.textContent = "본인 전화번호를 입력해 주세요.";
+        return;
+      }
+      if (!String(password || "").trim()) {
+        error.textContent = "비밀번호를 입력해 주세요.";
+        return;
+      }
+      savePhone(phone);
+      document.getElementById("sellerLoginPassword").value = "";
+      error.textContent = "";
+      paint();
+    });
+    gate.append(card);
+    document.body.append(gate);
+    return gate;
+  }
+
+  function ensureAccount() {
+    let account = document.getElementById("sellerAccount");
+    if (account) return account;
+    const bar = document.querySelector(".titlebar");
+    if (!bar) return null;
+    account = document.createElement("span");
+    account.id = "sellerAccount";
+    account.className = "seller-account";
+    const phone = document.createElement("span");
+    phone.id = "sellerAccountPhone";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "sellerLogout";
+    button.textContent = "로그아웃";
+    button.addEventListener("click", () => {
+      clearPhone();
+      paint();
+    });
+    account.append(phone, button);
+    const quit = document.getElementById("appQuit");
+    if (quit) quit.before(account);
+    else bar.append(account);
+    return account;
+  }
+
+  function ensureLoginNote() {
+    const overview = document.getElementById("help-overview");
+    if (!overview || document.getElementById("sellerLoginNote")) return;
+    const note = document.createElement("p");
+    note.id = "sellerLoginNote";
+    note.textContent = "프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.";
+    const install = document.getElementById("sellerInstallNote");
+    const help = document.getElementById("sellerHelpNote");
+    if (install) install.after(note);
+    else if (help) help.after(note);
+    else overview.append(note);
+  }
+
+  function paint() {
+    const seller = isSeller();
+    const phone = seller ? readPhone() : "";
+    const locked = seller && !phone;
+    document.body.classList.toggle("seller-locked", locked);
+    if (locked) {
+      const gate = ensureGate();
+      gate.hidden = false;
+      const input = document.getElementById("sellerLoginPhone");
+      if (input && document.activeElement === document.body) input.focus();
+    } else {
+      const gate = document.getElementById("sellerLogin");
+      if (gate) gate.hidden = true;
+    }
+    const account = seller && phone ? ensureAccount() : document.getElementById("sellerAccount");
+    if (account) {
+      account.hidden = !phone;
+      const label = document.getElementById("sellerAccountPhone");
+      if (label) label.textContent = formatPhone(phone);
+    }
+    if (seller) ensureLoginNote();
+    [...document.body.children].forEach((child) => {
+      if (child.id === "sellerLogin") return;
+      if (locked) child.setAttribute("inert", "");
+      else child.removeAttribute("inert");
+    });
+  }
+
+  function hook() {
+    paint();
+    if (document.body.dataset.sellerLoginWatch === "1") return;
+    document.body.dataset.sellerLoginWatch = "1";
+    new MutationObserver(() => paint()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paint, 400);
+  setTimeout(paint, 1200);
+})();
+"""
+
+SELLER_LOGIN_CSS = """
+/* seller-login1 */
+body.seller-locked { overflow: hidden; }
+#sellerLogin {
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.48);
+}
+#sellerLogin[hidden] { display: none !important; }
+.seller-login-card {
+  width: min(420px, 100%);
+  margin: 0;
+  padding: 28px 24px 22px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+.seller-login-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.seller-login-card .brand-a { color: #0b5cab; }
+.seller-login-card .brand-b { color: #3d9eed; }
+.seller-login-card .brand-ai { color: #111; }
+.seller-login-card p { margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.5; font-weight: 400; }
+.seller-login-card label { font-size: 13px; font-weight: 700; }
+.seller-login-card input { font-size: 16px; padding: 8px 10px; border-radius: 8px; }
+.seller-login-card button[type="submit"] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border-color: #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+#sellerLoginError { min-height: 1.2em; color: #b42318; font-weight: 700; }
+.seller-account { display: inline-flex; align-items: center; gap: 6px; }
+#sellerAccount[hidden] { display: none !important; }
+#sellerLogout { padding: 3px 8px; }
+"""
+
+SELLER_LOGIN2_JS = r"""
+/* seller-login2 */
+(function () {
+  let accountURL = "http://127.0.0.1:8790";
+  const loginPorts = [8790, 8791, 8792, 8793, 8794, 8795, 18790, 28790, 9876, 18081, 29170];
+  async function useAccount() {
+    if (window.__sellerLoginTest) return accountURL;
+    try {
+      const response = await fetch("/static/seller-login-port.txt?v=" + Date.now(), { cache: "no-store" });
+      if (response.ok) {
+        const port = String(await response.text()).trim();
+        if (/^\d+$/.test(port)) {
+          accountURL = "http://127.0.0.1:" + port;
+          return accountURL;
+        }
+      }
+    } catch (error) {}
+    for (const port of loginPorts) {
+      try {
+        const response = await fetch("http://127.0.0.1:" + port + "/api/seller-status", { cache: "no-store" });
+        if (response.ok) {
+          accountURL = "http://127.0.0.1:" + port;
+          return accountURL;
+        }
+      } catch (error) {}
+    }
+    throw new Error(offlineMessage);
+  }
+  const sessionKey = "modumodu-seller-session";
+  const accountKey = "modumodu-seller-account";
+  const offlineMessage = "로그인 서비스를 찾지 못했습니다. 모두모두AI-셀러용-설치.exe 를 다시 실행해 주세요.";
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function digits(value) {
+    let number = String(value || "").replace(/\D/g, "");
+    if (number.startsWith("82") && number.length >= 11) number = "0" + number.slice(2);
+    return number;
+  }
+
+  function validPhone(value) {
+    return /^01[016789]\d{7,8}$/.test(digits(value));
+  }
+
+  function formatPhone(value) {
+    const number = digits(value);
+    if (number.length === 11) return number.slice(0, 3) + "-" + number.slice(3, 7) + "-" + number.slice(7);
+    if (number.length === 10) return number.slice(0, 3) + "-" + number.slice(3, 6) + "-" + number.slice(6);
+    return number;
+  }
+
+  function formatCode(password) {
+    const code = String(password || "").replace(/\s+/g, "");
+    if (code.length === 8) return code.slice(0, 4) + " " + code.slice(4);
+    return code;
+  }
+
+  function postSync(path, body) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", accountURL + path, false);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    try {
+      xhr.send(JSON.stringify(body || {}));
+    } catch (error) {
+      throw new Error(offlineMessage);
+    }
+    const data = JSON.parse(xhr.responseText || "{}");
+    if (xhr.status < 200 || xhr.status >= 300) throw new Error(data.error || "로그인하지 못했습니다.");
+    return data;
+  }
+
+  async function post(path, body) {
+    if (window.__sellerLoginTest) return postSync(path, body);
+    await useAccount();
+    let response;
+    try {
+      response = await fetch(accountURL + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+    } catch (error) {
+      throw new Error(offlineMessage);
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "로그인하지 못했습니다.");
+    return data;
+  }
+
+  function showError(message) {
+    const box = document.getElementById("sellerLoginError");
+    if (box) box.textContent = message || "";
+  }
+
+  function remember(phone) {
+    const number = digits(phone);
+    localStorage.setItem(sessionKey, JSON.stringify({ phone: number }));
+    localStorage.setItem(accountKey, number);
+  }
+
+  function forget() {
+    localStorage.removeItem(sessionKey);
+    localStorage.removeItem(accountKey);
+  }
+
+  function refreshOldGate() {
+    document.body.classList.toggle("seller-login-sync");
+  }
+
+  function labelWrap(text, id, input) {
+    const label = document.createElement("label");
+    label.id = id;
+    label.textContent = text;
+    label.append(input);
+    return label;
+  }
+
+  function rebuild() {
+    const gate = document.getElementById("sellerLogin");
+    if (!gate || gate.dataset.login2 === "1") return;
+    gate.dataset.login2 = "1";
+    while (gate.firstChild) gate.removeChild(gate.firstChild);
+    const card = document.createElement("form");
+    card.className = "seller-login-card";
+    const title = document.createElement("h1");
+    title.id = "sellerLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 셀러용"));
+    const lead = document.createElement("p");
+    lead.textContent = "전화번호를 입력하면 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 들어오면 같은 데이터가 열립니다.";
+    const phone = document.createElement("input");
+    phone.id = "sellerLoginPhone";
+    phone.type = "tel";
+    phone.autocomplete = "off";
+    phone.setAttribute("name", "modumodu-seller-phone");
+    phone.inputMode = "numeric";
+    phone.required = true;
+    const check = document.createElement("button");
+    check.type = "button";
+    check.id = "sellerLoginCheck";
+    check.textContent = "확인";
+    const issued = document.createElement("div");
+    issued.id = "sellerIssued";
+    issued.hidden = true;
+    const issuedLead = document.createElement("p");
+    issuedLead.textContent = "이 전화번호의 비밀번호입니다. 적어 두세요.";
+    const issuedPassword = document.createElement("p");
+    issuedPassword.id = "sellerIssuedPassword";
+    issued.append(issuedLead, issuedPassword);
+    const password = document.createElement("input");
+    password.id = "sellerLoginPassword";
+    password.type = "password";
+    password.autocomplete = "current-password";
+    const passwordRow = labelWrap("비밀번호", "sellerPasswordRow", password);
+    passwordRow.hidden = true;
+    const error = document.createElement("p");
+    error.id = "sellerLoginError";
+    error.setAttribute("role", "alert");
+    const enter = document.createElement("button");
+    enter.type = "button";
+    enter.id = "sellerLoginEnter";
+    enter.hidden = true;
+    enter.textContent = "들어가기";
+    card.append(title, lead, labelWrap("전화번호", "sellerPhoneRow", phone), check, issued, passwordRow, error, enter);
+    check.addEventListener("click", async () => {
+      showError("");
+      if (!validPhone(phone.value)) {
+        showError("본인 전화번호를 입력해 주세요.");
+        return;
+      }
+      check.disabled = true;
+      try {
+        const data = await post("/api/seller-login", { phone: phone.value });
+        issued.hidden = data.status !== "new";
+        passwordRow.hidden = data.status === "new";
+        enter.hidden = false;
+        if (data.status === "new") {
+          issuedPassword.textContent = formatCode(data.password);
+          enter.dataset.password = data.password;
+          enter.textContent = "이 비밀번호로 들어가기";
+        } else {
+          issuedPassword.textContent = "";
+          delete enter.dataset.password;
+          enter.textContent = "들어가기";
+          password.value = "";
+          password.focus();
+        }
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        check.disabled = false;
+      }
+    });
+    enter.addEventListener("click", async () => {
+      showError("");
+      const typed = enter.dataset.password || password.value;
+      if (!String(typed || "").trim()) {
+        showError("비밀번호를 입력해 주세요.");
+        return;
+      }
+      enter.disabled = true;
+      try {
+        await post("/api/seller-enter", { phone: phone.value, password: typed });
+        remember(phone.value);
+        if (window.__sellerLoginTest) {
+          document.body.dataset.sellerEntered = digits(phone.value);
+          refreshOldGate();
+          return;
+        }
+        location.reload();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        enter.disabled = false;
+      }
+    });
+    gate.append(card);
+  }
+
+  async function syncStatus() {
+    if (!isSeller()) return;
+    rebuild();
+    try {
+      let data = {};
+      if (window.__sellerLoginTest) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", accountURL + "/api/seller-status", false);
+        xhr.send();
+        data = JSON.parse(xhr.responseText || "{}");
+      } else {
+        await useAccount();
+        const response = await fetch(accountURL + "/api/seller-status");
+        data = await response.json();
+      }
+      if (data.phone && validPhone(data.phone)) remember(data.phone);
+      else forget();
+    } catch (error) {
+      forget();
+    }
+    const note = document.getElementById("sellerLoginNote");
+    if (note) note.textContent = "처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.";
+    refreshOldGate();
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target && event.target.closest ? event.target.closest("#sellerLogout") : null;
+    if (!button || !isSeller()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try { await post("/api/seller-logout", {}); } catch (error) {}
+    forget();
+    if (window.__sellerLoginTest) {
+      document.body.dataset.sellerEntered = "";
+      refreshOldGate();
+      return;
+    }
+    location.reload();
+  }, true);
+
+  function hook() {
+    if (!document.body.dataset.sellerLogin2Watch) {
+      document.body.dataset.sellerLogin2Watch = "1";
+      new MutationObserver(() => hook()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    }
+    if (!isSeller()) return;
+    rebuild();
+    if (document.body.dataset.sellerStatus === "1") return;
+    document.body.dataset.sellerStatus = "1";
+    syncStatus();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+})();
+"""
+
+SELLER_PHONE_JS = r"""
+/* seller-phone1 */
+(function () {
+  function mailFilled(value) {
+    return /[A-Za-z@]/.test(String(value || ""));
+  }
+
+  function clearMail(input) {
+    if (!mailFilled(input.value) && !mailFilled(input.getAttribute("value"))) return;
+    input.value = "";
+    input.setAttribute("value", "");
+  }
+
+  function harden(input) {
+    if (!input || input.dataset.sellerPhoneGuard === "1") return;
+    input.dataset.sellerPhoneGuard = "1";
+    input.autocomplete = "off";
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("name", "modumodu-seller-phone");
+    input.readOnly = true;
+    const unlock = () => { input.readOnly = false; };
+    input.addEventListener("pointerdown", unlock);
+    input.addEventListener("focus", unlock);
+    input.addEventListener("input", () => clearMail(input));
+    clearMail(input);
+    setTimeout(() => clearMail(input), 50);
+    setTimeout(() => clearMail(input), 400);
+    setTimeout(() => clearMail(input), 1200);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#sellerLoginPhone").forEach(harden);
+    const form = document.querySelector("#sellerLogin form");
+    if (form) form.setAttribute("autocomplete", "off");
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.sellerPhoneGuard === "1") return;
+    document.body.dataset.sellerPhoneGuard = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
+})();
+"""
+
+SELLER_PEEK_JS = r"""
+/* seller-peek1 */
+(function () {
+  function attach(input) {
+    if (!input || input.dataset.sellerPeek === "1") return;
+    input.dataset.sellerPeek = "1";
+    input.type = "password";
+    const line = document.createElement("span");
+    line.className = "seller-password-line";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "seller-peek";
+    button.textContent = "미리보기";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      const open = input.type === "password";
+      input.type = open ? "text" : "password";
+      button.textContent = open ? "가리기" : "미리보기";
+      button.setAttribute("aria-pressed", open ? "true" : "false");
+    });
+    input.before(line);
+    line.append(input, button);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#sellerLoginPassword").forEach(attach);
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.sellerPeekWatch === "1") return;
+    document.body.dataset.sellerPeekWatch = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
+})();
+"""
+
+SELLER_PEEK_CSS = """
+/* seller-peek1 */
+.seller-password-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+.seller-password-line input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.seller-peek {
+  flex: 0 0 auto;
+  margin-top: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  color: #0b5cab;
+  border: 1px solid #0b5cab;
+  font-size: 13px;
+  font-weight: 700;
+}
+"""
+
+SELLER_PORT_JS = r"""
+/* seller-port1 */
+(function () {
+  function onSellerPort() {
+    return String(location.port || "") === "8788";
+  }
+
+  function markSeller() {
+    document.body.classList.add("edition-seller");
+    document.body.classList.add("edition-test");
+    const badge = document.getElementById("appEdition");
+    if (badge) badge.textContent = "셀러용";
+    const shown = (document.getElementById("appVersion") || {}).textContent || "";
+    const version = String(shown).replace(/^v/, "").trim();
+    document.title = version ? "모두모두AI 셀러용 v" + version : "모두모두AI 셀러용";
+  }
+
+  if (typeof applyEdition === "function" && !applyEdition.sellerPortHook) {
+    const inner = applyEdition;
+    function wrapped(edition, screenVersion) {
+      if (onSellerPort()) edition = "test";
+      const result = inner.call(this, edition, screenVersion);
+      if (onSellerPort()) markSeller();
+      return result;
+    }
+    wrapped.sellerPortHook = true;
+    window.applyEdition = wrapped;
+  }
+
+  function force() {
+    if (!onSellerPort() || typeof applyEdition !== "function") return;
+    const label = document.getElementById("appVersion");
+    const version = label ? String(label.textContent || "").replace(/^v/, "").trim() : "";
+    applyEdition("test", version);
+    markSeller();
+  }
+
+  force();
+  setTimeout(force, 0);
+  setTimeout(force, 400);
+  setTimeout(force, 1200);
+})();
+"""
+
+MASTER_LOGIN_JS = r"""
+/* master-login1 */
+(function () {
+  const storageKey = "modumodu-master-gate";
+  const password = "9020917";
+
+  function isSellerScreen() {
+    if (String(location.port || "") === "8788") return true;
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function unlocked() {
+    try {
+      return sessionStorage.getItem(storageKey) === "1";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function ensureGate() {
+    let gate = document.getElementById("masterLogin");
+    if (gate) return gate;
+    gate = document.createElement("div");
+    gate.id = "masterLogin";
+    gate.role = "dialog";
+    gate.setAttribute("aria-modal", "true");
+    gate.setAttribute("aria-labelledby", "masterLoginTitle");
+    const card = document.createElement("form");
+    card.className = "master-login-card";
+    const title = document.createElement("h1");
+    title.id = "masterLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 마스터"));
+    const lead = document.createElement("p");
+    lead.textContent = "비밀번호를 입력하면 들어갑니다.";
+    const label = document.createElement("label");
+    label.htmlFor = "masterLoginPassword";
+    label.textContent = "비밀번호";
+    const input = document.createElement("input");
+    input.id = "masterLoginPassword";
+    input.type = "password";
+    input.autocomplete = "current-password";
+    input.required = true;
+    label.append(input);
+    const error = document.createElement("p");
+    error.id = "masterLoginError";
+    error.setAttribute("role", "alert");
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "들어가기";
+    card.append(title, lead, label, error, submit);
+    card.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const typed = String(input.value || "").trim();
+      if (typed !== password) {
+        error.textContent = "비밀번호가 맞지 않습니다.";
+        input.focus();
+        return;
+      }
+      try { sessionStorage.setItem(storageKey, "1"); } catch (error) {}
+      input.value = "";
+      error.textContent = "";
+      document.body.dataset.masterEntered = "1";
+      paint();
+    });
+    gate.append(card);
+    document.body.append(gate);
+    return gate;
+  }
+
+  function paint() {
+    const locked = !isSellerScreen() && !unlocked();
+    document.body.classList.toggle("master-locked", locked);
+    if (locked) {
+      const gate = ensureGate();
+      gate.hidden = false;
+      const input = document.getElementById("masterLoginPassword");
+      if (input && document.activeElement === document.body) input.focus();
+    } else {
+      const gate = document.getElementById("masterLogin");
+      if (gate) gate.hidden = true;
+    }
+    [...document.body.children].forEach((child) => {
+      if (child.id === "masterLogin" || child.id === "sellerLogin") return;
+      if (locked) child.setAttribute("inert", "");
+      else if (!document.body.classList.contains("seller-locked")) child.removeAttribute("inert");
+    });
+  }
+
+  function hook() {
+    paint();
+    if (document.body.dataset.masterLoginWatch === "1") return;
+    document.body.dataset.masterLoginWatch = "1";
+    new MutationObserver(() => paint()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(paint, 400);
+})();
+"""
+
+MASTER_LOGIN_CSS = """
+/* master-login1 */
+body.master-locked { overflow: hidden; }
+#masterLogin {
+  position: fixed;
+  inset: 0;
+  z-index: 8100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(17, 17, 17, 0.48);
+}
+#masterLogin[hidden] { display: none !important; }
+.master-login-card {
+  width: min(420px, 100%);
+  margin: 0;
+  padding: 28px 24px 22px;
+  background: #fff;
+  color: #111;
+  border: 1px solid #e4e4e4;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+}
+.master-login-card h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.master-login-card .brand-a { color: #0b5cab; }
+.master-login-card .brand-b { color: #3d9eed; }
+.master-login-card .brand-ai { color: #111; }
+.master-login-card p { margin: 0 0 14px; color: #667085; font-size: 13px; line-height: 1.5; font-weight: 400; }
+.master-login-card label { display: block; font-size: 13px; font-weight: 700; }
+.master-login-card input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 6px;
+  font-size: 16px;
+  padding: 8px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+}
+.master-login-card button[type="submit"] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border: 1px solid #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+#masterLoginError { min-height: 1.2em; color: #b42318; font-weight: 700; }
+"""
+
+MASTER_LOGIN2_JS = r"""
+/* master-login2 */
+(function () {
+  function attach(input) {
+    if (!input || input.dataset.masterPeek === "1") return;
+    input.dataset.masterPeek = "1";
+    input.autocomplete = "new-password";
+    input.value = "";
+    input.inputMode = "numeric";
+    const line = document.createElement("span");
+    line.className = "seller-password-line";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "seller-peek";
+    button.textContent = "보기";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      const open = input.type === "password";
+      input.type = open ? "text" : "password";
+      button.textContent = open ? "가리기" : "보기";
+      button.setAttribute("aria-pressed", open ? "true" : "false");
+      input.focus();
+    });
+    input.before(line);
+    line.append(input, button);
+  }
+
+  function sweep() {
+    document.querySelectorAll("#masterLoginPassword").forEach(attach);
+  }
+
+  function hook() {
+    sweep();
+    if (document.body.dataset.masterPeekWatch === "1") return;
+    document.body.dataset.masterPeekWatch = "1";
+    new MutationObserver(() => sweep()).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+  setTimeout(sweep, 300);
+})();
+"""
+
+WHOLESALE_IMPORT_ALL_JS = r"""
+/* wholesale-import-all1 */
+(function () {
+  function attach() {
+    if (document.getElementById("wholesaleImportAll")) return;
+    const anchor = document.getElementById("wholesaleLogin") || document.getElementById("wholesaleDelete");
+    if (!anchor || typeof importWholesaleProducts !== "function") return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "wholesaleImportAll";
+    button.textContent = "전체상품 가져오기";
+    button.title = "선택한 공급처의 전체 상품을 상품관리로 가져옵니다.";
+    button.addEventListener("click", () => {
+      const id = typeof selectedWholesalerId === "function" ? selectedWholesalerId() : "";
+      if (!id) {
+        toast("공급처를 먼저 선택해 주세요.", true);
+        return;
+      }
+      const supplier = (typeof wholesalers !== "undefined" ? wholesalers : []).find((row) => row.id === id);
+      const name = supplier?.name || "선택한 공급처";
+      if (supplier?.type !== "ownerclan" && !confirm(`${name}의 전체 상품을 상품관리로 가져올까요?\n이미 있는 상품은 그대로 두고 새 상품만 더합니다. 상품이 많으면 몇 분 걸립니다.`)) return;
+      importWholesaleProducts().catch((error) => toast(error.message, true));
+    });
+    anchor.after(button);
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", attach);
+  else attach();
+  setTimeout(attach, 0);
+  setTimeout(attach, 500);
+})();
+"""
+
+OPEN_LOGIN_JS = r"""
+/* open-login1 */
+openSupplierProductUrl = async function (url, wholesalerId, emptyMessage) {
+  const target = String(url || "").trim();
+  if (!looksLikeUrl(target)) {
+    toast(emptyMessage || "열 상품 주소가 없습니다.", true);
+    return false;
+  }
+  const id = String(wholesalerId || "").trim();
+  if (!id) return openUrl(target, emptyMessage);
+  toast("공급처에 로그인한 Chrome에서 상품을 여는 중입니다.");
+  try {
+    const result = await api(`/api/wholesalers/${encodeURIComponent(id)}/open-product`, {
+      method: "POST",
+      body: JSON.stringify({ url: target }),
+      signal: AbortSignal.timeout(90000),
+    });
+    toast(result?.message || "로그인 Chrome에서 공급사 상품을 열었습니다.");
+    return true;
+  } catch (error) {
+    toast(`${error.message || "공급사 상품을 열지 못했습니다."} 잠깐 뒤에 다시 눌러 주세요.`, true);
+    return false;
+  }
+};
+"""
+SERVER_FIX_CHECK_JS = r"""
+/* server-fix-check1 */
+(function () {
+  if (typeof api !== "function") return;
+  const original = api;
+  let checked = false;
+  async function fixStatus() {
+    try {
+      const response = await fetch(`/static/modumodu-fixes.json?t=${Date.now()}`, { cache: "no-store" });
+      return response.ok ? await response.json() : null;
+    } catch (error) {
+      return null;
+    }
+  }
+  async function warn(fixes) {
+    if (checked) return;
+    checked = true;
+    const status = await fixStatus();
+    const missing = [];
+    Object.entries(status?.files || {}).forEach(([file, marks]) => {
+      Object.entries(marks || {}).forEach(([mark, state]) => {
+        if (state !== "ok") missing.push(`${file} ${mark}: ${[].concat(state).join(", ")}`);
+      });
+    });
+    if (missing.length) {
+      alert(`공급처 상품명 수정이 프로그램 코드에 들어가지 못했습니다.\n이 창을 캡처해서 보내 주세요.\n\n${missing.join("\n")}`);
+      return;
+    }
+    if (fixes) {
+      const off = Object.entries(fixes).filter(([, on]) => !on).map(([name]) => name);
+      alert(`공급처 상품명 수정 일부가 실행 중인 프로그램에 없습니다.\n이 창을 캡처해서 보내 주세요.\n\n${off.join(", ")}`);
+      return;
+    }
+    const quit = confirm("프로그램이 아직 예전 코드로 실행 중이라 공급처 상품명이 번호로 나올 수 있습니다.\n\n'확인'을 누르면 프로그램을 종료합니다. 그다음 바탕화면의 모두모두AI 아이콘을 다시 눌러 주세요.");
+    if (!quit) return;
+    try {
+      await original("/api/shutdown", { method: "POST", quiet: true });
+      toast("프로그램을 종료했습니다. 바탕화면의 모두모두AI 아이콘을 다시 눌러 주세요.");
+    } catch (error) {
+      toast(error.message || "종료하지 못했습니다.", true);
+    }
+  }
+  api = async function (path, options) {
+    const data = await original(path, options);
+    if (/^\/api\/wholesalers\/[^/]+\/(catalog|import)(\?|$)/.test(String(path || "")) && data && typeof data === "object") {
+      const fixes = data.server_fixes;
+      if (!fixes || !fixes.godo_name || !fixes.godo_site) warn(fixes).catch(() => {});
+    }
+    return data;
+  };
+})();
+"""
+MASTER_LOGIN2_CSS = """
+/* master-login2 */
+#masterLogin .master-login-card input,
+#masterLogin .master-login-card input:focus {
+  background: #fff !important;
+  color: #111 !important;
+  caret-color: #111;
+  border: 1px solid #98a2b3 !important;
+  font-size: 18px;
+  letter-spacing: 0.12em;
+}
+#masterLogin .master-login-card input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 40px #fff inset !important;
+  -webkit-text-fill-color: #111 !important;
+}
+#masterLogin .seller-password-line { margin-top: 6px; }
+#masterLogin .seller-password-line input { margin-top: 0; }
+"""
+
+MASTER_LOGIN3_CSS = """
+/* master-login3 */
+#masterLogin {
+  background: radial-gradient(circle at 50% 30%, rgba(30, 64, 120, 0.55), rgba(8, 12, 20, 0.82));
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+#masterLogin .master-login-card {
+  position: relative;
+  width: min(380px, 100%);
+  padding: 34px 30px 26px;
+  border: 0;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  text-align: center;
+}
+#masterLogin .master-login-card::before {
+  content: "M";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #0b5cab, #3d9eed);
+  box-shadow: 0 10px 24px rgba(11, 92, 171, 0.35);
+  color: #fff;
+  font-size: 24px;
+  font-weight: 800;
+}
+#masterLogin .master-login-card h1 {
+  margin: 0 0 6px;
+  font-size: 23px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+#masterLogin .master-login-card p {
+  margin: 0 0 22px;
+  font-size: 13px;
+  color: #8a94a6;
+}
+#masterLogin .master-login-card label {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: #475467;
+}
+#masterLogin .seller-password-line {
+  position: relative;
+  display: block;
+  margin-top: 8px;
+}
+#masterLogin .master-login-card input,
+#masterLogin .master-login-card input:focus {
+  width: 100%;
+  height: 50px;
+  margin: 0;
+  padding: 0 70px 0 16px;
+  border: 1.5px solid #d0d5dd !important;
+  border-radius: 14px;
+  background: #f8fafc !important;
+  color: #101828 !important;
+  font-size: 20px;
+  letter-spacing: 0.18em;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+#masterLogin .master-login-card input:focus {
+  border-color: #0b5cab !important;
+  background: #fff !important;
+  box-shadow: 0 0 0 4px rgba(11, 92, 171, 0.14);
+}
+#masterLogin .seller-peek {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #0b5cab;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#masterLogin .seller-peek:hover { background: #eef4fb; }
+#masterLogin #masterLoginError {
+  min-height: 0;
+  margin: 8px 2px 0;
+  text-align: left;
+  font-size: 12.5px;
+}
+#masterLogin #masterLoginError:empty { display: none; }
+#masterLogin .master-login-card button[type="submit"] {
+  height: 50px;
+  margin-top: 18px;
+  border: 0;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0b5cab, #2f8de4);
+  box-shadow: 0 10px 22px rgba(11, 92, 171, 0.3);
+  font-size: 16px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.15s, filter 0.15s;
+}
+#masterLogin .master-login-card button[type="submit"]:hover { filter: brightness(1.06); box-shadow: 0 14px 28px rgba(11, 92, 171, 0.38); }
+#masterLogin .master-login-card button[type="submit"]:active { transform: translateY(1px); }
+"""
+
+SELLER_LOGIN2_CSS = """
+/* seller-login2 */
+#sellerIssuedPassword {
+  margin: 8px 0 12px;
+  padding: 12px 8px;
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  font-weight: 800;
+  font-family: Consolas, "Malgun Gothic", monospace;
+  background: var(--soft);
+  border-radius: 8px;
+}
+#sellerLoginCheck, #sellerLoginEnter {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border-color: #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+"""
+
+SELLER_LOGIN_NOTE = (
+    '<p id="sellerLoginNote">처음 쓰는 전화번호에는 비밀번호를 발급합니다. '
+    "같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.</p>"
+)
+
+SELLER_HELP = """모두모두AI 셀러용
+
+구매자가 설치해서 쓰는 판매용 프로그램입니다.
+처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
+상품담기, 상품관리, 주문관리, 문의관리, 공급처, 설정은 사용할 수 있습니다.
+
+설치
+1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
+2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
+3. 브라우저에서 셀러용 로그인 창이 열립니다. 주소는 http://127.0.0.1:8788 입니다.
+4. 프로그램을 끝낼 때는 화면 위쪽의 종료를 누릅니다.
+
+업데이트
+새 버전이 있으면 모두모두AI 셀러용을 실행할 때 안내가 나옵니다.
+동의하면 파일을 받고, 이 컴퓨터의 상품과 설정은 그대로 둡니다.
+
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인은 나오지 않습니다.
+"""
+
+SELLER_README = """모두모두AI 셀러용 설치
+
+1. 모두모두AI-셀러용-설치.exe 를 더블클릭합니다.
+2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
+3. 브라우저에서 셀러용 로그인 창이 열립니다. 주소는 http://127.0.0.1:8788 입니다.
+4. 새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다. 상품과 설정은 그대로 둡니다.
+로그인 창이 뜨지 않으면 모두모두AI-셀러용-설치.exe 를 다시 실행합니다.
+5. 처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.
+
+마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
+"""
+
+SELLER_INSTALL_NOTE = (
+    '<p id="sellerInstallNote">구매자는 모두모두AI-셀러용-설치.exe 로 설치합니다. '
+    "설치한 뒤에는 실행할 때 업데이트를 받을 수 있습니다.</p>"
+)
+
+SELLER_NOTE_HTML = (
+    "<!-- seller-help1 -->\n"
+    '<p id="sellerHelpNote">셀러용에는 로그인 정보와 상품 URL 수집이 없습니다. '
+    "마켓 아이디, 패스워드, 관리자키, 공급처 로그인 칸이 없고, 주소로 상품을 수집하는 칸도 없습니다.</p>"
+)
+ADMIN_HELP_BUTTON = '<button type="button" data-help="help-admins">관리자 관리</button>'
+ADMIN_HELP_SECTION = """<section class="help-panel" id="help-admins" data-help-panel="help-admins" hidden>
+<h2>관리자 관리</h2>
+<p>설정 &gt; 관리자 관리에서 상품관리, 주문관리, 문의관리 매니저를 초대합니다. 아이디, 패스워드, 관리자키는 그대로 두고, 초대받은 관리자는 맡은 기능만 사용합니다. 상품관리에는 상품담기가 포함됩니다. 목록에서 지워도 이미 보낸 주소는 계속 열립니다.</p>
+<p>셀러용 화면에는 로그인 정보와 상품 URL 수집이 없습니다.</p>
+</section>
+"""
+SETTINGS_HELP_NOTE = "셀러용에는 아이디, 패스워드, 아이디키, 시크릿키, 업체코드, ESM ID, 판매자 account_id 칸이 없습니다."
+WHOLESALE_HELP_NOTE = "셀러용에는 로그인 아이디와 비밀번호 칸이 없습니다."
+
+
+def patch_help(text: str) -> str:
+    text = text.replace("배포용", "셀러용")
+    if 'id="sellerHelpNote"' not in text:
+        closing = "프로그램을 끝낼 때는 위쪽의 종료를 누릅니다.</p>"
+        if closing in text:
+            text = text.replace(closing, closing + "\n" + SELLER_NOTE_HTML, 1)
+        else:
+            token = 'id="help-overview"'
+            pos = text.find(token)
+            if pos >= 0:
+                end = text.find(">", pos)
+                if end >= 0:
+                    text = text[: end + 1] + "\n" + SELLER_NOTE_HTML + text[end + 1 :]
+    if 'id="sellerInstallNote"' not in text and 'id="sellerHelpNote"' in text:
+        pos = text.find('id="sellerHelpNote"')
+        end = text.find("</p>", pos)
+        if end >= 0:
+            text = text[: end + 4] + "\n" + SELLER_INSTALL_NOTE + text[end + 4 :]
+    if 'id="sellerLoginNote"' not in text and 'id="sellerHelpNote"' in text:
+        anchor = 'id="sellerInstallNote"' if 'id="sellerInstallNote"' in text else 'id="sellerHelpNote"'
+        pos = text.find(anchor)
+        end = text.find("</p>", pos)
+        if end >= 0:
+            text = text[: end + 4] + "\n" + SELLER_LOGIN_NOTE + text[end + 4 :]
+    text = text.replace(
+        "프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.",
+        "처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.",
+    )
+    if 'data-help="help-admins"' not in text:
+        needle = 'data-help="help-data"'
+        pos = text.find(needle)
+        if pos >= 0:
+            start = text.rfind("<button", 0, pos)
+            if start >= 0:
+                text = text[:start] + ADMIN_HELP_BUTTON + "\n        " + text[start:]
+    if 'id="help-admins"' not in text:
+        needle = 'id="help-data"'
+        pos = text.find(needle)
+        if pos >= 0:
+            start = text.rfind("<section", 0, pos)
+            if start >= 0:
+                text = text[:start] + ADMIN_HELP_SECTION + text[start:]
+    if SETTINGS_HELP_NOTE not in text:
+        old = "저장 후 연동 테스트를 누릅니다."
+        if old in text:
+            text = text.replace(old, old + " " + SETTINGS_HELP_NOTE, 1)
+    if WHOLESALE_HELP_NOTE not in text:
+        old = "상품 검색·담기는 <strong>상품담기</strong> 메뉴에서 합니다."
+        if old in text:
+            text = text.replace(old, old + " " + WHOLESALE_HELP_NOTE, 1)
+    stock_help = (
+        "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 마스터상품과 각 마켓 상품을 본 뒤, "
+        "모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다. "
+        "진행하면 마스터상품과 각 마켓 상품에 함께 적용됩니다."
+    )
+    text = text.replace(
+        "품절/재판매: 고른 상품의 공급처 재고를 확인한 뒤, 품절로 바꾸기 또는 재판매로 바꾸기를 누릅니다.",
+        stock_help,
+    )
+    text = text.replace(
+        "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 목록을 본 뒤, 모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다.",
+        stock_help,
+    )
+    return text
+
+
+def _is_program_dir(path: Path) -> bool:
+    return (
+        (path / "MODUMODU.exe").is_file()
+        or (path / "launcher.py").is_file()
+        or (path / "app" / "static" / "index.html").is_file()
+    )
+
+
+def _inside(child: Path, parent: Path) -> bool:
+    try:
+        child.resolve().relative_to(parent.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def _protected_dir(path: Path, root: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return True
+    script_dir = Path(__file__).resolve().parent
+    if resolved == script_dir or resolved == root.resolve():
+        return True
+    return _inside(script_dir, resolved)
+
+
+def _search_bases(root: Path) -> list[Path]:
+    bases = [root, root / "배포", root / "dist"]
+    parent = root.parent
+    if parent.name in {"배포", "dist"}:
+        bases.append(parent)
+    return bases
+
+
+def _program_dirs(root: Path) -> list[Path]:
+    found: list[Path] = []
+    seen: set[Path] = set()
+    for base in _search_bases(root):
+        if not base.exists():
+            continue
+        candidates = [base]
+        if base.is_dir():
+            try:
+                candidates.extend(child for child in base.iterdir() if child.is_dir())
+            except OSError:
+                continue
+        for path in candidates:
+            try:
+                key = path.resolve()
+            except OSError:
+                continue
+            if key in seen or not _is_program_dir(path):
+                continue
+            seen.add(key)
+            found.append(path)
+    return found
+
+
+def _crlf_bytes(text: str) -> bytes:
+    return text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")
+
+
+def _same_text(path: Path, expected: str) -> bool:
+    if not path.is_file():
+        return False
+    current = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+    return current == expected.replace("\r\n", "\n")
+
+
+def prepare_seller_folder(folder: Path) -> bool:
+    changed = False
+    edition = folder / "edition.txt"
+    current = edition.read_text(encoding="utf-8-sig").strip() if edition.is_file() else ""
+    if current != "test":
+        edition.write_bytes(b"test\r\n")
+        changed = True
+    exe = folder / "MODUMODU.exe"
+    if exe.is_file():
+        data = exe.read_bytes()
+        if _OLD_LINK in data:
+            exe.write_bytes(data.replace(_OLD_LINK, _NEW_LINK))
+            changed = True
+    help_path = folder / "사용방법-셀러용.txt"
+    if not _same_text(help_path, SELLER_HELP):
+        help_path.write_bytes(_crlf_bytes(SELLER_HELP))
+        changed = True
+    for name in ("사용방법-배포용.txt", "사용방법-테스트용.txt", "사용방법-마스터.txt"):
+        old_help = folder / name
+        if old_help.is_file():
+            old_help.unlink()
+            changed = True
+    if _ensure_seller_update_url(folder):
+        changed = True
+    bat = folder / "설치.bat"
+    if bat.is_file():
+        bat.unlink()
+        changed = True
+    return changed
+
+
+def _ensure_seller_update_url(folder: Path) -> bool:
+    path = folder / "update_url.txt"
+    current = path.read_text(encoding="utf-8-sig").strip() if path.is_file() else ""
+    if current == SELLER_UPDATE_URL:
+        return False
+    if current.startswith("https://") and "ibccomae-cpu/smartstore-uploader" not in current:
+        return False
+    path.write_bytes((SELLER_UPDATE_URL + "\r\n").encode("utf-8"))
+    return True
+
+
+def _installer_exe() -> Path | None:
+    env = os.environ.get("MODUMODU_SELLER_SETUP_EXE", "").strip()
+    candidates = [Path(env)] if env else []
+    candidates.append(Path(__file__).resolve().parent / "셀러용-설치.exe")
+    for path in candidates:
+        if path.is_file():
+            return path
+    return None
+
+
+def _setup_dir(root: Path) -> Path:
+    parent = root / "배포"
+    if root.parent.name in {"배포", "dist"} and root.resolve() != root.parent.resolve():
+        parent = root.parent
+    return parent / "모두모두AI-셀러용-설치"
+
+
+def _sync_program(src: Path, dest: Path) -> bool:
+    changed = False
+    skip = {"data", "launcher.log", "__pycache__", "설치.bat"}
+    dest.mkdir(parents=True, exist_ok=True)
+    seen: set[str] = set()
+    for path in src.rglob("*"):
+        rel = path.relative_to(src)
+        if any(part in skip for part in rel.parts):
+            continue
+        if _inside(path, dest) or path.resolve() == dest.resolve():
+            continue
+        seen.add(rel.as_posix())
+        target = dest / rel
+        if path.is_dir():
+            if not target.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                changed = True
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        same = False
+        if target.is_file():
+            src_stat = path.stat()
+            dst_stat = target.stat()
+            same = src_stat.st_size == dst_stat.st_size and int(src_stat.st_mtime) == int(dst_stat.st_mtime)
+        if not same:
+            shutil.copy2(path, target)
+            changed = True
+    for path in list(dest.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(dest)
+        if any(part in skip for part in rel.parts):
+            continue
+        if rel.as_posix() not in seen:
+            path.unlink()
+            changed = True
+    data_dir = dest / "data"
+    if data_dir.exists():
+        shutil.rmtree(data_dir)
+        changed = True
+    return changed
+
+
+SETUP_ZIP_BUILT = False
+
+
+def _write_setup_zip(setup: Path, dest: Path) -> bool:
+    signature = hashlib.sha256()
+    files = [path for path in sorted(setup.rglob("*")) if path.is_file() and path.name != ".seller-setup.sha"]
+    for path in files:
+        stat = path.stat()
+        signature.update(path.relative_to(setup).as_posix().encode("utf-8"))
+        signature.update(str(stat.st_size).encode("ascii"))
+        signature.update(str(int(stat.st_mtime)).encode("ascii"))
+    digest = signature.hexdigest()
+    stamp = setup / ".seller-setup.sha"
+    if dest.is_file() and stamp.is_file() and stamp.read_text(encoding="utf-8").strip() == digest:
+        return False
+    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in files:
+            info = zipfile.ZipInfo(path.relative_to(setup).as_posix(), date_time=(2026, 10, 28, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.flag_bits |= 0x800
+            archive.writestr(info, path.read_bytes())
+    stamp.write_text(digest + "\n", encoding="utf-8")
+    global SETUP_ZIP_BUILT
+    SETUP_ZIP_BUILT = True
+    return True
+
+
+def build_seller_setup(root: Path, source: Path) -> bool:
+    if "셀러용" in root.name:
+        return False
+    setup = _setup_dir(root)
+    if source.resolve() == setup.resolve() or _inside(source.resolve(), setup.resolve()):
+        return False
+    setup.mkdir(parents=True, exist_ok=True)
+    payload = setup / "프로그램"
+    changed = _sync_program(source, payload)
+    if prepare_seller_folder(payload):
+        changed = True
+    readme = setup / "읽어주세요.txt"
+    if not _same_text(readme, SELLER_README):
+        readme.write_bytes(_crlf_bytes(SELLER_README))
+        changed = True
+    exe = _installer_exe()
+    if exe is not None:
+        dest = setup / "모두모두AI-셀러용-설치.exe"
+        data = exe.read_bytes()
+        if not dest.is_file() or dest.read_bytes() != data:
+            dest.write_bytes(data)
+            changed = True
+    zip_path = setup.parent / "모두모두AI-셀러용-설치.zip"
+    if _write_setup_zip(setup, zip_path):
+        changed = True
+    return changed
+
+
+def _copy_ignore(dest: Path):
+    dest_resolved = dest.resolve()
+
+    def ignore(dirpath: str, names: list[str]) -> set[str]:
+        skip = {name for name in names if name in {"data", "launcher.log", "__pycache__"}}
+        parent = Path(dirpath)
+        for name in names:
+            candidate = parent / name
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            if resolved == dest_resolved or _inside(dest_resolved, resolved):
+                skip.add(name)
+        return skip
+
+    return ignore
+
+
+def _seller_destination(root: Path) -> Path:
+    parent = root.parent
+    if parent.name in {"배포", "dist"} and root.resolve() != parent.resolve():
+        return parent / "MODUMODU-셀러용"
+    return root / "배포" / "MODUMODU-셀러용"
+
+
+def _remove_old_editions(root: Path, keep: set[Path]) -> bool:
+    changed = False
+    keep_resolved = {path.resolve() for path in keep}
+    for base in _search_bases(root):
+        if not base.is_dir():
+            continue
+        targets = []
+        if "배포용" in base.name or "테스트용" in base.name:
+            targets.append(base)
+        try:
+            children = list(base.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if child.is_dir() and ("배포용" in child.name or "테스트용" in child.name):
+                targets.append(child)
+        for target in targets:
+            if not target.exists():
+                continue
+            if "마스터" in target.name:
+                continue
+            try:
+                resolved = target.resolve()
+            except OSError:
+                continue
+            if resolved in keep_resolved or _protected_dir(target, root):
+                continue
+            shutil.rmtree(target)
+            changed = True
+    return changed
+
+
+def _desktop_dirs(desktops) -> list[Path]:
+    if desktops is not None:
+        return [Path(path) for path in desktops]
+    if os.name != "nt":
+        return []
+    found = []
+    home = Path.home()
+    for name in ("Desktop", "바탕 화면"):
+        path = home / name
+        if path.is_dir():
+            found.append(path)
+    public = Path(os.environ.get("PUBLIC", r"C:\Users\Public")) / "Desktop"
+    if public.is_dir():
+        found.append(public)
+    return found
+
+
+def _create_seller_shortcut(desktop: Path, folder: Path) -> bool:
+    if os.name != "nt":
+        return False
+    exe = folder / "셀러실행.exe"
+    if not exe.is_file():
+        exe = folder / "MODUMODU.exe"
+    if not exe.is_file():
+        return False
+    link = desktop / "모두모두AI 셀러용.lnk"
+    script = (
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:SELLER_LINK); "
+        "$s.TargetPath=$env:SELLER_TARGET; $s.WorkingDirectory=$env:SELLER_WORK; "
+        "$s.IconLocation=$env:SELLER_ICON; $s.Description='모두모두AI 셀러용'; $s.Save()"
+    )
+    env = os.environ.copy()
+    env.update(
+        {
+            "SELLER_LINK": str(link),
+            "SELLER_TARGET": str(exe),
+            "SELLER_WORK": str(folder),
+            "SELLER_ICON": str(exe) + ",0",
+        }
+    )
+    subprocess.run(["powershell", "-NoProfile", "-Command", script], env=env, check=False)
+    return link.is_file()
+
+
+def _refresh_shortcuts(seller_dirs: list[Path], desktops) -> bool:
+    changed = False
+    for desktop in _desktop_dirs(desktops):
+        if not desktop.is_dir():
+            continue
+        for name in (
+            "모두모두AI 배포용.lnk",
+            "모두모두AI 테스트용.lnk",
+            "모두모두AI 배포용.url",
+            "모두모두AI 테스트용.url",
+        ):
+            path = desktop / name
+            if path.is_file():
+                path.unlink()
+                changed = True
+        if seller_dirs and _create_seller_shortcut(desktop, seller_dirs[0]):
+            changed = True
+    return changed
+
+
+def arrange_seller_copies(root: Path, desktops=None) -> bool:
+    if not root.exists():
+        return False
+    root = root.resolve()
+    changed = False
+    dirs = _program_dirs(root)
+    seller_dirs = [path for path in dirs if "셀러용" in path.name]
+    removable: list[Path] = []
+    for path in dirs:
+        if "배포용" not in path.name and "테스트용" not in path.name:
+            continue
+        if _protected_dir(path, root):
+            if path not in seller_dirs:
+                seller_dirs.append(path)
+            continue
+        removable.append(path)
+    if not seller_dirs:
+        prefer = [path for path in removable if "배포용" in path.name]
+        pick = prefer[0] if prefer else (removable[0] if removable else None)
+        if pick is not None:
+            new_name = pick.name.replace("배포용", "셀러용").replace("테스트용", "셀러용")
+            dest = pick.with_name(new_name)
+            if not dest.exists():
+                pick.rename(dest)
+                removable = [path for path in removable if path != pick]
+                seller_dirs.append(dest)
+                changed = True
+        else:
+            source = next((path for path in dirs if "마스터" in path.name), None)
+            if source is None and _is_program_dir(root) and "셀러용" not in root.name:
+                source = root
+            if source is not None:
+                dest = _seller_destination(root)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if not dest.exists():
+                    shutil.copytree(source, dest, ignore=_copy_ignore(dest))
+                    seller_dirs.append(dest)
+                    changed = True
+                elif dest not in seller_dirs:
+                    seller_dirs.append(dest)
+    keep = set(seller_dirs)
+    for seller in seller_dirs:
+        if prepare_seller_folder(seller):
+            changed = True
+        if seller.resolve() != root:
+            if apply_static_patches(seller):
+                changed = True
+            if write_screen_version(seller):
+                changed = True
+            if patch_murray_sources(seller):
+                changed = True
+            if write_frozen_fixes(seller):
+                changed = True
+    if _remove_old_editions(root, keep):
+        changed = True
+    if _refresh_shortcuts(seller_dirs, desktops):
+        changed = True
+    setup = _setup_dir(root)
+    sources = []
+    for path in seller_dirs:
+        resolved = path.resolve()
+        if resolved == setup.resolve() or _inside(resolved, setup.resolve()):
+            continue
+        sources.append(path)
+    if sources and build_seller_setup(root, sources[0]):
+        changed = True
+    return changed
+
 
 def read_text(path: Path) -> tuple[str, str]:
     raw = path.read_bytes()
@@ -1907,8 +4597,774 @@ def patch_store_label(text: str) -> str:
 
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
-    text = bump_asset(text, "styles.css", "invite-settings1")
-    return bump_asset(text, "app.js", "invite-settings1")
+    text = patch_help(text)
+    text = bump_asset(text, "styles.css", "open-login1")
+    return bump_asset(text, "app.js", "open-login1")
+
+
+COLLECT_URL_JS = r"""
+/* collect-url1 */
+function collectIdentity(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return { key: "", no: "" };
+  let parsed = null;
+  try { parsed = new URL(raw); } catch (error) { parsed = null; }
+  const idNames = ["product_no", "productno", "goods_no", "goodsno", "it_id", "product_id", "prdno", "item_id", "branduid", "idx"];
+  if (!parsed) {
+    const plain = raw.replace(/\/+$/, "").toLowerCase().split("?")[0];
+    return { key: plain, no: "" };
+  }
+  let found = "";
+  let foundName = "";
+  idNames.forEach((name) => {
+    if (found) return;
+    const value = parsed.searchParams.get(name);
+    if (value && String(value).trim()) {
+      found = String(value).trim();
+      foundName = name;
+    }
+  });
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const pretty = path.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/i);
+  const no = found || (pretty ? pretty[1] : "");
+  const key = found
+    ? `${parsed.origin}${path}?${foundName}=${found}`.toLowerCase()
+    : `${parsed.origin}${path}`.toLowerCase();
+  return { key, no };
+}
+function normalizeCollectUrl(url) {
+  return collectIdentity(url).key;
+}
+function cafe24CollectedKeys(wholesalerId) {
+  const nos = new Set();
+  const urls = new Set();
+  const id = String(wholesalerId || "");
+  products.forEach((item) => {
+    if (!isMasterProduct(item)) return;
+    if (id && productWholesalerId(item) !== id) return;
+    const no = String(item.wholesale_product_no || "").trim();
+    if (no) nos.add(no);
+    const ident = collectIdentity(item.source_url);
+    if (ident.no) nos.add(ident.no);
+    if (ident.key) urls.add(ident.key);
+  });
+  return { nos, urls };
+}
+function isCafe24AlreadyCollected(item, keys) {
+  const no = String(item?.product_no || "").trim();
+  const ident = collectIdentity(item?.url);
+  const itemNo = no || ident.no;
+  if (itemNo && keys.nos.has(itemNo)) return true;
+  if (!ident.key || !keys.urls.has(ident.key)) return false;
+  if (itemNo && !ident.key.includes(itemNo)) return false;
+  return true;
+}
+"""
+
+
+STOCK_LIST_JS = r"""
+/* stock-list1 */
+let stockSupplierId = "";
+let stockPicked = new Set();
+let stockSeenIds = new Set();
+let stockListQuery = "";
+let stockListStamp = "";
+
+function stockLookupLabel() {
+  if (stockJob && stockJob.status === "running") return "조회 중";
+  if (stockJob && stockJob.status && stockJob.status !== "running") return "다시 조회하기";
+  return stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+}
+
+function stockProceedLabel() {
+  return stockMode === "resale" ? "재판매진행" : "품절진행";
+}
+
+function stockServerIds() {
+  if (!stockJob) return null;
+  const key = stockMode === "resale" ? "resale_ids" : "soldout_ids";
+  const ids = stockJob[key];
+  if (!Array.isArray(ids)) return null;
+  return ids.map((id) => String(id || "")).filter(Boolean);
+}
+
+function stockRows() {
+  const id = String(stockSupplierId || "");
+  const rows = products.filter((item) => id && !item.market_id && productWholesalerId(item) === id);
+  const seen = new Set();
+  const unique = [];
+  rows.forEach((item) => {
+    const key = String(item.id || "");
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(item);
+  });
+  unique.sort((a, b) => {
+    const sold = (item) => (item.wholesale_soldout ? 0 : 1);
+    if (sold(a) !== sold(b)) return sold(a) - sold(b);
+    return String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  });
+  return unique;
+}
+
+function stockListedRows() {
+  const rows = stockRows();
+  const ids = stockServerIds();
+  if (!ids) return rows;
+  const wanted = new Set(ids);
+  const matched = rows.filter((item) => wanted.has(String(item.id)));
+  ids.forEach((id) => {
+    if (matched.some((item) => String(item.id) === id)) return;
+    const found = products.find((item) => String(item.id) === id);
+    matched.push(found || { id, name: `상품 ${id}`, wholesale_soldout: stockMode === "soldout" });
+  });
+  return matched;
+}
+
+function adoptStockRows() {
+  stockListedRows().forEach((item) => {
+    const id = String(item.id || "");
+    if (!id || stockSeenIds.has(id)) return;
+    stockSeenIds.add(id);
+    stockPicked.add(id);
+  });
+}
+
+function stockSelectionComplete() {
+  const rows = stockListedRows();
+  if (!rows.length) return true;
+  return rows.every((item) => stockPicked.has(String(item.id)));
+}
+
+function stockResultCount() {
+  if (!stockJob) return 0;
+  return stockMode === "resale" ? Number(stockJob.resale_count || 0) : Number(stockJob.soldout_count || 0);
+}
+
+function stockProceedReady() {
+  if (!stockJob || stockJob.status === "running" || stockJob.status === "error" || stockJob.status === "cancelled") return false;
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  if ((stockJob.applied || {})[kind] != null) return false;
+  if (!stockResultCount()) return false;
+  return stockSelectionComplete();
+}
+
+function stockEscape(value) {
+  return String(value ?? "").replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+}
+
+function stockSummaryText() {
+  const rows = stockListedRows();
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  const applied = stockJob?.applied || {};
+  if (!stockJob) {
+    const noun = stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+    return `아래는 이 공급처에 담아 둔 상품입니다. ${noun}를 누른 뒤, 모두 선택한 상태에서 ${stockProceedLabel()}을 누르세요.`;
+  }
+  if (stockJob.status === "running") return "공급처 상품을 확인하는 중입니다. 목록에서 상품을 미리 볼 수 있습니다.";
+  if (stockJob.status === "cancelled") return "조회를 중지했습니다.";
+  if (stockJob.status === "error") return stockJob.message || "조회하지 못했습니다.";
+  if (applied[kind] != null) {
+    return kind === "resale"
+      ? `${applied.resale}개 상품을 재판매로 바꿨습니다.`
+      : `${applied.soldout}개 상품을 품절로 바꿨습니다.`;
+  }
+  const count = stockResultCount();
+  if (!count) {
+    return kind === "resale" ? "재판매로 바꿀 상품이 없습니다." : "품절로 바꿀 상품이 없습니다.";
+  }
+  const named = stockServerIds()
+    ? "조회된 상품입니다."
+    : `담아 둔 상품 ${rows.length}개입니다.`;
+  const action = kind === "resale"
+    ? `공급처에서 다시 판매하는 상품 ${count}개를 재판매로 바꿉니다.`
+    : `공급처에서 품절로 확인된 상품 ${count}개를 품절로 바꿉니다.`;
+  if (!stockSelectionComplete()) {
+    return "지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 목록을 모두 선택한 뒤 진행해 주세요.";
+  }
+  return `${named} ${action} 모두 선택된 상태에서 ${stockProceedLabel()}을 누르세요.`;
+}
+
+function ensureStockList() {
+  const form = $("#stockForm");
+  if (!form || $("#stockList")) return;
+  const box = document.createElement("div");
+  box.innerHTML = `
+    <div class="stock-lookup-row">
+      <button type="button" id="stockLookup">품절상품 조회하기</button>
+    </div>
+    <p id="stockListSummary" class="hint"></p>
+    <div class="stock-list-tools">
+      <label><input type="checkbox" id="stockListAll" /> 전체선택</label>
+      <input type="search" id="stockListSearch" placeholder="상품명, 상품번호" autocomplete="off" />
+      <span id="stockListCount"></span>
+    </div>
+    <div id="stockList" class="stock-list"></div>
+  `;
+  const anchor = form.querySelector(".delivery-actions");
+  if (anchor) form.insertBefore(box, anchor);
+  else form.append(box);
+  $("#stockLookup").addEventListener("click", () => {
+    startStockLookup().catch((error) => toast(error.message, true));
+  });
+  $("#stockListAll").addEventListener("change", () => {
+    const on = $("#stockListAll").checked;
+    stockListedRows().forEach((item) => {
+      const id = String(item.id);
+      stockSeenIds.add(id);
+      if (on) stockPicked.add(id);
+      else stockPicked.delete(id);
+    });
+    stockListStamp = "";
+    renderStockList(true);
+  });
+  $("#stockListSearch").addEventListener("input", () => {
+    stockListQuery = $("#stockListSearch").value || "";
+    stockListStamp = "";
+    renderStockList(true);
+  });
+  $("#stockList").addEventListener("change", (event) => {
+    const boxInput = event.target.closest("input[data-stock-id]");
+    if (!boxInput) return;
+    const id = boxInput.getAttribute("data-stock-id") || "";
+    stockSeenIds.add(id);
+    if (boxInput.checked) stockPicked.add(id);
+    else stockPicked.delete(id);
+    syncStockSelection();
+  });
+  const soldBtn = $("#stockApplySoldout");
+  const resaleBtn = $("#stockApplyResale");
+  if (soldBtn) soldBtn.textContent = "품절진행";
+  if (resaleBtn) resaleBtn.textContent = "재판매진행";
+}
+
+function renderStockList(force) {
+  ensureStockList();
+  adoptStockRows();
+  const stamp = [
+    stockMode,
+    stockSupplierId,
+    stockListQuery,
+    stockJob?.id || "",
+    stockJob?.status || "",
+    stockJob?.soldout_count || 0,
+    stockJob?.resale_count || 0,
+    stockListedRows().length,
+  ].join("|");
+  const list = $("#stockList");
+  if (list && (force || stamp !== stockListStamp)) {
+    stockListStamp = stamp;
+    const query = stockListQuery.trim().toLowerCase();
+    const rows = stockListedRows().filter((item) => {
+      if (!query) return true;
+      const hay = `${item.name || ""} ${item.wholesale_product_no || ""} ${item.seller_code || ""}`.toLowerCase();
+      return hay.includes(query);
+    });
+    if (!rows.length) {
+      const empty = stockListQuery.trim() ? "찾는 상품이 없습니다." : "이 공급처에 담아 둔 상품이 없습니다.";
+      list.innerHTML = `<p class="stock-list-empty">${stockEscape(empty)}</p>`;
+    } else {
+      list.innerHTML = rows.map((item) => {
+        const id = String(item.id);
+        const checked = stockPicked.has(id) ? " checked" : "";
+        const sold = item.wholesale_soldout ? " is-soldout" : "";
+        const no = String(item.wholesale_product_no || "").trim();
+        const price = Number(item.price || 0).toLocaleString("ko-KR");
+        const state = item.wholesale_soldout ? "품절" : "정상";
+        const meta = [no, `${price}원`, state].filter(Boolean).join(" · ");
+        return `<label class="stock-list-row${sold}"><input type="checkbox" data-stock-id="${stockEscape(id)}"${checked} /><span class="stock-list-name">${stockEscape(item.name || "이름 없는 상품")}</span><span class="stock-list-meta">${stockEscape(meta)}</span></label>`;
+      }).join("");
+    }
+  }
+  syncStockSelection();
+}
+
+function syncStockSelection() {
+  const summary = $("#stockListSummary");
+  if (summary) summary.textContent = stockSummaryText();
+  const rows = stockListedRows();
+  const picked = rows.filter((item) => stockPicked.has(String(item.id))).length;
+  const count = $("#stockListCount");
+  if (count) count.textContent = rows.length ? `${picked} / ${rows.length}` : "";
+  const all = $("#stockListAll");
+  if (all) {
+    all.checked = rows.length > 0 && picked === rows.length;
+    all.indeterminate = picked > 0 && picked < rows.length;
+    all.disabled = !rows.length;
+  }
+  const lookup = $("#stockLookup");
+  if (lookup) {
+    lookup.textContent = stockLookupLabel();
+    lookup.disabled = stockJob?.status === "running";
+  }
+  const soldBtn = $("#stockApplySoldout");
+  const resaleBtn = $("#stockApplyResale");
+  if (soldBtn) soldBtn.textContent = "품절진행";
+  if (resaleBtn) resaleBtn.textContent = "재판매진행";
+  if (stockJob && $("#stockApplySoldout") && $("#stockApplyResale")) {
+    const running = stockJob.status === "running";
+    const applied = stockJob.applied || {};
+    const readySold = !running && stockMode === "soldout" && stockProceedReady();
+    const readyResale = !running && stockMode === "resale" && stockProceedReady();
+    $("#stockApplySoldout").disabled = !readySold || applied.soldout != null;
+    $("#stockApplyResale").disabled = !readyResale || applied.resale != null;
+  }
+}
+
+async function openStockDialog(mode = "soldout") {
+  const id = (productFilter && productFilter !== "all" && productFilter !== "url")
+    ? productFilter
+    : selectedWholesalerId();
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (wholesalers.find((row) => row.id === id)?.type === "ownerclan") {
+    throw new Error("오너클랜 상품은 상품담기에서 확인합니다.");
+  }
+  const supplier = wholesalers.find((row) => row.id === id);
+  clearTimeout(stockTimer);
+  stockJob = null;
+  stockMode = mode === "resale" ? "resale" : "soldout";
+  stockSupplierId = id;
+  stockListQuery = "";
+  stockListStamp = "";
+  stockPicked = new Set();
+  stockSeenIds = new Set();
+  ensureStockList();
+  const search = $("#stockListSearch");
+  if (search) search.value = "";
+  $("#stockTitle").textContent = stockModeLabel();
+  $("#stockRowSoldout").hidden = stockMode !== "soldout";
+  $("#stockRowResale").hidden = stockMode !== "resale";
+  $("#stockSupplier").textContent = stockMode === "resale"
+    ? `${supplier?.name || "공급처"}에 담아 둔 품절상품을 조회한 뒤, 재판매진행으로 다시 판매합니다.`
+    : `${supplier?.name || "공급처"}에 담아 둔 상품을 조회한 뒤, 품절진행으로 품절 처리합니다.`;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "조회 전";
+  $("#stockStep").textContent = "";
+  $("#stockChecked").textContent = "";
+  $("#stockProgress").value = 0;
+  $("#stockSoldoutText").textContent = "조회 전";
+  $("#stockResaleText").textContent = "조회 전";
+  $("#stockStop").disabled = true;
+  adoptStockRows();
+  renderStockList(true);
+  const dialog = $("#stockDialog");
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
+async function startStockLookup() {
+  const id = stockSupplierId;
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (stockJob?.status === "running") return;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "작업을 시작하는 중입니다.";
+  $("#stockStop").disabled = true;
+  syncStockSelection();
+  setBusy(true, `${stockModeLabel()} 상품을 조회하는 중입니다.`);
+  try {
+    stockJob = await api(`/api/wholesalers/${id}/stock-check`, { method: "POST", scope: "products" });
+  } catch (error) {
+    setBusy(false);
+    stockJob = { status: "error", phase: "시작하지 못했습니다.", done: 0, total: 0, checked: 0, products: 0, soldout_total: 0, soldout_count: 0, resale_count: 0, applied: {}, message: error.message };
+    renderStockJob(stockJob);
+    throw error;
+  }
+  log(`${stockModeLabel()} 상품 조회를 시작했습니다.`);
+  renderStockJob(stockJob);
+  pollStockJob();
+}
+
+function renderStockJob(job) {
+  const running = job.status === "running";
+  const total = Number(job.total || 0);
+  const done = Number(job.done || 0);
+  const progress = $("#stockProgress");
+  if (running && !total) progress.removeAttribute("value");
+  else progress.value = total ? Math.round((done / total) * 100) : (job.status === "done" || job.status === "cancelled" ? 100 : 0);
+  $("#stockPhase").textContent = job.phase || (running ? "조회 중" : "");
+  $("#stockStep").textContent = total ? `${done.toLocaleString("ko-KR")} / ${total.toLocaleString("ko-KR")}` : "";
+  $("#stockChecked").textContent = job.products ? `상품 ${job.products}개 중 ${job.checked || 0}개 확인` : "";
+  const applied = job.applied || {};
+  $("#stockSoldoutText").textContent = applied.soldout != null
+    ? `${applied.soldout}개를 품절로 바꿨습니다`
+    : `새로 품절 ${Number(job.soldout_count || 0)}개`;
+  $("#stockResaleText").textContent = applied.resale != null
+    ? `${applied.resale}개를 재판매로 바꿨습니다`
+    : `재판매 가능 ${Number(job.resale_count || 0)}개`;
+  $("#stockStop").disabled = !running || !stockJob;
+  if (job.message) $("#stockMessage").textContent = job.message;
+  renderStockList(false);
+}
+
+async function applyStockJob(kind) {
+  if (!stockJob) return;
+  const expected = kind === "resale" ? "resale" : "soldout";
+  if (stockMode !== expected) return;
+  if (!stockProceedReady()) {
+    renderStockList(false);
+    toast("지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 목록을 모두 선택한 뒤 진행해 주세요.", true);
+    return;
+  }
+  stockJob = await api(`/api/stock-jobs/${stockJob.id}/apply`, { method: "POST", body: JSON.stringify({ kind }) });
+  await loadProducts();
+  stockListStamp = "";
+  renderStockJob(stockJob);
+  const count = stockJob.applied?.[kind] || 0;
+  const message = kind === "soldout" ? `${count}개 상품을 품절로 바꿨습니다.` : `${count}개 상품을 재판매로 바꿨습니다.`;
+  $("#stockMessage").textContent = message;
+  log(message, "ok");
+  toast(message);
+}
+"""
+
+
+STOCK_LIST_CSS = """
+/* stock-list1 */
+#stockDialog { width: min(760px, calc(100vw - 24px)); }
+.stock-lookup-row { margin: 8px 0 4px; }
+.stock-list-tools { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.stock-list-tools input[type="search"] { flex: 1; min-width: 0; }
+.stock-list {
+  max-height: min(420px, 48vh);
+  overflow: auto;
+  border: 1px solid #c8c8c8;
+  background: #fff;
+}
+.stock-list-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid #eee;
+}
+.stock-list-row:last-child { border-bottom: 0; }
+.stock-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stock-list-meta { color: #666; font-size: 12px; white-space: nowrap; }
+.stock-list-row.is-soldout .stock-list-meta { color: #a33; }
+.stock-list-empty { margin: 0; padding: 16px 8px; color: #666; }
+"""
+
+
+STOCK_MARKET_JS = r"""
+/* stock-market1 */
+function stockPlaceLabel(item) {
+  if (!item || !item.market_id) return "마스터";
+  let name = "";
+  if (typeof marketOf === "function") {
+    const market = marketOf(item.market_id);
+    name = (market && (market.name || market.slug)) || "";
+  }
+  return String(name || item.market_name || "마켓");
+}
+
+function stockRows() {
+  const id = String(stockSupplierId || "");
+  const seen = new Set();
+  const take = (item) => {
+    const key = String(item?.id || "");
+    if (!key || seen.has(key)) return null;
+    seen.add(key);
+    return item;
+  };
+  const masters = [];
+  products.forEach((item) => {
+    if (!id || item.market_id || productWholesalerId(item) !== id) return;
+    const row = take(item);
+    if (row) masters.push(row);
+  });
+  const masterIds = new Set(masters.map((item) => String(item.id)));
+  const copies = [];
+  products.forEach((item) => {
+    if (!item || !item.market_id) return;
+    const linked = masterIds.has(String(item.master_id || "")) || productWholesalerId(item) === id;
+    if (!linked) return;
+    const row = take(item);
+    if (row) copies.push(row);
+  });
+  const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""), "ko");
+  const soldRank = (item) => (item.wholesale_soldout ? 0 : 1);
+  masters.sort((a, b) => soldRank(a) - soldRank(b) || byName(a, b));
+  const grouped = new Map();
+  copies.forEach((item) => {
+    const key = String(item.master_id || "");
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(item);
+  });
+  const rows = [];
+  masters.forEach((master) => {
+    rows.push(master);
+    const kids = grouped.get(String(master.id)) || [];
+    kids.sort((a, b) => stockPlaceLabel(a).localeCompare(stockPlaceLabel(b), "ko") || byName(a, b));
+    kids.forEach((kid) => rows.push(kid));
+    grouped.delete(String(master.id));
+  });
+  const orphans = [];
+  grouped.forEach((kids) => orphans.push(...kids));
+  orphans.sort((a, b) => soldRank(a) - soldRank(b) || stockPlaceLabel(a).localeCompare(stockPlaceLabel(b), "ko") || byName(a, b));
+  orphans.forEach((item) => rows.push(item));
+  return rows;
+}
+
+function stockSummaryText() {
+  const rows = stockListedRows();
+  const masters = rows.filter((item) => !item.market_id).length;
+  const markets = rows.length - masters;
+  const kind = stockMode === "resale" ? "resale" : "soldout";
+  const applied = stockJob?.applied || {};
+  const noun = stockMode === "resale" ? "재판매상품 조회하기" : "품절상품 조회하기";
+  const place = markets
+    ? `마스터상품 ${masters}개, 마켓 상품 ${markets}개`
+    : `마스터상품 ${masters}개`;
+  if (!stockJob) {
+    return `아래는 이 공급처의 ${place}입니다. ${noun}를 누른 뒤, 모두 선택한 상태에서 ${stockProceedLabel()}을 누르세요. 진행하면 마스터상품과 각 마켓 상품에 함께 적용됩니다.`;
+  }
+  if (stockJob.status === "running") return "공급처 상품을 확인하는 중입니다. 마스터상품과 각 마켓 상품을 미리 볼 수 있습니다.";
+  if (stockJob.status === "cancelled") return "조회를 중지했습니다.";
+  if (stockJob.status === "error") return stockJob.message || "조회하지 못했습니다.";
+  if (applied[kind] != null) {
+    return kind === "resale"
+      ? `마스터상품과 각 마켓 상품에 재판매를 적용했습니다. ${applied.resale}개 상품의 품절 표시를 바꿨습니다.`
+      : `마스터상품과 각 마켓 상품에 품절을 적용했습니다. ${applied.soldout}개 상품의 품절 표시를 바꿨습니다.`;
+  }
+  const count = stockResultCount();
+  if (!count) {
+    return kind === "resale" ? "재판매로 바꿀 상품이 없습니다." : "품절로 바꿀 상품이 없습니다.";
+  }
+  const action = kind === "resale"
+    ? `공급처에서 다시 판매하는 상품 ${count}개를 마스터상품과 각 마켓 상품에 재판매로 적용합니다.`
+    : `공급처에서 품절로 확인된 상품 ${count}개를 마스터상품과 각 마켓 상품에 품절로 적용합니다.`;
+  if (!stockSelectionComplete()) {
+    return "지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 마스터상품과 각 마켓 상품을 모두 선택한 뒤 진행해 주세요.";
+  }
+  return `${place}입니다. ${action}`;
+}
+
+function renderStockList(force) {
+  ensureStockList();
+  adoptStockRows();
+  const listed = stockListedRows();
+  const stamp = [
+    stockMode,
+    stockSupplierId,
+    stockListQuery,
+    stockJob?.id || "",
+    stockJob?.status || "",
+    stockJob?.soldout_count || 0,
+    stockJob?.resale_count || 0,
+    listed.map((item) => `${item.id}:${item.market_id || ""}:${item.wholesale_soldout ? 1 : 0}:${item.sale_status || ""}`).join(","),
+  ].join("|");
+  const list = $("#stockList");
+  if (list && (force || stamp !== stockListStamp)) {
+    stockListStamp = stamp;
+    const query = stockListQuery.trim().toLowerCase();
+    const rows = listed.filter((item) => {
+      if (!query) return true;
+      const hay = `${item.name || ""} ${item.wholesale_product_no || ""} ${item.seller_code || ""} ${stockPlaceLabel(item)}`.toLowerCase();
+      return hay.includes(query);
+    });
+    if (!rows.length) {
+      const empty = stockListQuery.trim() ? "찾는 상품이 없습니다." : "이 공급처의 마스터상품이 없습니다.";
+      list.innerHTML = `<p class="stock-list-empty">${stockEscape(empty)}</p>`;
+    } else {
+      list.innerHTML = rows.map((item) => {
+        const id = String(item.id);
+        const checked = stockPicked.has(id) ? " checked" : "";
+        const sold = item.wholesale_soldout ? " is-soldout" : "";
+        const role = item.market_id ? " is-market" : " is-master";
+        const no = String(item.wholesale_product_no || "").trim();
+        const price = Number(item.price || 0).toLocaleString("ko-KR");
+        const state = item.wholesale_soldout ? "품절" : "정상";
+        const meta = [no, `${price}원`, state].filter(Boolean).join(" · ");
+        const place = stockEscape(stockPlaceLabel(item));
+        return `<label class="stock-list-row${sold}${role}"><input type="checkbox" data-stock-id="${stockEscape(id)}"${checked} /><span class="stock-list-name"><span class="stock-list-place">${place}</span>${stockEscape(item.name || "이름 없는 상품")}</span><span class="stock-list-meta">${stockEscape(meta)}</span></label>`;
+      }).join("");
+    }
+  }
+  syncStockSelection();
+}
+
+async function openStockDialog(mode = "soldout") {
+  const id = (productFilter && productFilter !== "all" && productFilter !== "url")
+    ? productFilter
+    : selectedWholesalerId();
+  if (!id) throw new Error("공급처를 먼저 선택하거나, 상품관리에서 공급처 필터를 고르세요.");
+  if (wholesalers.find((row) => row.id === id)?.type === "ownerclan") {
+    throw new Error("오너클랜 상품은 상품담기에서 확인합니다.");
+  }
+  const supplier = wholesalers.find((row) => row.id === id);
+  clearTimeout(stockTimer);
+  stockJob = null;
+  stockMode = mode === "resale" ? "resale" : "soldout";
+  stockSupplierId = id;
+  stockListQuery = "";
+  stockListStamp = "";
+  stockPicked = new Set();
+  stockSeenIds = new Set();
+  ensureStockList();
+  const search = $("#stockListSearch");
+  if (search) search.value = "";
+  $("#stockTitle").textContent = stockModeLabel();
+  $("#stockRowSoldout").hidden = stockMode !== "soldout";
+  $("#stockRowResale").hidden = stockMode !== "resale";
+  $("#stockSupplier").textContent = stockMode === "resale"
+    ? `${supplier?.name || "공급처"}의 마스터상품과 각 마켓 상품을 조회한 뒤, 재판매진행으로 다시 판매합니다.`
+    : `${supplier?.name || "공급처"}의 마스터상품과 각 마켓 상품을 조회한 뒤, 품절진행으로 품절 처리합니다.`;
+  $("#stockMessage").textContent = "";
+  $("#stockPhase").textContent = "조회 전";
+  $("#stockStep").textContent = "";
+  $("#stockChecked").textContent = "";
+  $("#stockProgress").value = 0;
+  $("#stockSoldoutText").textContent = "조회 전";
+  $("#stockResaleText").textContent = "조회 전";
+  $("#stockStop").disabled = true;
+  adoptStockRows();
+  renderStockList(true);
+  const dialog = $("#stockDialog");
+  if (dialog.open) dialog.close();
+  dialog.showModal();
+}
+
+function stockSalePatch(kind, item, fallbackStock) {
+  if (kind === "soldout") {
+    const patch = {};
+    if (String(item.sale_status || "").toUpperCase() !== "SUSPENSION") patch.sale_status = "SUSPENSION";
+    if (item.display !== false) patch.display = false;
+    if (String(item.display_status || "").toUpperCase() !== "SUSPENSION") patch.display_status = "SUSPENSION";
+    if (Number(item.stock || 0) !== 0) patch.stock = 0;
+    return patch;
+  }
+  const patch = {};
+  if (String(item.sale_status || "").toUpperCase() !== "SALE") patch.sale_status = "SALE";
+  if (item.display === false) patch.display = true;
+  if (String(item.display_status || "").toUpperCase() !== "ON") patch.display_status = "ON";
+  if (Number(item.stock || 0) === 0) patch.stock = fallbackStock;
+  return patch;
+}
+
+async function applyStockJob(kind) {
+  if (!stockJob) return;
+  const expected = kind === "resale" ? "resale" : "soldout";
+  if (stockMode !== expected) return;
+  if (!stockProceedReady()) {
+    renderStockList(false);
+    toast("지금은 조회된 상품 중 일부만 따로 바꿀 수 없습니다. 마스터상품과 각 마켓 상품을 모두 선택한 뒤 진행해 주세요.", true);
+    return;
+  }
+  const before = new Map(products.map((item) => [String(item.id), !!item.wholesale_soldout]));
+  stockJob = await api(`/api/stock-jobs/${stockJob.id}/apply`, { method: "POST", body: JSON.stringify({ kind }) });
+  await loadProducts();
+  const target = kind === "soldout";
+  const flipped = new Set();
+  products.forEach((item) => {
+    const id = String(item.id || "");
+    if (!before.has(id) || !!item.wholesale_soldout === before.get(id)) return;
+    flipped.add(id);
+  });
+  const flippedMasterIds = new Set();
+  products.forEach((item) => {
+    if (!flipped.has(String(item.id))) return;
+    if (!item.market_id) flippedMasterIds.add(String(item.id));
+    else if (item.master_id) flippedMasterIds.add(String(item.master_id));
+  });
+  const copies = products.filter((item) => {
+    if (!item.market_id || (typeof isMasterProduct === "function" && isMasterProduct(item))) return false;
+    return flipped.has(String(item.id)) || flippedMasterIds.has(String(item.master_id || ""));
+  });
+  let fallbackStock = 999;
+  if (kind === "resale" && copies.some((item) => Number(item.stock || 0) === 0)) {
+    try {
+      const settings = await api("/api/settings", { quiet: true });
+      const parsed = Number(settings?.default_stock || 0);
+      if (parsed > 0) fallbackStock = parsed;
+    } catch (error) {
+      fallbackStock = 999;
+    }
+  }
+  let failed = 0;
+  if (copies.length) setBusy(true, "마스터상품과 각 마켓 상품에 적용하는 중입니다.");
+  try {
+    for (const item of copies) {
+      const patch = stockSalePatch(kind, item, fallbackStock);
+      if (!Object.keys(patch).length) continue;
+      try {
+        const saved = await api(`/api/products/${item.id}`, { method: "PUT", body: JSON.stringify(patch), quiet: true });
+        const index = products.findIndex((row) => row.id === item.id);
+        if (index >= 0 && saved && saved.id) products[index] = saved;
+      } catch (error) {
+        failed += 1;
+      }
+    }
+  } finally {
+    if (copies.length) setBusy(false);
+  }
+  const masterCount = products.filter((item) => !item.market_id && flipped.has(String(item.id)) && !!item.wholesale_soldout === target).length;
+  const flagged = copies.filter((item) => {
+    const saved = products.find((row) => row.id === item.id) || item;
+    return !!saved.wholesale_soldout === target;
+  }).length;
+  const missed = copies.length - flagged;
+  const verb = kind === "soldout" ? "품절" : "재판매";
+  const parts = [];
+  if (masterCount) parts.push(`마스터상품 ${masterCount}개`);
+  if (flagged) parts.push(`마켓 상품 ${flagged}개`);
+  let message = parts.length
+    ? `${parts.join("와 ")}를 ${verb}로 바꿨습니다.`
+    : (kind === "soldout" ? `${stockJob.applied?.[kind] || 0}개 상품을 품절로 바꿨습니다.` : `${stockJob.applied?.[kind] || 0}개 상품을 재판매로 바꿨습니다.`);
+  if (missed) {
+    message += kind === "soldout"
+      ? ` 마켓 상품 ${missed}개는 판매상태만 판매중지로 바꿨습니다.`
+      : ` 마켓 상품 ${missed}개는 판매상태만 판매중으로 바꿨습니다.`;
+  }
+  if (failed) message += ` 마켓 상품 ${failed}개는 바꾸지 못했습니다.`;
+  stockListStamp = "";
+  renderStockJob(stockJob);
+  $("#stockMessage").textContent = message;
+  log(message, "ok");
+  toast(message);
+}
+"""
+
+
+STOCK_MARKET_CSS = """
+/* stock-market1 */
+.stock-list-row.is-market { padding-left: 28px; background: #fafafa; }
+.stock-list-place {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #e7eef8;
+  color: #245;
+  font-size: 11px;
+  line-height: 18px;
+  vertical-align: 1px;
+}
+.stock-list-row.is-market .stock-list-place { background: #f3e7d3; color: #643; }
+"""
+
+
+def patch_seller_login_port(text: str) -> str:
+    if "async function useAccount()" in text:
+        return text
+    block = SELLER_LOGIN2_JS
+    start = block.find("  let accountURL")
+    end = block.find("  const sessionKey")
+    old = '  const accountURL = "http://127.0.0.1:8790";\n'
+    if start < 0 or end < 0 or old not in text:
+        return text
+    text = text.replace(old, block[start:end], 1)
+    text = text.replace(
+        "    if (window.__sellerLoginTest) return postSync(path, body);\n    let response;",
+        "    if (window.__sellerLoginTest) return postSync(path, body);\n    await useAccount();\n    let response;",
+        1,
+    )
+    text = text.replace(
+        '        const response = await fetch(accountURL + "/api/seller-status");',
+        '        await useAccount();\n        const response = await fetch(accountURL + "/api/seller-status");',
+        1,
+    )
+    return text
 
 
 def patch_answer(text: str) -> str:
@@ -1936,6 +5392,43 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_JS2
     if "/* invite-settings1 */" not in text:
         text = text.rstrip() + "\n" + INVITE_SETTINGS_JS
+    if "/* admin-menu1 */" not in text:
+        text = text.rstrip() + "\n" + ADMIN_MENU_JS
+    if "/* seller-edition1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
+    if "/* seller-login1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_LOGIN_JS
+    if "/* seller-login2 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_LOGIN2_JS
+    if "/* seller-port1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PORT_JS
+    if "/* master-login1 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_LOGIN_JS
+    if "/* seller-phone1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PHONE_JS
+    if "/* seller-peek1 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_PEEK_JS
+    text = patch_seller_login_port(text)
+    if "/* collect-url1 */" not in text:
+        text = text.rstrip() + "\n" + COLLECT_URL_JS
+    if "/* stock-list1 */" not in text:
+        text = text.rstrip() + "\n" + STOCK_LIST_JS
+    if "/* stock-market1 */" not in text:
+        text = text.rstrip() + "\n" + STOCK_MARKET_JS
+    if "/* collect-url2 */" not in text:
+        text = text.rstrip() + "\n" + COLLECT_URL2_JS
+    if "/* master-login2 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_LOGIN2_JS
+    if "/* wholesale-import-all1 */" not in text:
+        text = text.rstrip() + "\n" + WHOLESALE_IMPORT_ALL_JS
+    if "/* server-fix-check1 */" not in text:
+        text = text.rstrip() + "\n" + SERVER_FIX_CHECK_JS
+    if "/* open-login1 */" not in text:
+        text = text.rstrip() + "\n" + OPEN_LOGIN_JS
+    text = text.replace("배포용", "셀러용")
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40", "2026.10.28.41"):
+        if old != SCREEN_VERSION:
+            text = text.replace(old, SCREEN_VERSION)
     return text
 
 
@@ -1959,6 +5452,26 @@ def patch_css(text: str) -> str:
         extra += INVITE_CSS
     if "/* invite-settings1 */" not in text:
         extra += INVITE_SETTINGS_CSS
+    if "/* admin-menu1 */" not in text:
+        extra += ADMIN_MENU_CSS
+    if "/* seller-edition1 */" not in text:
+        extra += SELLER_CSS
+    if "/* seller-login1 */" not in text:
+        extra += SELLER_LOGIN_CSS
+    if "/* seller-login2 */" not in text:
+        extra += SELLER_LOGIN2_CSS
+    if "/* master-login1 */" not in text:
+        extra += MASTER_LOGIN_CSS
+    if "/* seller-peek1 */" not in text:
+        extra += SELLER_PEEK_CSS
+    if "/* stock-list1 */" not in text:
+        extra += STOCK_LIST_CSS
+    if "/* stock-market1 */" not in text:
+        extra += STOCK_MARKET_CSS
+    if "/* master-login2 */" not in text:
+        extra += MASTER_LOGIN2_CSS
+    if "/* master-login3 */" not in text:
+        extra += MASTER_LOGIN3_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra
@@ -1996,6 +5509,13 @@ def repaired_filename(name: str) -> str:
     return fixed
 
 
+def _newer_file(path: Path, other: Path) -> bool:
+    a, b = path.stat(), other.stat()
+    if int(a.st_mtime) != int(b.st_mtime):
+        return a.st_mtime > b.st_mtime
+    return a.st_size > b.st_size
+
+
 def repair_broken_names(folder: Path) -> None:
     if not folder.is_dir():
         return
@@ -2010,7 +5530,7 @@ def repair_broken_names(folder: Path) -> None:
             path.chmod(0o666)
             if dest.exists() and dest.resolve() != path.resolve():
                 dest.chmod(0o666)
-                if dest.read_bytes() == path.read_bytes() or dest.stat().st_size >= path.stat().st_size:
+                if dest.read_bytes() == path.read_bytes() or not _newer_file(path, dest):
                     path.unlink()
                 else:
                     dest.unlink()
@@ -2031,15 +5551,28 @@ def repair_known_folders(root: Path) -> None:
             repair_broken_names(child)
 
 
-def main() -> None:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else r"C:\smartstore uploader")
-    repair_known_folders(root)
-    static = root / "app" / "static"
+def iter_static_dirs(root: Path) -> list[Path]:
+    found = []
+    for static in (root / "app" / "static", root / "_internal" / "app" / "static"):
+        if (static / "app.js").is_file() and (static / "index.html").is_file():
+            found.append(static)
+    return found
+
+
+def apply_static_patches(root: Path) -> bool:
+    changed = False
+    for static in iter_static_dirs(root):
+        if _apply_one_static(static):
+            changed = True
+    return changed
+
+
+def _apply_one_static(static: Path) -> bool:
     js_path = static / "app.js"
     html_path = static / "index.html"
     css_path = static / "styles.css"
     if not js_path.is_file() or not html_path.is_file():
-        raise SystemExit(f"static files not found: {static}")
+        return False
     js, js_nl = read_text(js_path)
     html, html_nl = read_text(html_path)
     css, css_nl = read_text(css_path) if css_path.is_file() else ("", "\n")
@@ -2051,22 +5584,1625 @@ def main() -> None:
     new_js = patch_answer(new_js)
     new_html = patch_html(html)
     new_css = patch_css(css) if css else css
-    version_changed = write_screen_version(root)
-    if new_js == js and new_html == html and new_css == css and not version_changed:
-        print("already linked")
-        return
-    for path in (js_path, html_path, css_path):
-        if not path.is_file():
+    changed = False
+    for path, new, old, newline in (
+        (js_path, new_js, js, js_nl),
+        (html_path, new_html, html, html_nl),
+        (css_path, new_css, css, css_nl),
+    ):
+        if not path.is_file() or new == old:
             continue
         backup = path.with_name(path.name + ".bak-inquiry-links")
         if not backup.exists():
             backup.write_bytes(path.read_bytes())
-    write_text(js_path, new_js, js_nl)
-    write_text(html_path, new_html, html_nl)
-    if css_path.is_file():
-        write_text(css_path, new_css, css_nl)
+        write_text(path, new, newline)
+        changed = True
+    return changed
+
+
+MURRAY_MARKER = "# murray-price1"
+MURRAY_PARSE_PY = r'''
+# murray-price1
+import re as _murray_re
+import threading as _murray_threading
+
+_murray_local = _murray_threading.local()
+
+
+def _murray_won(text):
+    match = _murray_re.search(r"(\d{1,3}(?:,\d{3})+|\d+)\s*원", text or "")
+    if not match:
+        return 0
+    try:
+        return int(match.group(1).replace(",", ""))
+    except ValueError:
+        return 0
+
+
+def _murray_ship_amount(text):
+    head = (text or "").split("지역별", 1)[0]
+    if _murray_re.search(r"\d", head):
+        return _murray_won(head)
+    if "무료" in head:
+        return 0
+    return None
+
+
+def _murray_compact(text):
+    return _murray_re.sub(r"\s+", "", text or "")
+
+
+def _murray_following(el):
+    sibling = el.next_sibling
+    steps = 0
+    while sibling is not None and steps < 6:
+        steps += 1
+        getter = getattr(sibling, "get_text", None)
+        if getter is not None:
+            return getter(" ", strip=True)
+        text = str(sibling).strip()
+        if text:
+            return text
+        sibling = sibling.next_sibling
+    return ""
+
+
+def murray_price_fields(html):
+    raw = html or ""
+    compact = _murray_compact(raw)
+    if "판매지도가" not in compact and "딜러공급가" not in compact:
+        return 0, 0, None
+    guide = 0
+    dealer = 0
+    ship = None
+
+    def take(label, value):
+        nonlocal guide, dealer, ship
+        key = _murray_compact(label)
+        blob = f"{label or ''} {value or ''}"
+        if "판매지도가" in key:
+            amount = _murray_won(value) or _murray_won(blob)
+            if amount:
+                guide = amount
+            return
+        if "딜러공급가" in key:
+            amount = _murray_won(value) or _murray_won(blob)
+            if amount:
+                dealer = amount
+            return
+        if "지역별" in key:
+            return
+        if key == "배송비" or (key.startswith("배송비") and len(key) <= 12 and "원" not in key):
+            amount = _murray_ship_amount(value or blob)
+            if amount is None:
+                amount = _murray_ship_amount(blob)
+            if amount is not None:
+                ship = amount
+
+    try:
+        from bs4 import BeautifulSoup
+        try:
+            soup = BeautifulSoup(raw, "lxml")
+        except Exception:
+            soup = BeautifulSoup(raw, "html.parser")
+        for row in soup.select("tr"):
+            cells = row.find_all(["th", "td"], recursive=False) or row.find_all(["th", "td"])
+            if len(cells) >= 2:
+                take(cells[0].get_text(" ", strip=True), cells[1].get_text(" ", strip=True))
+        for block in soup.select("dl"):
+            term = block.find("dt")
+            desc = block.find("dd")
+            if term is not None and desc is not None:
+                take(term.get_text(" ", strip=True), desc.get_text(" ", strip=True))
+        for el in soup.find_all(["strong", "span", "th", "dt", "em", "b", "p", "div", "li"]):
+            label = el.get_text(" ", strip=True)
+            if not label or len(label) > 24:
+                continue
+            key = _murray_compact(label)
+            known = key in {"판매지도가", "딜러공급가", "배송비"} or (
+                key.startswith("배송비") and len(key) <= 12 and "지역" not in key and "원" not in key
+            )
+            if not known:
+                continue
+            value = _murray_following(el)
+            if not _murray_won(value) and "무료" not in value and el.parent is not None:
+                parent_text = el.parent.get_text(" ", strip=True)
+                if parent_text.startswith(label):
+                    value = parent_text[len(label):].strip()
+            take(label, value)
+    except Exception:
+        pass
+    plain = _murray_re.sub(r"<[^>]+>", " ", raw)
+    plain = _murray_re.sub(r"\s+", " ", plain)
+    if not guide:
+        match = _murray_re.search(r"판매\s*지도가\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            guide = int(match.group(1).replace(",", ""))
+    if not dealer:
+        match = _murray_re.search(r"딜러\s*공급가\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            dealer = int(match.group(1).replace(",", ""))
+    if ship is None and (guide or dealer):
+        match = _murray_re.search(r"(?<![가-힣])배송비\s*[:：]?\s*([\d,]+)\s*원", plain)
+        if match:
+            ship = int(match.group(1).replace(",", ""))
+        elif _murray_re.search(r"(?<![가-힣])배송비\s*[:：]?\s*무료", plain):
+            ship = 0
+    if not guide and not dealer:
+        return 0, 0, None
+    return guide, dealer, ship
+'''
+MURRAY_SCRAPER_PY = MURRAY_PARSE_PY + r'''
+
+_extract_product_before_murray = extract_product
+
+
+def extract_product(html, page_url=""):
+    _murray_local.info = None
+    _murray_local.url = str(page_url or "")
+    data = _extract_product_before_murray(html, page_url)
+    guide, dealer, ship = murray_price_fields(html if isinstance(html, str) else "")
+    info = {}
+    if isinstance(data, dict):
+        if guide:
+            data["price"] = int(guide)
+            data["original_price"] = int(guide)
+            data["_murray_guide"] = int(guide)
+            info["guide"] = int(guide)
+        if dealer:
+            data["cost"] = int(dealer)
+            data["_murray_dealer"] = int(dealer)
+            info["dealer"] = int(dealer)
+        if ship is not None and (guide or dealer):
+            data["shipping_fee"] = int(ship)
+            data["_murray_ship"] = int(ship)
+            info["ship"] = int(ship)
+    if info:
+        _murray_local.info = info
+    return data
+'''
+MURRAY_SERVICE_PY = r'''
+# murray-price1
+import re as _murray_re
+
+try:
+    from app import scraper as _murray_scraper
+except Exception:
+    _murray_scraper = None
+
+
+def _murray_same_page(left, right):
+    a = str(left or "").strip()
+    b = str(right or "").strip()
+    if not a or not b:
+        return False
+    if a.rstrip("/") == b.rstrip("/"):
+        return True
+    pattern = r"(?:goodsNo|goods_no|product_no|productno)=(\d+)"
+    ma = _murray_re.search(pattern, a, _murray_re.I)
+    mb = _murray_re.search(pattern, b, _murray_re.I)
+    if ma and mb:
+        return ma.group(1) == mb.group(1)
+    return a.split("?", 1)[0].rstrip("/") == b.split("?", 1)[0].rstrip("/")
+
+
+def _murray_apply_fields(item, info):
+    if not isinstance(item, dict) or not isinstance(info, dict):
+        return False
+    changed = False
+    guide = int(info.get("guide") or 0)
+    dealer = int(info.get("dealer") or 0)
+    if guide and int(item.get("price") or 0) != guide:
+        item["price"] = guide
+        changed = True
+    if guide and int(item.get("original_price") or 0) != guide:
+        item["original_price"] = guide
+        changed = True
+    if dealer and int(item.get("cost") or 0) != dealer:
+        item["cost"] = dealer
+        changed = True
+    if "ship" in info:
+        ship = int(info.get("ship") or 0)
+        current = item.get("shipping_fee")
+        if current in (None, "") or int(current or 0) != ship:
+            item["shipping_fee"] = ship
+            changed = True
+    return changed
+
+
+def _murray_info_from_extract(extracted):
+    if not isinstance(extracted, dict):
+        return None
+    if not extracted.get("_murray_guide") and not extracted.get("_murray_dealer"):
+        return None
+    info = {}
+    if extracted.get("_murray_guide"):
+        info["guide"] = int(extracted.get("_murray_guide") or 0)
+    if extracted.get("_murray_dealer"):
+        info["dealer"] = int(extracted.get("_murray_dealer") or 0)
+    if "_murray_ship" in extracted:
+        info["ship"] = int(extracted.get("_murray_ship") or 0)
+    return info or None
+
+
+_apply_wholesale_extract_before_murray = _apply_wholesale_extract
+
+
+def _apply_wholesale_extract(*args, **kwargs):
+    changed = _apply_wholesale_extract_before_murray(*args, **kwargs)
+    extracted = args[1] if len(args) > 1 else kwargs.get("extracted")
+    item = args[0] if args else kwargs.get("item")
+    info = _murray_info_from_extract(extracted)
+    if info and _murray_apply_fields(item, info):
+        changed = True
+    return changed
+
+
+_collect_product_before_murray = collect_product
+
+
+def collect_product(*args, **kwargs):
+    product = _collect_product_before_murray(*args, **kwargs)
+    scraper = _murray_scraper
+    local = getattr(scraper, "_murray_local", None) if scraper is not None else None
+    info = getattr(local, "info", None) if local is not None else None
+    seen = getattr(local, "url", "") if local is not None else ""
+    if not isinstance(product, dict) or not isinstance(info, dict):
+        return product
+    source = product.get("source_url") or (args[0] if args else "")
+    if seen and source and not _murray_same_page(seen, source):
+        return product
+    if _murray_apply_fields(product, info):
+        save_product(product)
+    return product
+'''
+
+
+GODO_MARKER = "# godo-login1"
+GODO_SCRAPER_PY = r'''
+# godo-login1
+import re as _godo_re
+
+_GODO_IMAGE_RE = _godo_re.compile(r"/goods/(\d+)/image/(detail|magnify|main|list|add\d*)/", _godo_re.I)
+
+
+def _godo_goods_no(page_url):
+    match = _godo_re.search(r"goodsNo=(\d+)", str(page_url or ""), _godo_re.I)
+    return match.group(1) if match else ""
+
+
+def godo_gallery_urls(html, page_url=""):
+    number = _godo_goods_no(page_url)
+    if not number:
+        return []
+    found = []
+    rank = {"magnify": 0, "detail": 1, "main": 2, "list": 3}
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>()]+?\.(?:jpe?g|png|gif|webp)", html or "", _godo_re.I):
+        url = match.group(0)
+        if url.startswith("//"):
+            url = "https:" + url
+        image = _GODO_IMAGE_RE.search(url)
+        if not image or image.group(1) != number:
+            continue
+        if url not in [item[1] for item in found]:
+            found.append((rank.get(image.group(2).lower(), 4), url))
+    found.sort(key=lambda item: item[0])
+    return [url for _, url in found][:10]
+
+
+_extract_product_before_godo = extract_product
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo(html, page_url)
+    if not isinstance(data, dict) or not _godo_goods_no(page_url):
+        return data
+    urls = godo_gallery_urls(html if isinstance(html, str) else "", page_url)
+    if not urls:
+        return data
+    current = [url for url in (data.get("gallery_images") or []) if _GODO_IMAGE_RE.search(str(url or ""))]
+    if current:
+        return data
+    data["gallery_images"] = urls
+    data["images"] = urls + list(data.get("detail_images") or [])
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_SERVICE_PY = r'''
+# godo-login1
+import threading as _godo_threading
+from urllib.parse import urlparse as _godo_urlparse
+
+_godo_jars = {}
+_godo_jar_lock = _godo_threading.Lock()
+_GODO_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+}
+GODO_LOGIN_MESSAGE = (
+    "공급처 회원 로그인이 필요합니다. 공급처관리에서 이 공급처의 아이디와 비밀번호를 저장한 뒤 다시 가져오세요."
+)
+
+
+def _godo_host(url):
+    host = (_godo_urlparse(str(url or "")).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _godo_is_goods_url(url):
+    text = str(url or "").lower()
+    return "/goods/goods_view" in text and "goodsno=" in text
+
+
+def _godo_is_login(html, final_url):
+    if "/member/login" in str(final_url or "").lower():
+        return True
+    text = html or ""
+    return 'id="formLogin"' in text and 'name="loginPwd"' in text and "goodsNo" not in str(final_url or "")
+
+
+def _godo_supplier(url, supplier=None):
+    item = supplier if isinstance(supplier, dict) else None
+    if item is None or not item.get("login_password"):
+        wanted = item.get("id") if item else ""
+        if not wanted:
+            try:
+                wanted = _match_wholesaler_id(url)
+            except Exception:
+                wanted = ""
+        if wanted:
+            try:
+                item = get_wholesaler(wanted, include_secret=True) or item
+            except Exception:
+                pass
+    if not isinstance(item, dict):
+        return None
+    kind = str(item.get("type") or "").lower()
+    if kind and kind != "godomall":
+        return None
+    if _godo_host(item.get("url")) and _godo_host(item.get("url")) != _godo_host(url):
+        return None
+    if not str(item.get("login_id") or "").strip() or not str(item.get("login_password") or ""):
+        return None
+    return item
+
+
+def _godo_base(url):
+    parsed = _godo_urlparse(str(url or ""))
+    return f"{parsed.scheme or 'http'}://{parsed.netloc}"
+
+
+def _godo_login(client, url, supplier):
+    base = _godo_base(url)
+    client.get(base + "/member/login.php")
+    response = client.post(
+        base + "/member/login_ps.php",
+        data={
+            "mode": "login",
+            "returnUrl": "",
+            "loginId": str(supplier.get("login_id") or "").strip(),
+            "loginPwd": str(supplier.get("login_password") or ""),
+        },
+        headers={"Referer": base + "/member/login.php"},
+    )
+    text = response.text or ""
+    if "alert(" in text and ("찾을 수 없" in text or "일치하지" in text or "승인" in text or "잘못" in text):
+        return False
+    return True
+
+
+def _godo_fetch(url, supplier):
+    key = (_godo_host(url), str(supplier.get("login_id") or "").strip())
+    for attempt in range(2):
+        with _godo_jar_lock:
+            saved = list(_godo_jars.get(key) or [])
+        jar = httpx.Cookies()
+        for name, value, domain, path in saved:
+            jar.set(name, value, domain=domain, path=path)
+        client = httpx.Client(headers=_GODO_HEADERS, follow_redirects=True, timeout=25.0, cookies=jar)
+        try:
+            if not saved or attempt:
+                if not _godo_login(client, url, supplier):
+                    return None
+            response = client.get(url)
+            html = response.text or ""
+            final_url = str(response.url)
+            if response.status_code < 400 and not _godo_is_login(html, final_url):
+                with _godo_jar_lock:
+                    _godo_jars[key] = [(c.name, c.value, c.domain, c.path) for c in client.cookies.jar]
+                return client, html, final_url
+        except httpx.HTTPError:
+            client.close()
+            return None
+        client.close()
+        with _godo_jar_lock:
+            _godo_jars.pop(key, None)
+    return None
+
+
+_load_page_before_godo = _load_page
+
+
+def _load_page(url):
+    if _godo_is_goods_url(url):
+        supplier = _godo_supplier(url)
+        if supplier is not None:
+            fetched = _godo_fetch(url, supplier)
+            if fetched is not None:
+                client, html, final_url = fetched
+                session = PageSession()
+                session._http = client
+                session.html = html
+                session.final_url = final_url
+                session.via = "http"
+                session.extracted = None
+                return session
+    session = _load_page_before_godo(url)
+    if _godo_is_goods_url(url) and session is not None and _godo_is_login(getattr(session, "html", ""), getattr(session, "final_url", "")):
+        try:
+            session.close()
+        except Exception:
+            pass
+        _bad(GODO_LOGIN_MESSAGE)
+    return session
+
+
+_read_supplier_product_before_godo = _read_supplier_product
+
+
+def _read_supplier_product(url, cookies=None, supplier=None, *args, **kwargs):
+    if _godo_is_goods_url(url):
+        found = _godo_supplier(url, supplier)
+        if found is not None:
+            fetched = _godo_fetch(url, found)
+            if fetched is not None:
+                client, html, final_url = fetched
+                client.close()
+                return extract_product(html, final_url)
+            raise RuntimeError(GODO_LOGIN_MESSAGE)
+    return _read_supplier_product_before_godo(url, cookies, supplier, *args, **kwargs)
+
+
+_gallery_ready_before_godo = _gallery_ready
+
+
+def _gallery_ready(item, *args, **kwargs):
+    if isinstance(item, dict) and _godo_is_goods_url(item.get("source_url")) and not int(item.get("cost") or 0):
+        return False
+    return _gallery_ready_before_godo(item, *args, **kwargs)
+'''
+
+
+GODO_NAME_MARKER = "# godo-name1"
+GODO_NAME_SCRAPER_PY = r'''
+# godo-name1
+def _godo_text(node):
+    return " ".join(node.get_text(" ", strip=True).split()) if node is not None else ""
+
+
+def godo_goods_name(html, page_url=""):
+    number = _godo_goods_no(page_url)
+    if not number:
+        return ""
+    try:
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html or "", "lxml")
+    except Exception:
+        return ""
+    for selector in (
+        ".goods-view .goods-header h2", ".goods-view .goods-header h3", ".goods-view .info h2",
+        ".goods-view .info h3", ".item_detail_tit h3", ".item_detail_tit h2", ".goods_name", "#goodsNm",
+    ):
+        text = _godo_text(soup.select_one(selector))
+        if 2 <= len(text) <= 200 and not text.isdigit():
+            return text
+    for img in soup.find_all("img"):
+        src = str(img.get("src") or img.get("data-src") or "")
+        image = _GODO_IMAGE_RE.search(src)
+        if not image or image.group(1) != number:
+            continue
+        text = " ".join(str(img.get("alt") or img.get("title") or "").split())
+        if 2 <= len(text) <= 200 and not text.isdigit():
+            return text
+    return ""
+
+
+_extract_product_before_godo_name = extract_product
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_name(html, page_url)
+    if not isinstance(data, dict) or not _godo_goods_no(page_url):
+        return data
+    name = godo_goods_name(html if isinstance(html, str) else "", page_url)
+    if name:
+        data["name"] = name
+        data["original_name"] = name
+        warnings = data.get("warnings")
+        if isinstance(warnings, list):
+            data["warnings"] = [text for text in warnings if "상품명을 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_NAME_CATALOG_PY = r'''
+# godo-name1
+def _godo_bad_name(name, number):
+    text = str(name or "").strip()
+    return not text or text.isdigit() or text == str(number or "") or text.startswith("공급처 상품") or text == "품절"
+
+
+def _godo_list_names(shop_url, category):
+    base = _base(shop_url)
+    cate = str(category or "").strip()
+    if cate in {"", "all", "etc"}:
+        cate = ""
+    names = {}
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            for page in range(1, 31):
+                params = {"page": page}
+                if cate:
+                    params["cateCd"] = cate
+                response = client.get(f"{base}/goods/goods_list.php", params=params)
+                if response.status_code >= 400:
+                    break
+                soup = BeautifulSoup(response.text, "lxml")
+                added = 0
+                for link in soup.select("a[href*='goodsNo'], a[href*='goods_view']"):
+                    number = _godo_goods_from_href(str(link.get("href") or ""))
+                    if not number or number in names:
+                        continue
+                    name = ""
+                    img = link.find("img")
+                    if img is not None:
+                        name = " ".join(str(img.get("alt") or img.get("title") or "").split())
+                    if _godo_bad_name(name, number):
+                        box = link.find_parent("li") or link.parent
+                        node = box.select_one(".name, .item_name, .goods_name, .prdName") if box is not None else None
+                        name = " ".join(node.get_text(" ", strip=True).split()) if node is not None else ""
+                    if not _godo_bad_name(name, number):
+                        names[number] = name
+                        added += 1
+                if not added:
+                    break
+    except httpx.HTTPError:
+        return names
+    return names
+
+
+_godomall_products_before_name = _godomall_products
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_name(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return data
+    bad = [item for item in items if isinstance(item, dict) and _godo_bad_name(item.get("name"), item.get("product_no"))]
+    if not bad:
+        return data
+    names = _godo_list_names(shop_url, category)
+    for item in bad:
+        name = names.get(str(item.get("product_no") or ""))
+        if name:
+            item["name"] = name
+    return data
+'''
+GODO_NAME_SERVICE_PY = r'''
+# godo-name1
+_collect_product_before_godo_name = collect_product
+
+
+def collect_product(*args, **kwargs):
+    product = _collect_product_before_godo_name(*args, **kwargs)
+    if not isinstance(product, dict) or not _godo_is_goods_url(product.get("source_url")):
+        return product
+    if str(product.get("wholesale_product_no") or "").strip():
+        return product
+    match = _murray_re.search(r"goodsNo=(\d+)", str(product.get("source_url") or ""), _murray_re.I)
+    if match:
+        product["wholesale_product_no"] = match.group(1)
+        save_product(product)
+    return product
+'''
+GODO_NAME2_MARKER = "# godo-name2"
+GODO_NAME2_CATALOG_PY = r'''
+# godo-name2
+# Godomall answers goods_list.php without cateCd with "잘못된 접근입니다", so
+# the whole-shop import found no list names. Walk the shop's own categories.
+_godo_known_names = {}
+_godo_bad_name_before_name2 = _godo_bad_name
+
+
+def _godo_bad_name(name, number):
+    return _godo_bad_name_before_name2(name, number) or str(name or "").strip() == "이름 없는 상품"
+
+
+def _godo_cate_links(shop_url):
+    base = _base(shop_url)
+    found = []
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            response = client.get(base + "/")
+        soup = BeautifulSoup(response.text, "lxml")
+        for link in soup.select("a[href*='cateCd']"):
+            code = _godo_cate_from_href(str(link.get("href") or ""))
+            label = " ".join(link.get_text(" ", strip=True).split())
+            if code and code not in [item[0] for item in found]:
+                found.append((code, label))
+    except Exception:
+        return []
+    return found
+
+
+def _godo_all_cates(shop_url):
+    found = _godo_cate_links(shop_url)
+    whole = [code for code, label in found if "전체" in label]
+    top = [code for code, label in found if len(code) <= 3 and code not in whole]
+    rest = [code for code, label in found if code not in whole and code not in top]
+    return whole + top + rest
+
+
+def _godo_whole_shop(shop_url, data, *args, **kwargs):
+    found = _godo_cate_links(shop_url)
+    whole = [code for code, label in found if "전체" in label]
+    top = [code for code, label in found if len(code) <= 3 and code not in whole]
+    seen = {}
+    for group in (whole[:1], top[:60]):
+        for cate in group:
+            part = _godomall_products_before_name(shop_url, cate, *args, **kwargs)
+            for item in (part.get("items") if isinstance(part, dict) else None) or []:
+                if isinstance(item, dict):
+                    seen.setdefault(str(item.get("product_no") or item.get("url") or ""), item)
+        if seen:
+            break
+    if not seen:
+        return data
+    merged = dict(data) if isinstance(data, dict) else {}
+    merged["items"] = list(seen.values())
+    merged["count"] = len(merged["items"])
+    return merged
+
+
+def _godo_names_for(shop_url, category, wanted):
+    names = _godo_list_names(shop_url, category)
+    need = set(wanted) - set(names)
+    if need:
+        for cate in _godo_all_cates(shop_url)[:60]:
+            if cate == str(category or "").strip():
+                continue
+            more = _godo_list_names(shop_url, cate)
+            for number, name in more.items():
+                names.setdefault(number, name)
+            need -= set(more)
+            if not need:
+                break
+    return names
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_name(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not items and str(category or "").strip() in {"", "all"}:
+        data = _godo_whole_shop(shop_url, data, *args, **kwargs)
+        items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return data
+    bad = [item for item in items if isinstance(item, dict) and _godo_bad_name(item.get("name"), item.get("product_no"))]
+    if not bad:
+        return data
+    names = _godo_names_for(shop_url, category, {str(item.get("product_no") or "") for item in bad})
+    _godo_known_names.update(names)
+    for item in bad:
+        name = names.get(str(item.get("product_no") or ""))
+        if name:
+            item["name"] = name
+    return data
+'''
+GODO_NAME2_SERVICE_PY = r'''
+# godo-name2
+_import_wholesale_catalog_before_name2 = import_wholesale_catalog
+
+
+def _godo_repair_saved_names(wholesaler_id):
+    import app.shop_catalog as _godo_catalog
+
+    known = getattr(_godo_catalog, "_godo_known_names", None) or {}
+    bad_name = getattr(_godo_catalog, "_godo_bad_name", None)
+    if not known or bad_name is None:
+        return 0
+    fixed = []
+    for product in list_full_products():
+        if str(product.get("wholesale_id") or "") != str(wholesaler_id or ""):
+            continue
+        number = str(product.get("wholesale_product_no") or "").strip()
+        name = known.get(number)
+        if not name or not bad_name(product.get("name"), number):
+            continue
+        product["name"] = name
+        if bad_name(product.get("original_name"), number):
+            product["original_name"] = name
+        fixed.append(product)
+    if fixed:
+        save_products_batch(fixed)
+    return len(fixed)
+
+
+def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _import_wholesale_catalog_before_name2(wholesaler_id, *args, **kwargs)
+    try:
+        renamed = _godo_repair_saved_names(wholesaler_id)
+        if renamed and isinstance(result, dict):
+            result["renamed"] = renamed
+    except Exception:
+        pass
+    return result
+'''
+COLLECT_URL2_JS = r"""
+/* collect-url2 */
+function collectIdentity(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return { key: "", no: "" };
+  let parsed = null;
+  try { parsed = new URL(raw, location.href); } catch (error) { parsed = null; }
+  const idNames = ["product_no", "productno", "goods_no", "goodsno", "it_id", "product_id", "prdno", "item_id", "branduid", "idx"];
+  if (!parsed) {
+    const plain = raw.replace(/\/+$/, "").toLowerCase().split("?")[0];
+    return { key: plain, no: "" };
+  }
+  let found = "";
+  let foundName = "";
+  idNames.forEach((name) => {
+    if (found) return;
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (String(key).toLowerCase() !== name) continue;
+      if (value && String(value).trim()) {
+        found = String(value).trim();
+        foundName = name;
+        return;
+      }
+    }
+  });
+  const path = parsed.pathname.replace(/\/+$/, "");
+  const pretty = path.match(/\/product\/[^/]+\/(\d+)(?:\/|$)/i);
+  const no = found || (pretty ? pretty[1] : "");
+  const host = parsed.host.replace(/^www\./i, "");
+  const key = found
+    ? `${host}${path}?${foundName}=${found}`.toLowerCase()
+    : `${host}${path}`.toLowerCase();
+  return { key, no };
+}
+function cafe24CollectedKeys(wholesalerId) {
+  const nos = new Set();
+  const urls = new Set();
+  const id = String(wholesalerId || "");
+  products.forEach((item) => {
+    if (!isMasterProduct(item)) return;
+    const owner = String(productWholesalerId(item) || "");
+    if (id && owner && owner !== id) return;
+    const ident = collectIdentity(item.source_url);
+    const no = String(item.wholesale_product_no || "").trim();
+    if (owner) {
+      if (no) nos.add(no);
+      if (ident.no) nos.add(ident.no);
+    }
+    if (ident.key) urls.add(ident.key);
+  });
+  return { nos, urls };
+}
+"""
+
+
+def _append_marked_source(path: Path, snippet: str, required, marker: str = MURRAY_MARKER) -> bool:
+    if not path.is_file():
+        return False
+    text, newline = read_text(path)
+    if marker in text:
+        return False
+    needed = (required,) if isinstance(required, str) else tuple(required)
+    if any(name not in text for name in needed):
+        return False
+    updated = text.rstrip() + "\n\n" + snippet.strip() + "\n"
+    try:
+        compile(updated, str(path), "exec")
+    except SyntaxError:
+        return False
+    write_text(path, updated, newline)
+    return True
+
+
+def patch_murray_sources(root: Path) -> bool:
+    changed = False
+    scraper = root / "app" / "scraper.py"
+    service = root / "app" / "service.py"
+    if _append_marked_source(scraper, MURRAY_SCRAPER_PY, "def extract_product"):
+        changed = True
+    if _append_marked_source(service, MURRAY_SERVICE_PY, "def _apply_wholesale_extract"):
+        changed = True
+    if _append_marked_source(scraper, GODO_SCRAPER_PY, "def extract_product", GODO_MARKER):
+        changed = True
+    godo_needed = (
+        "def _read_supplier_product",
+        "def _load_page",
+        "def _gallery_ready",
+        "def _match_wholesaler_id",
+        "PageSession",
+    )
+    if _append_marked_source(service, GODO_SERVICE_PY, godo_needed, GODO_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_NAME_SCRAPER_PY, ("def extract_product", GODO_MARKER), GODO_NAME_MARKER):
+        changed = True
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_NAME_CATALOG_PY, catalog_needed, GODO_NAME_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_NAME_SERVICE_PY, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_NAME2_CATALOG_PY, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_NAME2_SERVICE_PY, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_SITE1_CATALOG_PY, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_SITE2_SERVICE_PY, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_OPEN1_SERVICE_PY, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_LOGIN2_SERVICE_PY, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE1_CATALOG_PY, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_IMAGE1_SCRAPER_PY, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
+        changed = True
+    try:
+        write_fix_status(root)
+    except OSError:
+        pass
+    return changed
+
+
+GODO_SITE1_MARKER = "# godo-site1"
+GODO_SITE1_CATALOG_PY = r'''
+# godo-site1
+# detect_shop_type returns "" for Godomall home pages such as murray.co.kr, so
+# suppliers were saved as another type and only the home page links (named by
+# goods number) were read. Godomall sites are recognised by their goods links,
+# and https://www. hosts whose certificate does not match fall back to http.
+_godo_site_cache = {}
+_detect_shop_type_before_site = detect_shop_type
+_list_all_products_before_site = list_all_products
+_list_category_before_site = list_category
+_discover_groups_before_site = discover_groups
+
+
+def _godo_site_base(shop_url):
+    raw = str(shop_url or "").strip()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else "http://" + raw)
+    host = (parsed.netloc or "").strip().lower()
+    if not host:
+        return ""
+    if host in _godo_site_cache:
+        return _godo_site_cache[host]
+    bare = host[4:] if host.startswith("www.") else host
+    scheme = parsed.scheme or "http"
+    tries = []
+    for base in (f"{scheme}://{host}", f"http://{host}", f"http://{bare}", f"http://www.{bare}", f"https://{bare}"):
+        if base not in tries:
+            tries.append(base)
+    found = ""
+    for base in tries:
+        try:
+            html = _get(base + "/", timeout=15.0)
+        except Exception:
+            continue
+        if "goods_view.php?goodsNo=" in html or "goods_list.php?cateCd=" in html:
+            found = base
+        break
+    _godo_site_cache[host] = found
+    return found
+
+
+def _godo_site_kind(shop_url, shop_type):
+    kind = str(shop_type or "").strip().lower()
+    if kind in {"cafe24", "imweb"}:
+        return kind, shop_url
+    base = _godo_site_base(shop_url)
+    if base:
+        return "godomall", base
+    return shop_type, shop_url
+
+
+def detect_shop_type(shop_url):
+    kind = _detect_shop_type_before_site(shop_url)
+    if kind:
+        return kind
+    return "godomall" if _godo_site_base(shop_url) else kind
+
+
+def list_all_products(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    if kind == "godomall":
+        items = _godomall_all(url)
+        if items:
+            return items
+    return _list_all_products_before_site(shop_url, shop_type, *args, **kwargs)
+
+
+def list_category(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    return _list_category_before_site(url, kind, *args, **kwargs)
+
+
+def discover_groups(shop_url, shop_type, *args, **kwargs):
+    kind, url = _godo_site_kind(shop_url, shop_type)
+    return _discover_groups_before_site(url, kind, *args, **kwargs)
+'''
+GODO_SITE1_CATALOG_NEEDED = (
+    "def detect_shop_type",
+    "def list_all_products",
+    "def list_category",
+    "def discover_groups",
+    "def _godomall_all",
+    "def _get",
+    "urlparse",
+    GODO_NAME2_MARKER,
+)
+GODO_SITE2_MARKER = "# godo-site2"
+GODO_SITE2_SERVICE_PY = r"""
+# godo-site2
+# The screen reads server_fixes to tell an old server process (needs a restart)
+# from a source the fixes could not be added to.
+_list_wholesale_catalog_before_site2 = list_wholesale_catalog
+_import_wholesale_catalog_before_site2 = import_wholesale_catalog
+
+
+def _godo_server_fixes():
+    import app.shop_catalog as _godo_catalog
+
+    return {
+        "godo_name": hasattr(_godo_catalog, "_godo_names_for"),
+        "godo_site": hasattr(_godo_catalog, "_godo_site_base"),
+    }
+
+
+def list_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _list_wholesale_catalog_before_site2(wholesaler_id, *args, **kwargs)
+    if isinstance(result, dict):
+        result["server_fixes"] = _godo_server_fixes()
+    return result
+
+
+def import_wholesale_catalog(wholesaler_id, *args, **kwargs):
+    result = _import_wholesale_catalog_before_site2(wholesaler_id, *args, **kwargs)
+    if isinstance(result, dict):
+        result["server_fixes"] = _godo_server_fixes()
+    return result
+"""
+GODO_LOGIN2_MARKER = "# godo-login2"
+GODO_LOGIN2_SERVICE_PY = r"""
+# godo-login2
+# godo-login1 saved the session with dict(client.cookies), which drops cookie
+# domains. Murray sets analytics_* again for .murray.co.kr, so the next fetch
+# held two cookies with one name and httpx raised CookieConflict.
+_godo_jars = {}
+
+
+def _godo_fetch(url, supplier):
+    key = (_godo_host(url), str(supplier.get("login_id") or "").strip())
+    for attempt in range(2):
+        with _godo_jar_lock:
+            saved = list(_godo_jars.get(key) or [])
+        jar = httpx.Cookies()
+        for name, value, domain, path in saved:
+            jar.set(name, value, domain=domain, path=path)
+        client = httpx.Client(headers=_GODO_HEADERS, follow_redirects=True, timeout=25.0, cookies=jar)
+        try:
+            if not saved or attempt:
+                if not _godo_login(client, url, supplier):
+                    return None
+            response = client.get(url)
+            html = response.text or ""
+            final_url = str(response.url)
+            if response.status_code < 400 and not _godo_is_login(html, final_url):
+                with _godo_jar_lock:
+                    _godo_jars[key] = [(c.name, c.value, c.domain, c.path) for c in client.cookies.jar]
+                return client, html, final_url
+        except httpx.HTTPError:
+            client.close()
+            return None
+        client.close()
+        with _godo_jar_lock:
+            _godo_jars.pop(key, None)
+    return None
+"""
+GODO_LOGIN2_SERVICE_NEEDED = ("def _godo_fetch", "_godo_jar_lock", "_godo_login", GODO_MARKER)
+GODO_IMAGE1_MARKER = "# godo-image1"
+GODO_IMAGE1_SCRAPER_PY = r"""
+# godo-image1
+# Murray pages put long description images ahead of the goods photos, so the
+# first gallery image (the representative) was a detail strip. Keep only this
+# goods number's own photos, falling back to the list page's main image.
+_extract_product_before_godo_image = extract_product
+
+
+def _godo_own_image(url, number):
+    match = _GODO_IMAGE_RE.search(str(url or ""))
+    return bool(match and match.group(1) == number)
+
+
+def _godo_list_image(page_url, number):
+    try:
+        import app.shop_catalog as _godo_catalog
+
+        return _godo_catalog._godo_image_for(page_url, number)
+    except Exception:
+        return ""
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    gallery = [str(url) for url in (data.get("gallery_images") or []) if url]
+    own = [url for url in gallery if _godo_own_image(url, number)]
+    if not own:
+        own = godo_gallery_urls(html if isinstance(html, str) else "", page_url)
+    if not own:
+        main = _godo_list_image(page_url, number)
+        own = [main] if main else []
+    if not own:
+        return data
+    detail = [str(url) for url in (data.get("detail_images") or []) if url and str(url) not in own]
+    for url in gallery:
+        if url not in own and url not in detail and not _GODO_IMAGE_RE.search(url):
+            detail.append(url)
+    data["gallery_images"] = own
+    data["detail_images"] = detail
+    data["images"] = own + detail
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+"""
+GODO_IMAGE1_SCRAPER_NEEDED = ("def extract_product", "def godo_gallery_urls", "_GODO_IMAGE_RE", GODO_MARKER)
+GODO_IMAGE1_CATALOG_PY = r"""
+# godo-image1
+import threading as _godo_threading
+
+_godo_known_images = {}
+_godo_image_sites = set()
+_godo_image_lock = _godo_threading.Lock()
+_godomall_products_before_image = _godomall_products
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image(shop_url, category, *args, **kwargs)
+    for item in (data.get("items") if isinstance(data, dict) else None) or []:
+        if isinstance(item, dict) and item.get("product_no") and item.get("image"):
+            _godo_known_images[str(item.get("product_no"))] = str(item.get("image"))
+    return data
+
+
+def _godo_image_for(page_url, number):
+    number = str(number or "")
+    if number in _godo_known_images:
+        return _godo_known_images[number]
+    finder = globals().get("_godo_site_base")
+    base = (finder(page_url) if finder else "") or _base(page_url)
+    with _godo_image_lock:
+        if base in _godo_image_sites:
+            return _godo_known_images.get(number, "")
+        _godo_image_sites.add(base)
+        try:
+            _godomall_all(base)
+        except Exception:
+            pass
+    return _godo_known_images.get(number, "")
+"""
+GODO_IMAGE1_CATALOG_NEEDED = ("def _godomall_products", "def _godomall_all", "def _base", GODO_SITE1_MARKER)
+TEXT_DECODE1_MARKER = "# subprocess-text1"
+TEXT_DECODE1_CHROME_PY = r"""
+# subprocess-text1
+# kill_profile_chrome reads PowerShell output with text=True, which decodes as
+# cp949 on Korean Windows. Chrome command lines can hold UTF-8 bytes, and the
+# reader threads then print UnicodeDecodeError tracebacks to the console.
+import subprocess as _text_subprocess
+
+if not getattr(_text_subprocess.Popen, "_modumodu_text_errors", False):
+    _text_popen_init = _text_subprocess.Popen.__init__
+
+    def _text_popen_init_replace(self, *args, **kwargs):
+        if kwargs.get("errors") is None and (kwargs.get("text") or kwargs.get("universal_newlines") or kwargs.get("encoding")):
+            kwargs["errors"] = "replace"
+        _text_popen_init(self, *args, **kwargs)
+
+    _text_subprocess.Popen.__init__ = _text_popen_init_replace
+    _text_subprocess.Popen._modumodu_text_errors = True
+"""
+TEXT_DECODE1_CHROME_NEEDED = ("def kill_profile_chrome", "subprocess")
+GODO_OPEN1_MARKER = "# godo-open1"
+GODO_OPEN1_SERVICE_PY = r"""
+# godo-open1
+# open_wholesale_product only opened the URL, so Godomall shops such as Murray
+# showed their login page. Godomall forms use loginId/loginPwd, which the
+# cafe24 login filler does not know, so log in here with the saved account.
+_open_wholesale_product_before_godo = open_wholesale_product
+_GODO_LOGIN_ID = ("#loginId", "input[name='loginId']", "#member_id", "input[name='member_id']", "input[name='userid']")
+_GODO_LOGIN_PW = ("#loginPwd", "input[name='loginPwd']", "#member_passwd", "input[name='member_passwd']", "input[type='password']")
+_GODO_LOGIN_SUBMIT = ("#formLogin button[type='submit']", "#formLogin input[type='submit']", "button.l-login", "a[onclick*='MemberAction.login']")
+
+
+def _godo_first(page, selectors):
+    for selector in selectors:
+        try:
+            found = page.query_selector(selector)
+        except Exception:
+            found = None
+        if found is not None:
+            return found
+    return None
+
+
+def _godo_open_base(supplier, url):
+    import app.shop_catalog as _godo_catalog
+
+    finder = getattr(_godo_catalog, "_godo_site_base", None)
+    kind = str(supplier.get("type") or "").strip().lower()
+    if kind in {"cafe24", "imweb", "ownerclan"}:
+        return ""
+    for source in (supplier.get("url"), url):
+        base = finder(source) if finder else ""
+        if base:
+            return base
+    if kind == "godomall":
+        return _godo_catalog._base(str(supplier.get("url") or url))
+    return ""
+
+
+def _godo_on_login(page):
+    try:
+        return "/member/login" in (page.url or "")
+    except Exception:
+        return False
+
+
+def _godo_open_logged_in(url, base, login_id, password):
+    from playwright.sync_api import sync_playwright
+    from app.chrome_app import connect_cdp, existing_context
+
+    playwright = sync_playwright().start()
+    try:
+        browser = connect_cdp(playwright)
+        context = existing_context(browser)
+        page = context.new_page()
+        page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        if _godo_on_login(page) or page.query_selector("a[href*='logout']") is None:
+            if not _godo_on_login(page):
+                page.goto(base + "/member/login.php", wait_until="domcontentloaded", timeout=25000)
+            user_box = _godo_first(page, _GODO_LOGIN_ID) if _godo_on_login(page) else None
+            pass_box = _godo_first(page, _GODO_LOGIN_PW) if user_box is not None else None
+            if pass_box is not None:
+                user_box.fill(login_id)
+                pass_box.fill(password)
+                pass_box.press("Enter")
+                left = "() => !location.pathname.includes('/member/login')"
+                try:
+                    page.wait_for_function(left, timeout=6000)
+                except Exception:
+                    button = _godo_first(page, _GODO_LOGIN_SUBMIT)
+                    if button is not None and _godo_on_login(page):
+                        try:
+                            button.click(force=True, timeout=5000)
+                            page.wait_for_function(left, timeout=10000)
+                        except Exception:
+                            pass
+                page.goto(url, wait_until="domcontentloaded", timeout=25000)
+        try:
+            page.bring_to_front()
+        except Exception:
+            pass
+        if _godo_on_login(page):
+            return False
+        return True if page.query_selector("a[href*='logout']") is not None else None
+    finally:
+        playwright.stop()
+
+
+def open_wholesale_product(wholesaler_id, url, *args, **kwargs):
+    supplier = get_wholesaler(wholesaler_id, include_secret=True) or {}
+    target = str(url or "").strip()
+    base = _godo_open_base(supplier, target) if supplier and target.startswith("http") else ""
+    if not base:
+        return _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+    name = str(supplier.get("name") or "공급처")
+    login_id = str(supplier.get("login_id") or "").strip()
+    password = str(supplier.get("login_password") or "")
+    if not login_id or not password:
+        result = _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+        if isinstance(result, dict):
+            result["message"] = f"{name} 아이디와 비밀번호가 저장돼 있지 않아 로그인 없이 열었습니다. 공급처관리에서 저장해 주세요."
+        return result
+    try:
+        logged_in = _godo_open_logged_in(target, base, login_id, password)
+    except Exception:
+        return _open_wholesale_product_before_godo(wholesaler_id, url, *args, **kwargs)
+    if logged_in:
+        return {"ok": True, "message": f"{name}에 로그인한 Chrome에서 상품을 열었습니다."}
+    if logged_in is None:
+        return {"ok": True, "message": f"{name} 상품을 열었지만 로그인이 됐는지 확인하지 못했습니다. 공급처관리에서 아이디와 비밀번호를 확인해 주세요."}
+    return {"ok": True, "message": f"{name} 로그인에 실패했습니다. 공급처관리에서 아이디와 비밀번호를 확인해 주세요."}
+"""
+GODO_OPEN1_SERVICE_NEEDED = ("def open_wholesale_product", "def get_wholesaler", GODO_NAME2_MARKER)
+GODO_SITE2_SERVICE_NEEDED = ("def list_wholesale_catalog", "def import_wholesale_catalog", GODO_NAME2_MARKER)
+FIX_STATUS_FILE = "modumodu-fixes.json"
+
+
+def write_fix_status(root: Path) -> bool:
+    catalog = root / "app" / "shop_catalog.py"
+    service = root / "app" / "service.py"
+    static = root / "app" / "static"
+    if not catalog.is_file() or not service.is_file() or not (root / "app" / "scraper.py").is_file() or not static.is_dir():
+        return False
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    checks = {
+        "shop_catalog.py": (
+            (catalog, GODO_NAME_MARKER, catalog_needed),
+            (catalog, GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED),
+            (catalog, GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED),
+        ),
+        "scraper.py": (
+            (root / "app" / "scraper.py", GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED),
+        ),
+        "service.py": (
+            (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
+            (service, GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED),
+            (service, GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED),
+            (service, GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED),
+        ),
+    }
+    files = {}
+    for label, rows in checks.items():
+        for path, marker, needed in rows:
+            text = read_text(path)[0]
+            state = "ok" if marker in text else [name for name in needed if name not in text] or ["not added"]
+            files.setdefault(label, {})[marker.lstrip("# ")] = state
+    payload = json.dumps({"version": SCREEN_VERSION, "files": files}, ensure_ascii=False, indent=1) + "\n"
+    target = static / FIX_STATUS_FILE
+    if target.is_file() and target.read_text(encoding="utf-8") == payload:
+        return False
+    target.write_text(payload, encoding="utf-8")
+    return True
+
+
+GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
+GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
+
+
+def frozen_fix_plan() -> dict:
+    godo_needed = (
+        "def _read_supplier_product",
+        "def _load_page",
+        "def _gallery_ready",
+        "def _match_wholesaler_id",
+        "PageSession",
+    )
+    catalog_needed = ("def _godomall_products", "def _godo_goods_from_href", "def _base", "PAGE_HEADERS", "BeautifulSoup", "httpx")
+    return {
+        "app.scraper": [
+            (MURRAY_MARKER, ("def extract_product",), MURRAY_SCRAPER_PY),
+            (GODO_MARKER, ("def extract_product",), GODO_SCRAPER_PY),
+            (GODO_NAME_MARKER, ("def extract_product", GODO_MARKER), GODO_NAME_SCRAPER_PY),
+            (GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_SCRAPER_PY),
+        ],
+        "app.service": [
+            (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
+            (GODO_MARKER, godo_needed, GODO_SERVICE_PY),
+            (GODO_NAME_MARKER, ("def collect_product", GODO_MARKER, MURRAY_MARKER), GODO_NAME_SERVICE_PY),
+            (GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED, GODO_NAME2_SERVICE_PY),
+            (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
+            (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
+            (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
+        ],
+        "app.chrome_app": [
+            (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),
+        ],
+        "app.shop_catalog": [
+            (GODO_NAME_MARKER, catalog_needed, GODO_NAME_CATALOG_PY),
+            (GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_CATALOG_PY),
+            (GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_CATALOG_PY),
+            (GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_CATALOG_PY),
+        ],
+    }
+
+
+FROZEN_FIXES_TEMPLATE = r'''# The seller program is a frozen PyInstaller build, so its app modules cannot
+# be edited. pwd.py loads this file early and it applies the same source fixes
+# as the master right after each app module runs.
+import sys
+
+FIXES = __FIXES__
+
+
+def _ready(module, required):
+    done = module.__dict__.get("_modumodu_fixes", set())
+    for name in required:
+        if name.startswith("# "):
+            if name not in done:
+                return False
+        elif (name[4:] if name.startswith("def ") else name) not in module.__dict__:
+            return False
+    return True
+
+
+def apply(module):
+    done = module.__dict__.setdefault("_modumodu_fixes", set())
+    for marker, required, snippet in FIXES.get(module.__name__, ()):
+        if marker in done or not _ready(module, required):
+            continue
+        try:
+            code = compile(snippet, "<" + module.__name__ + " " + marker + ">", "exec", flags=0x1000000, dont_inherit=True)
+            exec(code, module.__dict__)
+        except Exception as exc:
+            print("modumodu fix failed", module.__name__, marker, exc, file=sys.stderr)
+            continue
+        done.add(marker)
+
+
+class _Loader:
+    def __init__(self, loader):
+        self._loader = loader
+
+    def __getattr__(self, name):
+        return getattr(self._loader, name)
+
+    def create_module(self, spec):
+        return self._loader.create_module(spec)
+
+    def exec_module(self, module):
+        self._loader.exec_module(module)
+        apply(module)
+
+
+class _Finder:
+    def find_spec(self, name, path=None, target=None):
+        if name not in FIXES:
+            return None
+        for finder in list(sys.meta_path):
+            if isinstance(finder, _Finder):
+                continue
+            find = getattr(finder, "find_spec", None)
+            if find is None:
+                continue
+            spec = find(name, path, target)
+            if spec is None:
+                continue
+            if spec.loader is not None and hasattr(spec.loader, "exec_module"):
+                spec.loader = _Loader(spec.loader)
+            return spec
+        return None
+
+    def invalidate_caches(self):
+        pass
+
+
+def install():
+    if getattr(sys, "_modumodu_fixes_installed", False):
+        return
+    sys._modumodu_fixes_installed = True
+    for name in FIXES:
+        module = sys.modules.get(name)
+        spec = getattr(module, "__spec__", None)
+        if module is not None and not getattr(spec, "_initializing", False):
+            apply(module)
+    sys.meta_path.insert(0, _Finder())
+'''
+
+FROZEN_PWD_PY = r'''# Windows has no pwd module. The frozen seller program imports it while
+# starting (shutil does), which is the first chance to load modumodu_fixes.
+import sys
+
+if getattr(sys, "frozen", False) and not getattr(sys, "_modumodu_fixes_installed", False):
+    try:
+        import modumodu_fixes
+
+        modumodu_fixes.install()
+    except Exception:
+        pass
+
+raise ModuleNotFoundError("No module named 'pwd'", name="pwd")
+'''
+
+
+def frozen_fixes_source() -> str:
+    plan = frozen_fix_plan()
+    lines = ["{"]
+    for module, items in plan.items():
+        lines.append("    " + repr(module) + ": [")
+        for marker, required, snippet in items:
+            lines.append("        (" + repr(marker) + ", " + repr(tuple(required)) + ", " + repr(snippet.strip() + "\n") + "),")
+        lines.append("    ],")
+    lines.append("}")
+    return FROZEN_FIXES_TEMPLATE.replace("__FIXES__", "\n".join(lines))
+
+
+def _frozen_program(folder: Path) -> bool:
+    exe = folder / "MODUMODU.exe"
+    return (folder / "_internal").is_dir() and exe.is_file() and exe.stat().st_size > 8000000
+
+
+def write_frozen_fixes(folder: Path) -> bool:
+    if not _frozen_program(folder):
+        return False
+    changed = False
+    internal = folder / "_internal"
+    for name, text in (("modumodu_fixes.py", frozen_fixes_source()), ("pwd.py", FROZEN_PWD_PY)):
+        path = internal / name
+        payload = text.encode("utf-8")
+        if path.is_file() and path.read_bytes() == payload:
+            continue
+        path.write_bytes(payload)
+        changed = True
+    return changed
+
+
+MASTER_SCRIPT_NAME = "어제오후9시.vbs"
+
+
+def refresh_master_script(folder: Path) -> bool:
+    """Windows tar can unpack the Korean script name garbled, and the old
+    repair kept the bigger file, so a same-size new script was thrown away.
+    The ASCII-named copy always arrives intact."""
+    source = folder / "open-yesterday.vbs"
+    target = folder / MASTER_SCRIPT_NAME
+    if not source.is_file() or "셀러용" in folder.name:
+        return False
+    data = source.read_bytes()
+    if target.is_file() and target.read_bytes() == data:
+        return False
+    try:
+        if target.exists():
+            target.chmod(0o666)
+        target.write_bytes(data)
+    except OSError:
+        return False
+    return True
+
+
+RUNNING_STAMP = "master-running-version.txt"
+
+
+def _windows_processes() -> list[tuple[int, int, str]]:
+    script = (
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; "
+        "Get-CimInstance Win32_Process | ForEach-Object { '{0}`t{1}`t{2}' -f $_.ProcessId, $_.ParentProcessId, $_.CommandLine }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            timeout=60,
+            creationflags=0x08000000,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows = []
+    for line in result.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) == 3 and parts[0].strip().isdigit() and parts[1].strip().isdigit():
+            rows.append((int(parts[0]), int(parts[1]), parts[2]))
+    return rows
+
+
+def _norm_cmd(text: str) -> str:
+    return text.replace("/", "\\").lower()
+
+
+def _started_by_idle_update(rows) -> bool:
+    by_pid = {pid: (ppid, cmd) for pid, ppid, cmd in rows}
+    pid = os.getpid()
+    for _ in range(5):
+        entry = by_pid.get(pid)
+        if entry is None:
+            return False
+        parent = by_pid.get(entry[0])
+        if parent is None:
+            return False
+        if "idle-update.vbs" in parent[1].lower():
+            return True
+        pid = entry[0]
+    return False
+
+
+def restart_stale_master(root: Path) -> bool:
+    """launcher.py only reopens the browser when the server is already up, so
+    a server started before an update keeps running the old Python code."""
+    if os.name != "nt":
+        return False
+    data = root / "data"
+    stamp = data / RUNNING_STAMP
+    current = stamp.read_text(encoding="utf-8").strip() if stamp.is_file() else ""
+    if current == SCREEN_VERSION:
+        return False
+    rows = _windows_processes()
+    if not rows:
+        return False
+    launcher = _norm_cmd(str(root / "launcher.py"))
+    running = [pid for pid, _ppid, cmd in rows if launcher in _norm_cmd(cmd) and pid != os.getpid()]
+    stopped = False
+    if running and current != SCREEN_VERSION:
+        if _started_by_idle_update(rows):
+            return False
+        for pid in running:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                stopped = True
+            except OSError:
+                pass
+        if stopped:
+            time.sleep(2)
+    try:
+        data.mkdir(parents=True, exist_ok=True)
+        stamp.write_text(SCREEN_VERSION + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    return stopped
+
+
+def _step(root: Path, name: str, func, *args) -> bool:
+    """One failing step (a locked seller file, say) must not stop the master
+    from getting the rest of the update."""
+    try:
+        return bool(func(*args))
+    except (Exception, SystemExit) as exc:
+        import traceback
+
+        print(f"{name} failed: {exc}")
+        try:
+            log = root / "data" / "patch-errors.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {SCREEN_VERSION} {name}\n")
+                handle.write(traceback.format_exc() + "\n")
+        except OSError:
+            pass
+        return False
+
+
+def main() -> None:
+    seller_only = "--seller-only" in sys.argv[1:]
+    args = [arg for arg in sys.argv[1:] if arg != "--seller-only"]
+    root = Path(args[0] if args else r"C:\smartstore uploader")
+    if root.exists():
+        _step(root, "repair names", repair_known_folders, root)
+    _step(root, "master script", refresh_master_script, Path(__file__).resolve().parent)
+    if seller_only:
+        if root.exists() and _step(root, "seller copies", arrange_seller_copies, root):
+            print("seller edition")
+            raise SystemExit(11 if SETUP_ZIP_BUILT else 0)
+        print("already linked")
+        return
+    static_changed = _step(root, "static", apply_static_patches, root)
+    version_changed = root.exists() and _step(root, "version", write_screen_version, root)
+    murray_changed = root.exists() and _step(root, "sources", patch_murray_sources, root)
+    seller_changed = root.exists() and _step(root, "seller copies", arrange_seller_copies, root)
+    if root.exists():
+        _step(root, "restart", restart_stale_master, root)
+    if not seller_changed and not static_changed and not version_changed and not murray_changed:
+        if not iter_static_dirs(root):
+            raise SystemExit(f"static files not found: {root / 'app' / 'static'}")
+        print("already linked")
+        return
     print("inquiry links on")
-    raise SystemExit(10)
+    # Exit 10 made older 어제오후9시.vbs copies show the seller setup notice on
+    # every master start; 11 is only for a rebuilt seller setup zip.
+    raise SystemExit(11 if SETUP_ZIP_BUILT else 0)
 
 
 if __name__ == "__main__":

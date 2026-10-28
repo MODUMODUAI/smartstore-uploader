@@ -1,13 +1,28 @@
-param(
-  [Parameter(Mandatory = $true, Position = 0)]
-  [string]$Mode,
-  [Parameter(Mandatory = $true, Position = 1)]
-  [string]$Dir
-)
+# Called as "check-update.ps1 -Check <dir>". A param() block would read -Check
+# as a parameter name and stop before running, so the mode comes from $args.
+$Mode = ''
+$Dir = ''
+foreach ($arg in $args) {
+  $text = [string]$arg
+  if (-not $Mode -and ($text -ieq '-Check' -or $text -ieq '-Apply' -or $text -ieq 'Check' -or $text -ieq 'Apply')) {
+    $Mode = '-' + $text.TrimStart('-')
+  } elseif (-not $Dir) {
+    $Dir = $text
+  }
+}
+if (-not $Mode -or -not $Dir) { exit 1 }
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$manifestUrl = 'https://github.com/ibccomae-cpu/smartstore-uploader/releases/latest/download/latest.json'
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+} catch {}
+$manifestUrl = 'https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json'
+$urlFile = Join-Path $Dir 'update_url.txt'
+if (Test-Path -LiteralPath $urlFile) {
+  $custom = [IO.File]::ReadAllText($urlFile).Trim().TrimStart([char]0xFEFF)
+  if ($custom -match '^https://') { $manifestUrl = $custom }
+}
 
 function Repair-BrokenNames([string]$Folder) {
   if (-not (Test-Path -LiteralPath $Folder)) { return }
@@ -26,7 +41,9 @@ function Repair-BrokenNames([string]$Folder) {
         $keep = Get-Item -LiteralPath $dest -Force
         if ($keep.FullName -eq $_.FullName) { return }
         $keep.Attributes = 'Archive'
-        if ($keep.Length -ge $_.Length) { Remove-Item -LiteralPath $_.FullName -Force }
+        $newer = $_.LastWriteTimeUtc -gt $keep.LastWriteTimeUtc.AddSeconds(2)
+        $same = [Math]::Abs(($_.LastWriteTimeUtc - $keep.LastWriteTimeUtc).TotalSeconds) -le 2
+        if (-not $newer -and -not ($same -and $_.Length -gt $keep.Length)) { Remove-Item -LiteralPath $_.FullName -Force }
         else { Remove-Item -LiteralPath $dest -Force; Move-Item -LiteralPath $_.FullName -Destination $dest -Force }
       } else {
         Move-Item -LiteralPath $_.FullName -Destination $dest -Force
@@ -67,13 +84,68 @@ function Test-Newer([string]$remote, [string]$local) {
 
 function Get-Manifest {
   $headers = @{ 'User-Agent' = 'MODUMODU-Updater/1.0' }
-  return Invoke-RestMethod -Uri $manifestUrl -Headers $headers -TimeoutSec 15
+  $response = Invoke-WebRequest -Uri $manifestUrl -Headers $headers -TimeoutSec 15 -UseBasicParsing
+  $stream = New-Object IO.MemoryStream
+  $response.RawContentStream.CopyTo($stream)
+  $text = [Text.Encoding]::UTF8.GetString($stream.ToArray()).TrimStart([char]0xFEFF)
+  return ($text | ConvertFrom-Json)
 }
 
 function Find-PackageRoot([string]$extracted) {
   $exe = Get-ChildItem -LiteralPath $extracted -Recurse -Filter 'MODUMODU.exe' -File | Select-Object -First 1
   if (-not $exe) { throw 'package has no program' }
   return $exe.DirectoryName
+}
+
+function Test-ProgramExe([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path)) { return $false }
+  $fs = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+  try {
+    $buf = New-Object byte[] 1048576
+    $carry = ''
+    while (($n = $fs.Read($buf, 0, $buf.Length)) -gt 0) {
+      $window = $carry + [System.Text.Encoding]::ASCII.GetString($buf, 0, $n)
+      if ($window.Contains('PyInstaller') -or $window.Contains('python313.dll')) { return $true }
+      if ($window.Length -gt 64) { $carry = $window.Substring($window.Length - 64) } else { $carry = $window }
+    }
+  } finally {
+    $fs.Close()
+  }
+  return $false
+}
+
+function Repair-MasterShortcut([string]$Folder) {
+  $vbs = Join-Path $Folder '어제오후9시.vbs'
+  if (-not (Test-Path -LiteralPath $vbs)) { return }
+  $desk = [Environment]::GetFolderPath('Desktop')
+  if (-not $desk) { return }
+  $wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+  $shell = New-Object -ComObject WScript.Shell
+  $link = $shell.CreateShortcut((Join-Path $desk '모두모두AI 마스터.lnk'))
+  $link.TargetPath = $wscript
+  $link.Arguments = "//nologo `"$vbs`""
+  $link.WorkingDirectory = $Folder
+  $exe = Join-Path $Folder 'MODUMODU.exe'
+  if (Test-Path -LiteralPath $exe) { $link.IconLocation = "$exe,0" }
+  $link.WindowStyle = 1
+  $link.Description = '모두모두AI'
+  $link.Save()
+  Get-ChildItem -LiteralPath $desk -Filter *.lnk -File -ErrorAction SilentlyContinue | ForEach-Object {
+    if ($_.Name -eq '모두모두AI 마스터.lnk') { return }
+    $item = $shell.CreateShortcut($_.FullName)
+    $target = [string]$item.TargetPath
+    if (-not $target.ToLower().EndsWith('\modumodu.exe')) { return }
+    $targetDir = [System.IO.Path]::GetDirectoryName($target)
+    $script = Join-Path $targetDir '어제오후9시.vbs'
+    if (-not (Test-Path -LiteralPath $script)) { return }
+    $item.TargetPath = $wscript
+    $item.Arguments = "//nologo `"$script`""
+    $item.WorkingDirectory = $targetDir
+    $targetExe = Join-Path $targetDir 'MODUMODU.exe'
+    if (Test-Path -LiteralPath $targetExe) { $item.IconLocation = "$targetExe,0" }
+    $item.WindowStyle = 1
+    $item.Save()
+  }
 }
 
 if ($Mode -eq '-Check') {
@@ -102,7 +174,7 @@ if ($Mode -eq '-Apply') {
   try {
     $info = Get-Manifest
     $zip = Join-Path $tempRoot 'update.zip'
-    Invoke-WebRequest -Uri $info.url -OutFile $zip -Headers @{ 'User-Agent' = 'MODUMODU-Updater/1.0' } -TimeoutSec 180
+    Invoke-WebRequest -Uri $info.url -OutFile $zip -Headers @{ 'User-Agent' = 'MODUMODU-Updater/1.0' } -TimeoutSec 180 -UseBasicParsing
     $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
     if ($hash -ne ([string]$info.sha256).ToLower()) { throw 'sha256 mismatch' }
     $extracted = Join-Path $tempRoot 'extracted'
@@ -110,9 +182,13 @@ if ($Mode -eq '-Apply') {
     & tar.exe -xf $zip -C $extracted
     if ($LASTEXITCODE -ne 0) { throw 'extract failed' }
     $src = Find-PackageRoot $extracted
-    & robocopy.exe $src $Dir /E /XD data /XF edition.txt update_url.txt license_url.txt launcher.log /R:8 /W:2 /NFL /NDL /NJH /NJS /NP
+    $exclude = @('edition.txt', 'update_url.txt', 'license_url.txt', 'launcher.log')
+    if (Test-ProgramExe (Join-Path $Dir 'MODUMODU.exe')) { $exclude += 'MODUMODU.exe' }
+    $roboArgs = @($src, $Dir, '/E', '/XD', 'data', '/XF') + $exclude + @('/R:8', '/W:2', '/NFL', '/NDL', '/NJH', '/NJS', '/NP')
+    & robocopy.exe @roboArgs
     if ($LASTEXITCODE -ge 8) { throw 'copy failed' }
     Repair-BrokenNames $Dir
+    Repair-MasterShortcut $Dir
     exit 0
   } catch {
     exit 1

@@ -18,7 +18,7 @@ import (
 	"unsafe"
 )
 
-const defaultManifestURL = "https://github.com/ibccomae-cpu/smartstore-uploader/releases/latest/download/latest.json"
+const defaultManifestURL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 
 func main() {
 	exe, err := os.Executable()

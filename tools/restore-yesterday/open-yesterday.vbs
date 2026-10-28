@@ -1,12 +1,13 @@
 Option Explicit
 
-Dim fso, shell, here, root, staticDir, marker, py, launcher, desktop, link
-Dim dataDir, bestData, bestCount, liveCount, copied, patched, exePath
+Dim fso, shell, here, root, staticDir, marker, py, launcher
+Dim dataDir, bestData, bestCount, liveCount, copied, patched
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 RepairBrokenNames here
+RepairMasterShortcut
 If Not ReadyArg() Then
   If OfferUpdate(here) Then WScript.Quit 0
 End If
@@ -58,28 +59,51 @@ If fso.FileExists(here & "\idle-update.vbs") Then
   shell.Run "wscript.exe //nologo """ & here & "\idle-update.vbs"" """ & here & """ """ & root & """", 0, False
 End If
 
-On Error Resume Next
-desktop = shell.SpecialFolders("Desktop")
-exePath = here & "\MODUMODU.exe"
-Set link = shell.CreateShortcut(desktop & "\모두모두AI 마스터.lnk")
-If fso.FileExists(exePath) Then
-  link.TargetPath = exePath
-  link.Arguments = ""
-  link.WorkingDirectory = here
-Else
-  link.TargetPath = "wscript.exe"
-  link.Arguments = "//nologo """ & WScript.ScriptFullName & """"
-  link.WorkingDirectory = here
-End If
-link.WindowStyle = 1
-link.Description = "모두모두AI"
-link.Save
-On Error GoTo 0
+RepairMasterShortcut
 
-If patched = 10 Then
-  MsgBox "관리자초대를 설정에 넣었습니다." & vbCrLf & _
-    "화면 버전은 v2026.10.28.9 입니다.", 64, "모두모두AI"
+If patched = 11 Then
+  MsgBox "마스터 프로그램을 엽니다. 화면 버전은 v" & ScreenVersion() & " 입니다." & vbCrLf & vbCrLf & _
+    "셀러용 설치 파일도 같은 버전으로 새로 만들었습니다." & vbCrLf & _
+    "구매자에게 배포\모두모두AI-셀러용-설치.zip 을 주세요.", 64, "모두모두AI"
 End If
+
+Sub RepairMasterShortcut()
+  Dim desktop, shellLink, folder, file, scriptPath, target, targetDir
+  On Error Resume Next
+  desktop = shell.SpecialFolders("Desktop")
+  If desktop = "" Then Exit Sub
+  scriptPath = here & "\어제오후9시.vbs"
+  If Not fso.FileExists(scriptPath) Then scriptPath = WScript.ScriptFullName
+  Set shellLink = shell.CreateShortcut(desktop & "\모두모두AI 마스터.lnk")
+  shellLink.TargetPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
+  shellLink.Arguments = "//nologo """ & scriptPath & """"
+  shellLink.WorkingDirectory = here
+  If fso.FileExists(here & "\MODUMODU.exe") Then shellLink.IconLocation = here & "\MODUMODU.exe,0"
+  shellLink.WindowStyle = 1
+  shellLink.Description = "모두모두AI"
+  shellLink.Save
+  Set folder = fso.GetFolder(desktop)
+  For Each file In folder.Files
+    If LCase(Right(file.Name, 4)) = ".lnk" And LCase(file.Name) <> "모두모두ai 마스터.lnk" Then
+      Set shellLink = shell.CreateShortcut(file.Path)
+      target = shellLink.TargetPath
+      If Len(target) >= 12 Then
+        If LCase(Right(target, 12)) = "\modumodu.exe" Then
+          targetDir = fso.GetParentFolderName(target)
+          If fso.FileExists(targetDir & "\어제오후9시.vbs") Then
+            shellLink.TargetPath = shell.ExpandEnvironmentStrings("%SystemRoot%\System32\wscript.exe")
+            shellLink.Arguments = "//nologo """ & targetDir & "\어제오후9시.vbs"""
+            shellLink.WorkingDirectory = targetDir
+            If fso.FileExists(targetDir & "\MODUMODU.exe") Then shellLink.IconLocation = targetDir & "\MODUMODU.exe,0"
+            shellLink.WindowStyle = 1
+            shellLink.Save
+          End If
+        End If
+      End If
+    End If
+  Next
+  On Error GoTo 0
+End Sub
 
 Sub RepairBrokenNames(folder)
   Dim pairs, i, parts, src, dst
@@ -97,7 +121,7 @@ Sub RepairBrokenNames(folder)
       On Error Resume Next
       If Not fso.FileExists(dst) Then
         fso.MoveFile src, dst
-      ElseIf fso.GetFile(src).Size > fso.GetFile(dst).Size Then
+      ElseIf NewerFile(fso.GetFile(src), fso.GetFile(dst)) Then
         fso.DeleteFile dst, True
         fso.MoveFile src, dst
       Else
@@ -107,6 +131,31 @@ Sub RepairBrokenNames(folder)
     End If
   Next
 End Sub
+
+Function NewerFile(a, b)
+  Dim gap
+  gap = DateDiff("s", b.DateLastModified, a.DateLastModified)
+  If gap > 2 Then
+    NewerFile = True
+  ElseIf gap < -2 Then
+    NewerFile = False
+  Else
+    NewerFile = a.Size > b.Size
+  End If
+End Function
+
+Function ScreenVersion()
+  Dim ts, text
+  ScreenVersion = ""
+  On Error Resume Next
+  If fso.FileExists(here & "\version.txt") Then
+    Set ts = fso.OpenTextFile(here & "\version.txt", 1, False)
+    text = Trim(Replace(Replace(ts.ReadAll, vbCr, ""), vbLf, ""))
+    ts.Close
+    ScreenVersion = text
+  End If
+  On Error GoTo 0
+End Function
 
 Function ReadyArg()
   Dim i
@@ -122,6 +171,14 @@ End Function
 Function OfferUpdate(folder)
   Dim ps1, exec, rc, offer, ts, remote, local, notes, answer, updatedExe
   OfferUpdate = False
+  updatedExe = folder & "\MODUMODU.exe"
+  If fso.FileExists(updatedExe) Then
+    If fso.GetFile(updatedExe).Size < 8000000 Then
+      shell.Run """" & updatedExe & """", 1, False
+      OfferUpdate = True
+      Exit Function
+    End If
+  End If
   ps1 = folder & "\check-update.ps1"
   If Not fso.FileExists(ps1) Then Exit Function
   On Error Resume Next
@@ -256,10 +313,7 @@ Sub ConsiderKnownData(appRoot)
   paths = Array( _
     appRoot & "\data", _
     appRoot & "\배포\MODUMODU-마스터\data", _
-    appRoot & "\배포\MODUMODU-배포용\data", _
-    appRoot & "\배포\MODUMODU-테스트용\data", _
     appRoot & "\dist\MODUMODU\data", _
-    appRoot & "\dist\모두모두AI 테스트용\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.9\모두모두AI-마스터\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.8\모두모두AI-마스터\data", _
     "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.7\모두모두AI-마스터\data" _

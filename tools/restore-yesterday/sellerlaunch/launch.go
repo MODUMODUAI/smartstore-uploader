@@ -19,6 +19,43 @@ func ensureSellerEdition(dir string) error {
 	return os.WriteFile(filepath.Join(dir, "edition.txt"), []byte("test\r\n"), 0o644)
 }
 
+func oldEditionShortcutNames() []string {
+	return []string{
+		"모두모두AI 배포용.lnk",
+		"모두모두AI 배포용.url",
+		"모두모두AI 테스트용.lnk",
+		"모두모두AI 테스트용.url",
+	}
+}
+
+func removeOldEditionShortcuts(dirs []string) {
+	for _, dir := range dirs {
+		for _, name := range oldEditionShortcutNames() {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
+}
+
+func removeOldEditionMaterials(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.Contains(name, "배포용") && !strings.Contains(name, "테스트용") {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func removeMasterLaunchers(dir string) error {
 	for _, name := range []string{"어제오후9시.vbs", "idle-update.vbs"} {
 		path := filepath.Join(dir, name)
@@ -60,6 +97,9 @@ func prepareSellerCommand(dir string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	if err := removeMasterLaunchers(dir); err != nil {
+		return nil, err
+	}
+	if err := removeOldEditionMaterials(dir); err != nil {
 		return nil, err
 	}
 	return sellerCommand(target, dir), nil

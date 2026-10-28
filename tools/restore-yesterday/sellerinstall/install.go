@@ -116,3 +116,40 @@ func RemoveMasterLaunchers(dir string) error {
 	}
 	return nil
 }
+
+func OldEditionShortcutNames() []string {
+	return []string{
+		"모두모두AI 배포용.lnk",
+		"모두모두AI 배포용.url",
+		"모두모두AI 테스트용.lnk",
+		"모두모두AI 테스트용.url",
+	}
+}
+
+func RemoveOldEditionShortcuts(dirs []string) {
+	for _, dir := range dirs {
+		for _, name := range OldEditionShortcutNames() {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
+}
+
+func RemoveOldEditionMaterials(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.Contains(name, "배포용") && !strings.Contains(name, "테스트용") {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
+			return err
+		}
+	}
+	return nil
+}

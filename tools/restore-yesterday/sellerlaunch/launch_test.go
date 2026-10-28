@@ -47,6 +47,47 @@ func TestSellerCommandStaysOnSellerPort(t *testing.T) {
 	}
 }
 
+func TestRemoveOldEditionMaterials(t *testing.T) {
+	dir := t.TempDir()
+	desk := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "배포용자료"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "사용방법-배포용.txt"), []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "사용방법-셀러용.txt"), []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(desk, "모두모두AI 배포용.lnk"), []byte("icon"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(desk, "모두모두AI 셀러용.lnk"), []byte("seller"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeOldEditionMaterials(dir); err != nil {
+		t.Fatal(err)
+	}
+	removeOldEditionShortcuts([]string{desk})
+	if _, err := os.Stat(filepath.Join(dir, "사용방법-배포용.txt")); !os.IsNotExist(err) {
+		t.Fatal("deploy help kept")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "배포용자료")); !os.IsNotExist(err) {
+		t.Fatal("deploy folder kept")
+	}
+	kept, err := os.ReadFile(filepath.Join(dir, "사용방법-셀러용.txt"))
+	if err != nil || string(kept) != "keep" {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(desk, "모두모두AI 배포용.lnk")); !os.IsNotExist(err) {
+		t.Fatal("deploy shortcut kept")
+	}
+	seller, err := os.ReadFile(filepath.Join(desk, "모두모두AI 셀러용.lnk"))
+	if err != nil || string(seller) != "seller" {
+		t.Fatal("seller shortcut removed")
+	}
+}
+
 func TestPrepareRejectsMasterUpdater(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "MODUMODU.exe"), []byte("go-updater"), 0o644); err != nil {

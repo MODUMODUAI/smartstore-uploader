@@ -37,6 +37,8 @@ func main() {
 		alert("셀러용 설정을 쓰지 못했습니다.")
 		return
 	}
+	_ = RemoveOldEditionMaterials(dest)
+	RemoveOldEditionShortcuts(desktopDirs())
 	target := filepath.Join(dest, "셀러실행.exe")
 	if _, err := os.Stat(target); err != nil {
 		target = filepath.Join(dest, "MODUMODU.exe")
@@ -51,6 +53,36 @@ func main() {
 		cmd.Dir = dest
 		_ = cmd.Start()
 	}
+}
+
+func desktopDirs() []string {
+	seen := map[string]bool{}
+	var dirs []string
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		key := strings.ToLower(path)
+		if seen[key] {
+			return
+		}
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			return
+		}
+		seen[key] = true
+		dirs = append(dirs, path)
+	}
+	if out, err := exec.Command("powershell", "-NoProfile", "-Command", "[Environment]::GetFolderPath('Desktop')").Output(); err == nil {
+		add(string(out))
+	}
+	home, _ := os.UserHomeDir()
+	add(filepath.Join(home, "Desktop"))
+	add(filepath.Join(home, "OneDrive", "Desktop"))
+	add(filepath.Join(home, "OneDrive", "바탕 화면"))
+	add(filepath.Join(os.Getenv("PUBLIC"), "Desktop"))
+	return dirs
 }
 
 func stopInstalledApp(dest string) {

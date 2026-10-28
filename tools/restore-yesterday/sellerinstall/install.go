@@ -75,9 +75,16 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
-		return err
+		_ = os.Remove(dst + ".old")
+		if renErr := os.Rename(dst, dst+".old"); renErr != nil {
+			return err
+		}
+		out, err = os.Create(dst)
+		if err != nil {
+			return err
+		}
 	}
 	_, copyErr := io.Copy(out, in)
 	closeErr := out.Close()

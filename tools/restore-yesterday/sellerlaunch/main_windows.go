@@ -27,6 +27,11 @@ type updateManifest struct {
 	Notes   string `json:"notes"`
 }
 
+func init() {
+	stopProgram = stopModumodu
+	startProgram = startModumodu
+}
+
 func main() {
 	exe, err := os.Executable()
 	if err != nil {
@@ -36,6 +41,11 @@ func main() {
 	dir := filepath.Dir(exe)
 	_ = tryUpdate(dir)
 	refreshSellerShortcut(exe, dir)
+	if err := startAccountServer(dir); err != nil {
+		alert("로그인 창을 열지 못했습니다.")
+		return
+	}
+	_ = parkData(dir)
 	target := filepath.Join(dir, "MODUMODU.exe")
 	if _, err := os.Stat(target); err != nil {
 		alert("셀러용 프로그램을 찾지 못했습니다.")
@@ -44,6 +54,23 @@ func main() {
 	cmd := exec.Command(target)
 	cmd.Dir = dir
 	_ = cmd.Start()
+}
+
+func stopModumodu(dir string) error {
+	target := filepath.Join(dir, "MODUMODU.exe")
+	script := `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $env:SELLER_KILL) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+	cmd := exec.Command("powershell", "-NoProfile", "-WindowStyle", "Hidden", "-Command", script)
+	cmd.Env = append(os.Environ(), "SELLER_KILL="+target)
+	_ = cmd.Run()
+	time.Sleep(300 * time.Millisecond)
+	return nil
+}
+
+func startModumodu(dir string) error {
+	target := filepath.Join(dir, "MODUMODU.exe")
+	cmd := exec.Command(target)
+	cmd.Dir = dir
+	return cmd.Start()
 }
 
 func tryUpdate(dir string) error {

@@ -128,7 +128,7 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.14"
+SCREEN_VERSION = "2026.10.28.15"
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -3053,15 +3053,301 @@ body.seller-locked { overflow: hidden; }
 #sellerLogout { padding: 3px 8px; }
 """
 
+SELLER_LOGIN2_JS = r"""
+/* seller-login2 */
+(function () {
+  const accountURL = "http://127.0.0.1:8790";
+  const sessionKey = "modumodu-seller-session";
+  const accountKey = "modumodu-seller-account";
+  const offlineMessage = "로그인 서비스를 찾지 못했습니다. 모두모두AI-셀러용-설치.exe 를 다시 실행해 주세요.";
+
+  function isSeller() {
+    return document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test");
+  }
+
+  function digits(value) {
+    let number = String(value || "").replace(/\D/g, "");
+    if (number.startsWith("82") && number.length >= 11) number = "0" + number.slice(2);
+    return number;
+  }
+
+  function validPhone(value) {
+    return /^01[016789]\d{7,8}$/.test(digits(value));
+  }
+
+  function formatPhone(value) {
+    const number = digits(value);
+    if (number.length === 11) return number.slice(0, 3) + "-" + number.slice(3, 7) + "-" + number.slice(7);
+    if (number.length === 10) return number.slice(0, 3) + "-" + number.slice(3, 6) + "-" + number.slice(6);
+    return number;
+  }
+
+  function formatCode(password) {
+    const code = String(password || "").replace(/\s+/g, "");
+    if (code.length === 8) return code.slice(0, 4) + " " + code.slice(4);
+    return code;
+  }
+
+  function postSync(path, body) {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", accountURL + path, false);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    try {
+      xhr.send(JSON.stringify(body || {}));
+    } catch (error) {
+      throw new Error(offlineMessage);
+    }
+    const data = JSON.parse(xhr.responseText || "{}");
+    if (xhr.status < 200 || xhr.status >= 300) throw new Error(data.error || "로그인하지 못했습니다.");
+    return data;
+  }
+
+  async function post(path, body) {
+    if (window.__sellerLoginTest) return postSync(path, body);
+    let response;
+    try {
+      response = await fetch(accountURL + path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {})
+      });
+    } catch (error) {
+      throw new Error(offlineMessage);
+    }
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "로그인하지 못했습니다.");
+    return data;
+  }
+
+  function showError(message) {
+    const box = document.getElementById("sellerLoginError");
+    if (box) box.textContent = message || "";
+  }
+
+  function remember(phone) {
+    const number = digits(phone);
+    localStorage.setItem(sessionKey, JSON.stringify({ phone: number }));
+    localStorage.setItem(accountKey, number);
+  }
+
+  function forget() {
+    localStorage.removeItem(sessionKey);
+    localStorage.removeItem(accountKey);
+  }
+
+  function refreshOldGate() {
+    document.body.classList.toggle("seller-login-sync");
+  }
+
+  function labelWrap(text, id, input) {
+    const label = document.createElement("label");
+    label.id = id;
+    label.textContent = text;
+    label.append(input);
+    return label;
+  }
+
+  function rebuild() {
+    const gate = document.getElementById("sellerLogin");
+    if (!gate || gate.dataset.login2 === "1") return;
+    gate.dataset.login2 = "1";
+    while (gate.firstChild) gate.removeChild(gate.firstChild);
+    const card = document.createElement("form");
+    card.className = "seller-login-card";
+    const title = document.createElement("h1");
+    title.id = "sellerLoginTitle";
+    const a = document.createElement("span");
+    a.className = "brand-a";
+    a.textContent = "모두";
+    const b = document.createElement("span");
+    b.className = "brand-b";
+    b.textContent = "모두";
+    const ai = document.createElement("span");
+    ai.className = "brand-ai";
+    ai.textContent = "AI";
+    title.append(a, b, ai, document.createTextNode(" 셀러용"));
+    const lead = document.createElement("p");
+    lead.textContent = "전화번호를 입력하면 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 들어오면 같은 데이터가 열립니다.";
+    const phone = document.createElement("input");
+    phone.id = "sellerLoginPhone";
+    phone.type = "tel";
+    phone.autocomplete = "tel";
+    phone.inputMode = "numeric";
+    phone.required = true;
+    const check = document.createElement("button");
+    check.type = "button";
+    check.id = "sellerLoginCheck";
+    check.textContent = "확인";
+    const issued = document.createElement("div");
+    issued.id = "sellerIssued";
+    issued.hidden = true;
+    const issuedLead = document.createElement("p");
+    issuedLead.textContent = "이 전화번호의 비밀번호입니다. 적어 두세요.";
+    const issuedPassword = document.createElement("p");
+    issuedPassword.id = "sellerIssuedPassword";
+    issued.append(issuedLead, issuedPassword);
+    const password = document.createElement("input");
+    password.id = "sellerLoginPassword";
+    password.type = "password";
+    password.autocomplete = "current-password";
+    const passwordRow = labelWrap("비밀번호", "sellerPasswordRow", password);
+    passwordRow.hidden = true;
+    const error = document.createElement("p");
+    error.id = "sellerLoginError";
+    error.setAttribute("role", "alert");
+    const enter = document.createElement("button");
+    enter.type = "button";
+    enter.id = "sellerLoginEnter";
+    enter.hidden = true;
+    enter.textContent = "들어가기";
+    card.append(title, lead, labelWrap("전화번호", "sellerPhoneRow", phone), check, issued, passwordRow, error, enter);
+    check.addEventListener("click", async () => {
+      showError("");
+      if (!validPhone(phone.value)) {
+        showError("본인 전화번호를 입력해 주세요.");
+        return;
+      }
+      check.disabled = true;
+      try {
+        const data = await post("/api/seller-login", { phone: phone.value });
+        issued.hidden = data.status !== "new";
+        passwordRow.hidden = data.status === "new";
+        enter.hidden = false;
+        if (data.status === "new") {
+          issuedPassword.textContent = formatCode(data.password);
+          enter.dataset.password = data.password;
+          enter.textContent = "이 비밀번호로 들어가기";
+        } else {
+          issuedPassword.textContent = "";
+          delete enter.dataset.password;
+          enter.textContent = "들어가기";
+          password.value = "";
+          password.focus();
+        }
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        check.disabled = false;
+      }
+    });
+    enter.addEventListener("click", async () => {
+      showError("");
+      const typed = enter.dataset.password || password.value;
+      if (!String(typed || "").trim()) {
+        showError("비밀번호를 입력해 주세요.");
+        return;
+      }
+      enter.disabled = true;
+      try {
+        await post("/api/seller-enter", { phone: phone.value, password: typed });
+        remember(phone.value);
+        if (window.__sellerLoginTest) {
+          document.body.dataset.sellerEntered = digits(phone.value);
+          refreshOldGate();
+          return;
+        }
+        location.reload();
+      } catch (error) {
+        showError(error.message);
+      } finally {
+        enter.disabled = false;
+      }
+    });
+    gate.append(card);
+  }
+
+  async function syncStatus() {
+    if (!isSeller()) return;
+    rebuild();
+    try {
+      let data = {};
+      if (window.__sellerLoginTest) {
+        const xhr = new XMLHttpRequest();
+        xhr.open("GET", accountURL + "/api/seller-status", false);
+        xhr.send();
+        data = JSON.parse(xhr.responseText || "{}");
+      } else {
+        const response = await fetch(accountURL + "/api/seller-status");
+        data = await response.json();
+      }
+      if (data.phone && validPhone(data.phone)) remember(data.phone);
+      else forget();
+    } catch (error) {
+      forget();
+    }
+    const note = document.getElementById("sellerLoginNote");
+    if (note) note.textContent = "처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.";
+    refreshOldGate();
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target && event.target.closest ? event.target.closest("#sellerLogout") : null;
+    if (!button || !isSeller()) return;
+    event.preventDefault();
+    event.stopPropagation();
+    try { await post("/api/seller-logout", {}); } catch (error) {}
+    forget();
+    if (window.__sellerLoginTest) {
+      document.body.dataset.sellerEntered = "";
+      refreshOldGate();
+      return;
+    }
+    location.reload();
+  }, true);
+
+  function hook() {
+    if (!document.body.dataset.sellerLogin2Watch) {
+      document.body.dataset.sellerLogin2Watch = "1";
+      new MutationObserver(() => hook()).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+    }
+    if (!isSeller()) return;
+    rebuild();
+    if (document.body.dataset.sellerStatus === "1") return;
+    document.body.dataset.sellerStatus = "1";
+    syncStatus();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hook);
+  else hook();
+  setTimeout(hook, 0);
+})();
+"""
+
+SELLER_LOGIN2_CSS = """
+/* seller-login2 */
+#sellerIssuedPassword {
+  margin: 8px 0 12px;
+  padding: 12px 8px;
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  text-align: center;
+  font-weight: 800;
+  font-family: Consolas, "Malgun Gothic", monospace;
+  background: var(--soft);
+  border-radius: 8px;
+}
+#sellerLoginCheck, #sellerLoginEnter {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  background: #0b5cab;
+  border-color: #084a8a;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+"""
+
 SELLER_LOGIN_NOTE = (
-    '<p id="sellerLoginNote">프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. '
-    "시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.</p>"
+    '<p id="sellerLoginNote">처음 쓰는 전화번호에는 비밀번호를 발급합니다. '
+    "같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.</p>"
 )
 
 SELLER_HELP = """모두모두AI 셀러용
 
 구매자가 설치해서 쓰는 판매용 프로그램입니다.
-열 때 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 들어갑니다.
+처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.
 마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
 상품담기, 상품관리, 주문관리, 문의관리, 공급처, 설정은 사용할 수 있습니다.
 
@@ -3084,7 +3370,7 @@ SELLER_README = """모두모두AI 셀러용 설치
 2. 설치가 끝나면 바탕화면의 모두모두AI 셀러용을 누릅니다.
 3. 브라우저에서 http://127.0.0.1:8788 이 열립니다.
 4. 새 버전이 있으면 실행할 때 업데이트 안내가 나옵니다. 상품과 설정은 그대로 둡니다.
-5. 처음 열면 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 들어갑니다.
+5. 처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.
 
 마켓 아이디, 패스워드, 관리자키, 공급처 로그인, 상품 URL 수집은 없습니다.
 """
@@ -3134,6 +3420,10 @@ def patch_help(text: str) -> str:
         end = text.find("</p>", pos)
         if end >= 0:
             text = text[: end + 4] + "\n" + SELLER_LOGIN_NOTE + text[end + 4 :]
+    text = text.replace(
+        "프로그램에 들어갈 때는 본인 전화번호와 비밀번호를 입력합니다. 시험 단계에서는 그 번호와 비밀번호로 바로 들어갑니다.",
+        "처음 쓰는 전화번호에는 비밀번호를 발급합니다. 같은 전화번호와 그 비밀번호로 다시 들어오면 같은 데이터가 열립니다.",
+    )
     if 'data-help="help-admins"' not in text:
         needle = 'data-help="help-data"'
         pos = text.find(needle)
@@ -3637,8 +3927,8 @@ def patch_store_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "seller-login1")
-    return bump_asset(text, "app.js", "seller-login1")
+    text = bump_asset(text, "styles.css", "seller-login2")
+    return bump_asset(text, "app.js", "seller-login2")
 
 
 def patch_answer(text: str) -> str:
@@ -3672,8 +3962,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SELLER_JS.replace("2026.10.28.11", SCREEN_VERSION)
     if "/* seller-login1 */" not in text:
         text = text.rstrip() + "\n" + SELLER_LOGIN_JS
+    if "/* seller-login2 */" not in text:
+        text = text.rstrip() + "\n" + SELLER_LOGIN2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13"):
+    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14"):
         if old != SCREEN_VERSION:
             text = text.replace(old, SCREEN_VERSION)
     return text
@@ -3705,6 +3997,8 @@ def patch_css(text: str) -> str:
         extra += SELLER_CSS
     if "/* seller-login1 */" not in text:
         extra += SELLER_LOGIN_CSS
+    if "/* seller-login2 */" not in text:
+        extra += SELLER_LOGIN2_CSS
     if not extra:
         return text
     return text.rstrip() + "\n" + extra

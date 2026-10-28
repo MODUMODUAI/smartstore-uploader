@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -27,6 +28,7 @@ func main() {
 		alert("설치 폴더를 만들지 못했습니다.")
 		return
 	}
+	stopInstalledApp(dest)
 	if err := CopyProgram(payload, dest); err != nil {
 		alert("파일을 복사하지 못했습니다.\n" + err.Error())
 		return
@@ -49,6 +51,14 @@ func main() {
 		cmd.Dir = dest
 		_ = cmd.Start()
 	}
+}
+
+func stopInstalledApp(dest string) {
+	script := `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($env:SELLER_DEST, [StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`
+	cmd := exec.Command("powershell", "-NoProfile", "-Command", script)
+	cmd.Env = append(os.Environ(), "SELLER_DEST="+dest)
+	_ = cmd.Run()
+	time.Sleep(400 * time.Millisecond)
 }
 
 func createDesktopShortcut(target, work string) error {

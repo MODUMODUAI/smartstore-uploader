@@ -18,7 +18,7 @@ func skipUpdateRel(rel string) bool {
 		base = rel[:i]
 	}
 	switch base {
-	case "data", "edition.txt", "update_url.txt", "license_url.txt", "launcher.log":
+	case "data", "seller-accounts", "edition.txt", "update_url.txt", "license_url.txt", "launcher.log":
 		return true
 	default:
 		return false

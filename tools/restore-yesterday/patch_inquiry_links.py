@@ -131,7 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.43"
+SCREEN_VERSION = "2026.10.28.44"
+# Longer tokens first is unnecessary: each token is a full version, and a
+# shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 44))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4595,11 +4598,77 @@ def patch_store_label(text: str) -> str:
     return pattern.sub(r"\1스토어명\2", text, count=1)
 
 
+def _replace_old_versions(text: str) -> str:
+    for old in _OLD_SCREEN_VERSIONS:
+        if old != SCREEN_VERSION:
+            text = text.replace(old, SCREEN_VERSION)
+    return text
+
+
+def _screen_build_script() -> str:
+    # seller-edition1 keeps a MutationObserver on #appVersion and writes its
+    # own constant until 11s. Cloning the node drops that observer. The late
+    # timers cover a cached app.js?v=open-login1 that still says an older
+    # version after this HTML has been loaded.
+    return (
+        "<script>\n"
+        "/* screen-build1 */\n"
+        "(function () {\n"
+        f'  const version = "{SCREEN_VERSION}";\n'
+        "  function show() {\n"
+        '    const label = document.getElementById("appVersion");\n'
+        "    if (label && label.dataset.screenBuild !== version) {\n"
+        "      const fresh = label.cloneNode(true);\n"
+        "      fresh.dataset.screenBuild = version;\n"
+        "      fresh.hidden = false;\n"
+        "      label.replaceWith(fresh);\n"
+        "      new MutationObserver(function () {\n"
+        '        if (fresh.textContent !== "v" + version) fresh.textContent = "v" + version;\n'
+        "      }).observe(fresh, { childList: true, characterData: true, subtree: true });\n"
+        "    }\n"
+        '    const current = document.getElementById("appVersion");\n'
+        "    if (current) {\n"
+        "      current.hidden = false;\n"
+        '      if (current.textContent !== "v" + version) current.textContent = "v" + version;\n'
+        '      current.title = "버전 " + version;\n'
+        "    }\n"
+        '    const seller = document.body && (document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test") || String(location.port || "") === "8788");\n'
+        '    const title = "모두모두AI " + (seller ? "셀러용" : "마스터") + " v" + version;\n'
+        "    if (document.title !== title) document.title = title;\n"
+        "  }\n"
+        "  show();\n"
+        "  setTimeout(show, 0);\n"
+        "  setTimeout(show, 12000);\n"
+        "  setTimeout(show, 16000);\n"
+        "  setTimeout(show, 20000);\n"
+        "})();\n"
+        "</script>\n"
+    )
+
+
+def _ensure_screen_build(text: str) -> str:
+    script = _screen_build_script()
+    pattern = re.compile(r"<script>\s*/\* screen-build1 \*/.*?</script>\s*", re.S)
+    if pattern.search(text):
+        return pattern.sub(script, text, count=1)
+    if "</body>" in text:
+        return text.replace("</body>", script + "</body>", 1)
+    return text + script
+
+
+def _set_version_label(text: str) -> str:
+    pattern = re.compile(r'(id="appVersion"[^>]*>)v[\d.]+')
+    return pattern.sub(rf"\1v{SCREEN_VERSION}", text, count=1)
+
+
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "open-login1")
-    return bump_asset(text, "app.js", "open-login1")
+    text = bump_asset(text, "styles.css", SCREEN_VERSION)
+    text = bump_asset(text, "app.js", SCREEN_VERSION)
+    text = _set_version_label(text)
+    text = _ensure_screen_build(text)
+    return _replace_old_versions(text)
 
 
 COLLECT_URL_JS = r"""
@@ -5428,10 +5497,7 @@ def patch_answer(text: str) -> str:
     if "/* godo-image2 */" not in text:
         text = text.rstrip() + "\n" + GODO_IMAGE2_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40", "2026.10.28.41", "2026.10.28.42"):
-        if old != SCREEN_VERSION:
-            text = text.replace(old, SCREEN_VERSION)
-    return text
+    return _replace_old_versions(text)
 
 
 def patch_css(text: str) -> str:

@@ -39,6 +39,28 @@ class GodoImage2Test(unittest.TestCase):
         code = compile(patch.GODO_IMAGE2_SCRAPER_PY, "<godo-image2>", "exec")
         exec(code, self.ns)
 
+    def test_screen_version_replaces_cached_query(self):
+        html = """
+        <span id="appVersion" class="app-version">v2026.10.28.42</span>
+        <link rel="stylesheet" href="/static/styles.css?v=open-login1" />
+        <script src="/static/app.js?v=open-login1"></script>
+        </body>
+        """
+        updated = patch.patch_html(html)
+        self.assertIn(f"/static/app.js?v={patch.SCREEN_VERSION}", updated)
+        self.assertIn(f"/static/styles.css?v={patch.SCREEN_VERSION}", updated)
+        self.assertIn(f">v{patch.SCREEN_VERSION}<", updated)
+        self.assertIn("/* screen-build1 */", updated)
+        self.assertIn(f'const version = "{patch.SCREEN_VERSION}"', updated)
+        self.assertNotIn("open-login1", updated)
+        self.assertNotIn("2026.10.28.42", updated)
+        self.assertEqual(patch.patch_html(updated), updated)
+        js = 'const version = "2026.10.28.42";\nconst again = "2026.10.28.43";\n'
+        replaced = patch._replace_old_versions(js)
+        self.assertNotIn("2026.10.28.42", replaced)
+        self.assertNotIn("2026.10.28.43", replaced)
+        self.assertEqual(replaced.count(patch.SCREEN_VERSION), 2)
+
     def test_snippets_compile(self):
         compile(patch.GODO_IMAGE2_SCRAPER_PY, "<scraper>", "exec")
         compile(patch.GODO_IMAGE2_SERVICE_PY, "<service>", "exec")

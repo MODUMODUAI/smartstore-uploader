@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.72")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.73")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -428,6 +428,8 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("주소록은 고른 마켓", help_html)
         self.assertIn("스마트스토어번호는 판매자코드", help_html)
         self.assertIn("상품정보 업데이트할까요?", help_html)
+        self.assertIn("새상품으로 등록", help_html)
+        self.assertIn("기본은 정보업데이트", help_html)
 
     def test_option_combo_read_uses_every_row(self):
         source = """
@@ -546,6 +548,47 @@ if (storeSameMarket([{ market_id: "baram" }, { market_id: "baram" }]) !== "baram
         scripted = patch.patch_answer("function renderProductSheet(){ return 1; }\nfunction registerSelected(){ return 1; }\nfunction proceedRegisterSelected(){ return 1; }\n")
         self.assertIn("/* store-number1 */", scripted)
         self.assertGreater(scripted.rindex("/* store-number1 */"), scripted.rindex("/* detail-market1 */"))
+
+    def test_store_choice_defaults_to_update(self):
+        start = patch.STORE_CHOICE_JS.index("/* store-choice-pure-start */")
+        end = patch.STORE_CHOICE_JS.index("/* store-choice-pure-end */")
+        script = patch.STORE_CHOICE_JS[start:end] + r"""
+if (storeChoiceDefault() !== "update") throw new Error("default");
+if (storeChoicePlan("update") !== "update") throw new Error("plan update");
+if (storeChoicePlan("new") !== "register") throw new Error("plan new");
+if (storeChoicePlan("cancel") !== "skip") throw new Error("plan cancel");
+if (storeChoicePlan("") !== "update") throw new Error("plan empty");
+if (storeChoiceValue("update") !== "update") throw new Error("value update");
+if (storeChoiceValue("new") !== "new") throw new Error("value new");
+if (storeChoiceValue("cancel") !== "cancel") throw new Error("value cancel");
+if (storeChoiceValue("") !== "cancel") throw new Error("value empty");
+const title = storeChoiceTitle(1);
+if (title.indexOf("정보업데이트") < 0 || title.indexOf("새상품으로 등록") < 0) throw new Error("title");
+if (title.indexOf("기본은 정보업데이트") < 0) throw new Error("title default");
+if (!storeChoiceConfirmIsUpdate("상품정보 업데이트할까요?")) throw new Error("confirm update");
+if (!storeChoiceConfirmIsUpdate("이미 등록한 상품은 새로 등록하지 않습니다. 상품정보 업데이트할까요?")) throw new Error("confirm mixed");
+if (storeChoiceConfirmIsUpdate("지금 배송/가격 설정으로 상품등록할까요?")) throw new Error("confirm register");
+if (storeChoiceNumber({ channel_product_no: "88001", origin_product_no: "100" }) !== "88001") throw new Error("number");
+"""
+        path = Path("/tmp/store-choice-pure.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/store-choice.js")
+        full.write_text(patch.STORE_CHOICE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("정보업데이트", patch.STORE_CHOICE_JS)
+        self.assertIn("새상품으로 등록", patch.STORE_CHOICE_JS)
+        self.assertLess(patch.STORE_CHOICE_JS.index('data-store-choice="update"'), patch.STORE_CHOICE_JS.index('data-store-choice="new"'))
+        self.assertIn("channel_product_no = \"\"", patch.STORE_CHOICE_JS)
+        self.assertNotIn("100vw", patch.STORE_CHOICE_CSS)
+        self.assertIn("#03C75A", patch.STORE_CHOICE_CSS)
+        styled = patch.patch_css("/* store-number1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* store-choice1 */", styled)
+        self.assertGreater(styled.rindex("/* store-choice1 */"), styled.rindex("/* store-number1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        scripted = patch.patch_answer("function registerSelected(){ return 1; }\nfunction proceedRegisterSelected(){ return 1; }\n")
+        self.assertIn("/* store-choice1 */", scripted)
+        self.assertGreater(scripted.rindex("/* store-choice1 */"), scripted.rindex("/* store-number1 */"))
 
 
 if __name__ == "__main__":

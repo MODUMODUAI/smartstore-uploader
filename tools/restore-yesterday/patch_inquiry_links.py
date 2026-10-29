@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.72"
+SCREEN_VERSION = "2026.10.28.73"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 72))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 73))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4202,6 +4202,13 @@ def patch_help(text: str) -> str:
             store_number_help + " 스마트스토어번호는 판매자코드 앞에 있습니다. 이미 등록한 상품은 상품정보 업데이트할까요? 라고 묻고 그 번호로 업데이트합니다.",
             1,
         )
+    store_choice_help = "그 번호로 업데이트합니다."
+    if store_choice_help in text and "기본은 정보업데이트" not in text:
+        text = text.replace(
+            store_choice_help,
+            store_choice_help + " 이미 등록한 상품은 정보업데이트 또는 새상품으로 등록을 고릅니다. 기본은 정보업데이트입니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5705,6 +5712,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + DETAIL_MARKET_JS
     if "/* store-number1 */" not in text:
         text = text.rstrip() + "\n" + STORE_NUMBER_JS
+    if "/* store-choice1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_CHOICE_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5801,6 +5810,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + DETAIL_MARKET_CSS
     if "/* store-number1 */" not in text:
         text = text.rstrip() + "\n" + STORE_NUMBER_CSS
+    if "/* store-choice1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_CHOICE_CSS
     return text
 
 
@@ -13897,6 +13908,196 @@ STORE_NUMBER_CSS = r"""
 #productGrid td[data-store-no="1"] {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+}
+"""
+STORE_CHOICE_JS = r"""
+/* store-choice1 */
+(function () {
+  /* store-choice-pure-start */
+  function storeChoiceDefault() {
+    return "update";
+  }
+  function storeChoicePlan(choice) {
+    if (choice === "new") return "register";
+    if (choice === "cancel") return "skip";
+    return "update";
+  }
+  function storeChoiceValue(returned) {
+    if (returned === "new" || returned === "update" || returned === "cancel") return returned;
+    return "cancel";
+  }
+  function storeChoiceTitle(count) {
+    const total = Number(count) || 0;
+    const lead = total > 1 ? "선택한 " + total + "개입니다." : "이미 등록한 상품입니다.";
+    return lead + "\n정보업데이트 또는 새상품으로 등록을 고르세요.\n기본은 정보업데이트입니다.";
+  }
+  function storeChoiceConfirmIsUpdate(message) {
+    const text = String(message || "");
+    return text.indexOf("상품정보 업데이트할까요?") >= 0 || text.indexOf("새로 등록하지 않습니다") >= 0;
+  }
+  function storeChoiceNumber(item) {
+    const channel = String(item && item.channel_product_no || "").trim();
+    if (channel) return channel;
+    return String(item && item.origin_product_no || "").trim();
+  }
+  /* store-choice-pure-end */
+  function storeChoiceSplit(items) {
+    const fresh = [];
+    const registered = [];
+    (items || []).forEach((item) => {
+      if (storeChoiceNumber(item)) registered.push(item);
+      else fresh.push(item);
+    });
+    return { fresh: fresh, registered: registered };
+  }
+  function storeChoiceGuard(items) {
+    if (typeof isMasterProduct === "function" && items.some((item) => isMasterProduct(item) || !item.market_id)) {
+      if (typeof toast === "function") toast("마스터상품은 등록할 수 없습니다. 먼저 마켓으로 보낸 뒤 그 마켓에서 등록하세요.", true);
+      return false;
+    }
+    const ids = [];
+    (items || []).forEach((item) => {
+      const id = item && item.market_id;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (items.length && ids.length > 1) {
+      if (typeof toast === "function") toast("선택한 상품의 마켓이 서로 다릅니다. 같은 마켓 상품만 등록하세요.", true);
+      return false;
+    }
+    return true;
+  }
+  function ensureStoreChoiceDialog() {
+    let dialog = document.getElementById("storeChoiceDialog");
+    if (dialog) return dialog;
+    dialog = document.createElement("dialog");
+    dialog.id = "storeChoiceDialog";
+    dialog.innerHTML = '<form method="dialog"><p data-store-choice-text></p><div class="dialog-actions"><button type="submit" value="update" data-store-choice="update">정보업데이트</button><button type="submit" value="new" data-store-choice="new">새상품으로 등록</button><button type="submit" value="cancel" data-store-choice="cancel">취소</button></div></form>';
+    dialog.querySelectorAll("[data-store-choice]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const value = button.getAttribute("value") || "";
+        dialog.dataset.storeChoice = value;
+        dialog.returnValue = value;
+        const resolve = dialog._storeChoiceResolve;
+        dialog._storeChoiceResolve = null;
+        if (typeof resolve === "function") resolve(storeChoiceValue(value));
+        try {
+          if (dialog.open && typeof dialog.close === "function") dialog.close(value);
+        } catch (error) {}
+      });
+    });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+  function askStoreChoice(count) {
+    const dialog = ensureStoreChoiceDialog();
+    const text = dialog.querySelector("[data-store-choice-text]");
+    if (text) text.textContent = storeChoiceTitle(count);
+    dialog.returnValue = "";
+    dialog.dataset.storeChoice = "";
+    const update = dialog.querySelector("[data-store-choice='update']");
+    return new Promise((resolve) => {
+      dialog._storeChoiceResolve = resolve;
+      const finish = () => {
+        dialog.removeEventListener("close", finish);
+        dialog._storeChoiceResolve = null;
+        resolve(storeChoiceValue(dialog.dataset.storeChoice || dialog.returnValue));
+      };
+      dialog.addEventListener("close", finish);
+      if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
+      if (update && typeof update.focus === "function") update.focus();
+    });
+  }
+  function hookUpdateConfirm() {
+    const previous = window.confirm;
+    window.confirm = function (message) {
+      if (storeChoiceConfirmIsUpdate(message)) return true;
+      return previous.apply(window, arguments);
+    };
+    return function () { window.confirm = previous; };
+  }
+  async function runRegisteredChoice(next, args) {
+    const items = typeof requireSelected === "function" ? requireSelected() : [];
+    const split = storeChoiceSplit(items);
+    if (!items.length) return;
+    if (!split.registered.length) return next.apply(this, args);
+    if (!storeChoiceGuard(items)) return;
+    const choice = await askStoreChoice(split.registered.length);
+    const plan = storeChoicePlan(choice);
+    if (plan === "update") {
+      const restore = hookUpdateConfirm();
+      try {
+        return await next.apply(this, args);
+      } finally {
+        restore();
+      }
+    }
+    if (plan === "register") {
+      const stash = [];
+      split.registered.forEach((item) => {
+        stash.push({ item: item, channel: item.channel_product_no, origin: item.origin_product_no });
+        item.channel_product_no = "";
+        item.origin_product_no = "";
+      });
+      try {
+        return await next.apply(this, args);
+      } finally {
+        stash.forEach((saved) => {
+          const channel = String(saved.item.channel_product_no || "").trim();
+          const origin = String(saved.item.origin_product_no || "").trim();
+          if (!channel && !origin) {
+            saved.item.channel_product_no = saved.channel;
+            saved.item.origin_product_no = saved.origin;
+          }
+        });
+      }
+    }
+    if (!split.fresh.length) return;
+    const saved = new Set(selectedIds);
+    selectedIds = new Set(split.fresh.map((item) => item.id));
+    try {
+      return await next.apply(this, args);
+    } finally {
+      selectedIds = saved;
+    }
+  }
+  if (typeof registerSelected === "function" && !registerSelected.storeChoice) {
+    const registerBefore = registerSelected;
+    const wrapped = function () {
+      return runRegisteredChoice.call(this, registerBefore, arguments);
+    };
+    wrapped.storeChoice = true;
+    wrapped.storeNumber = true;
+    registerSelected = wrapped;
+  }
+  if (typeof proceedRegisterSelected === "function" && !proceedRegisterSelected.storeChoice) {
+    const proceedBefore = proceedRegisterSelected;
+    const wrapped = function () {
+      return runRegisteredChoice.call(this, proceedBefore, arguments);
+    };
+    wrapped.storeChoice = true;
+    wrapped.storeNumber = true;
+    proceedRegisterSelected = wrapped;
+  }
+})();
+"""
+STORE_CHOICE_CSS = r"""
+/* store-choice1 */
+#storeChoiceDialog {
+  background: #1b1b1b;
+  color: #f2f2f2;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  padding: 18px 20px;
+  width: 520px;
+}
+#storeChoiceDialog p { margin: 0 0 14px; line-height: 1.5; white-space: pre-line; }
+#storeChoiceDialog .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+#storeChoiceDialog button { border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+#storeChoiceDialog [data-store-choice="update"] {
+  background: #03C75A;
+  color: #fff;
+  border: 0;
 }
 """
 

@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.55"
+SCREEN_VERSION = "2026.10.28.56"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 55))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 56))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4140,6 +4140,12 @@ def patch_help(text: str) -> str:
             tag_help + " 검색에 적용되는 태그확인을 누르면 적용되지 않는 태그는 지워집니다. 다른 상품의 브랜드도 태그에 넣지 않고, 그 브랜드는 등록금지키워드에도 올라갑니다.",
             1,
         )
+    name_zoom_help = "누르면 옆에 그 상품의 상세페이지가 함께 열립니다."
+    if name_zoom_help in text and "상세페이지 크기는 5%씩" not in text:
+        text = text.replace(name_zoom_help, name_zoom_help + " 상세페이지 크기는 5%씩 조절합니다.", 1)
+    attr_help = "속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다."
+    if attr_help in text and "속성 칸 크기는 5%씩" not in text:
+        text = text.replace(attr_help, attr_help + " 속성 칸 크기는 5%씩 조절합니다.", 1)
     return text
 
 
@@ -5545,6 +5551,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_JS
     if "/* naver-tag2 */" not in text:
         text = text.rstrip() + "\n" + NAVER_TAG2_JS
+    if "/* dialog-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_ZOOM_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5605,6 +5613,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_ROW5_CSS
     if "/* list-zoom-ship1 */" not in text:
         text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_CSS
+    if "/* dialog-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_ZOOM_CSS
     return text
 
 
@@ -10250,6 +10260,158 @@ function naverTagsToDrop(tags, brands, words, blockTerms) {
     showSearchTagCheck.naverTag2 = true;
   }
 })();
+"""
+DIALOG_ZOOM_JS = r"""
+/* dialog-zoom1 */
+(function () {
+  /* dialog-zoom-pure-start */
+  function dialogZoomPercent(value, delta) {
+    const step = 5;
+    const min = 25;
+    const max = 200;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = snapped + (Number(delta) || 0) * step;
+    return Math.min(max, Math.max(min, next));
+  }
+  /* dialog-zoom-pure-end */
+  const zoomState = { nameDetailZoom: 100, attributeZoom: 100 };
+  function paintZoom(bar, percent, body) {
+    const next = dialogZoomPercent(percent, 0);
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) range.value = String(next);
+    if (label) label.textContent = next + "%";
+    if (body) body.style.zoom = String(next / 100);
+    return next;
+  }
+  function ensureBar(id, before) {
+    let bar = document.getElementById(id);
+    if (bar) return bar;
+    if (!before || !before.parentNode) return null;
+    bar = document.createElement("div");
+    bar.id = id;
+    bar.className = "work-zoom dialog-zoom-bar";
+    bar.innerHTML = '<span>크기</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b>';
+    before.parentNode.insertBefore(bar, before);
+    return bar;
+  }
+  function zoomBody(host, bodyId) {
+    if (!host) return null;
+    const existing = host.querySelector(":scope > .dialog-zoom-body");
+    if (existing) return existing;
+    const body = document.createElement("div");
+    body.id = bodyId;
+    body.className = "dialog-zoom-body";
+    while (host.firstChild) body.appendChild(host.firstChild);
+    host.appendChild(body);
+    return body;
+  }
+  function bindBar(bar, key, scrollHost, bodyOf) {
+    if (!bar) return;
+    if (bar.dataset.dialogZoom === "1") {
+      paintZoom(bar, zoomState[key], bodyOf());
+      return;
+    }
+    bar.dataset.dialogZoom = "1";
+    const range = bar.querySelector("input[type='range']");
+    const apply = (value, delta) => {
+      zoomState[key] = dialogZoomPercent(value, delta);
+      paintZoom(bar, zoomState[key], bodyOf());
+    };
+    if (range) range.addEventListener("input", () => apply(range.value, 0));
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        apply(range ? range.value : zoomState[key], Number(button.dataset.zoom));
+      });
+    });
+    if (scrollHost && scrollHost.dataset.dialogZoomWheel !== "1") {
+      scrollHost.dataset.dialogZoomWheel = "1";
+      scrollHost.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        apply(zoomState[key], event.deltaY > 0 ? -1 : 1);
+      }, { passive: false });
+    }
+    apply(zoomState[key], 0);
+  }
+  function mountNameZoom() {
+    const view = document.getElementById("nameDetailView");
+    if (!view) return;
+    const bar = ensureBar("nameDetailZoomBar", view);
+    bindBar(bar, "nameDetailZoom", view, () => zoomBody(view, "nameDetailZoomBody"));
+  }
+  function mountAttributeZoom() {
+    const fields = document.getElementById("attributeFields");
+    if (!fields) return;
+    const bar = ensureBar("attributeZoomBar", fields);
+    bindBar(bar, "attributeZoom", fields, () => zoomBody(fields, "attributeZoomBody"));
+  }
+  if (typeof openNameEditor === "function" && !openNameEditor.dialogZoomWrapped) {
+    const openNameEditorBeforeZoom = openNameEditor;
+    openNameEditor = function () {
+      const result = openNameEditorBeforeZoom.apply(this, arguments);
+      mountNameZoom();
+      setTimeout(mountNameZoom, 0);
+      return result;
+    };
+    openNameEditor.dialogZoomWrapped = true;
+  }
+  if (typeof openAttributeEditor === "function" && !openAttributeEditor.dialogZoomWrapped) {
+    const openAttributeEditorBeforeZoom = openAttributeEditor;
+    openAttributeEditor = function () {
+      const result = openAttributeEditorBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      if (result && typeof result.then === "function") {
+        result.then(() => mountAttributeZoom(), () => mountAttributeZoom());
+      }
+      setTimeout(mountAttributeZoom, 0);
+      return result;
+    };
+    openAttributeEditor.dialogZoomWrapped = true;
+  }
+  if (typeof renderAttributeFields === "function" && !renderAttributeFields.dialogZoomWrapped) {
+    const renderAttributeFieldsBeforeZoom = renderAttributeFields;
+    renderAttributeFields = function () {
+      const result = renderAttributeFieldsBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      return result;
+    };
+    renderAttributeFields.dialogZoomWrapped = true;
+  }
+  if (typeof renderFallbackAttributes === "function" && !renderFallbackAttributes.dialogZoomWrapped) {
+    const renderFallbackAttributesBeforeZoom = renderFallbackAttributes;
+    renderFallbackAttributes = function () {
+      const result = renderFallbackAttributesBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      return result;
+    };
+    renderFallbackAttributes.dialogZoomWrapped = true;
+  }
+})();
+"""
+DIALOG_ZOOM_CSS = r"""
+/* dialog-zoom1 */
+#nameDetailZoomBar,
+#attributeZoomBar {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin: 0 12px 8px;
+}
+#attributeZoomBar { margin: 8px 16px 0; }
+#nameDetailZoomBar input[type="range"],
+#attributeZoomBar input[type="range"] {
+  width: 180px;
+  max-width: 100%;
+  flex: 0 1 180px;
+}
+#nameDetailView > .dialog-zoom-body,
+#attributeFields > .dialog-zoom-body {
+  transform-origin: top left;
+}
 """
 NAVER_TAG2_SERVICE_PY = r'''
 # naver-tag2

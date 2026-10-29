@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.55")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.56")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -161,6 +161,37 @@ if (shipFromMarginTitle("마켓 (판매가 10000 - 수수료 1000 - 공급가 60
         help_html = patch.patch_help("<p>목록의 그림을 누르면 아래 미리보기에 보입니다.</p>")
         self.assertIn("500×500", help_html)
         self.assertIn("도매처 배송비", help_html)
+
+    def test_name_and_attribute_zoom_steps(self):
+        start = patch.DIALOG_ZOOM_JS.index("/* dialog-zoom-pure-start */")
+        end = patch.DIALOG_ZOOM_JS.index("/* dialog-zoom-pure-end */")
+        script = patch.DIALOG_ZOOM_JS[start:end] + r"""
+if (dialogZoomPercent(100, 1) !== 105) throw new Error("plus " + dialogZoomPercent(100, 1));
+if (dialogZoomPercent(100, -1) !== 95) throw new Error("minus " + dialogZoomPercent(100, -1));
+if (dialogZoomPercent(25, -1) !== 25) throw new Error("floor");
+if (dialogZoomPercent(200, 1) !== 200) throw new Error("ceil");
+if (dialogZoomPercent(103, 0) !== 105) throw new Error("snap");
+if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
+"""
+        path = Path("/tmp/dialog-zoom-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/dialog-zoom-full.js")
+        full.write_text(patch.DIALOG_ZOOM_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openNameEditor(){ return 1; }\nfunction openAttributeEditor(){ return 1; }\n")
+        self.assertIn("/* dialog-zoom1 */", scripted)
+        self.assertGreater(scripted.rindex("/* dialog-zoom1 */"), scripted.rindex("/* naver-tag2 */"))
+        self.assertIn("nameDetailZoomBar", patch.DIALOG_ZOOM_JS)
+        self.assertIn("attributeZoomBar", patch.DIALOG_ZOOM_JS)
+        styled = patch.patch_css("/* list-zoom-ship1 */\n")
+        self.assertIn("/* dialog-zoom1 */", styled)
+        self.assertGreater(styled.rindex("/* dialog-zoom1 */"), styled.rindex("/* list-zoom-ship1 */"))
+        help_html = patch.patch_help(
+            "<p>누르면 옆에 그 상품의 상세페이지가 함께 열립니다. 속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다.</p>"
+        )
+        self.assertIn("상세페이지 크기는 5%씩", help_html)
+        self.assertIn("속성 칸 크기는 5%씩", help_html)
 
 
 if __name__ == "__main__":

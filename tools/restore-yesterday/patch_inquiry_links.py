@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.70"
+SCREEN_VERSION = "2026.10.28.71"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 70))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 71))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4188,6 +4188,13 @@ def patch_help(text: str) -> str:
             first_screen_help + " 이미지 삭제는 목록 오른쪽에 보입니다. 배송권역과 제주추가, 도서산간추가는 바꿀 수 있습니다.",
             1,
         )
+    detail_market_help = "배송권역과 제주추가, 도서산간추가는 바꿀 수 있습니다."
+    if detail_market_help in text and "주소록은 고른 마켓" not in text:
+        text = text.replace(
+            detail_market_help,
+            detail_market_help + " 상세페이지 크기는 5%씩 커집니다. 상세페이지 닫기는 하나입니다. 배송지 주소록은 고른 마켓에서 불러옵니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5687,6 +5694,8 @@ def patch_answer(text: str) -> str:
     text = patch_option_combo_read(text)
     if "/* first-screen1 */" not in text:
         text = text.rstrip() + "\n" + FIRST_SCREEN_JS
+    if "/* detail-market1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_MARKET_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5779,6 +5788,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_CSS
     if "/* first-screen1 */" not in text:
         text = text.rstrip() + "\n" + FIRST_SCREEN_CSS
+    if "/* detail-market1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_MARKET_CSS
     return text
 
 
@@ -13474,6 +13485,196 @@ FIRST_SCREEN_CSS = r"""
 }
 #imageDialog .image-slot img { position: relative; z-index: 0; }
 #imageDialog .image-slot-delete { z-index: 6; box-shadow: 0 0 0 2px #111; }
+"""
+DETAIL_MARKET_JS = r"""
+/* detail-market1 */
+(function () {
+  /* detail-market-pure-start */
+  function detailZoomScale(percent) {
+    const step = 5;
+    const current = Number(percent);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = Math.min(200, Math.max(25, snapped));
+    return next / 100;
+  }
+  function deliveryMarketChoice(selected, treeId, settingsId, markets) {
+    const ids = (markets || []).map((item) => item && item.id).filter(Boolean);
+    if (selected && ids.indexOf(selected) >= 0) return selected;
+    if (treeId && ids.indexOf(treeId) >= 0) return treeId;
+    if (settingsId && ids.indexOf(settingsId) >= 0) return settingsId;
+    return ids[0] || "";
+  }
+  /* detail-market-pure-end */
+  let detailPercent = 100;
+  let detailZoomOwned = false;
+  function zoomNumber(value) {
+    const current = parseFloat(value);
+    if (!Number.isFinite(current)) return NaN;
+    return current > 3 ? current / 100 : current;
+  }
+  function paintDetailZoom() {
+    const want = detailZoomScale(detailPercent);
+    const zoom = String(want);
+    const view = document.getElementById("detailVisual");
+    if (!view) return;
+    view.style.setProperty("zoom", zoom, "important");
+    const body = view.querySelector(":scope > .dialog-zoom-body");
+    if (body) {
+      body.style.setProperty("zoom", "1", "important");
+      body.style.setProperty("width", "auto", "important");
+      body.style.setProperty("max-width", "100%", "important");
+    }
+    view.querySelectorAll("img").forEach((img) => {
+      img.style.setProperty("width", "auto", "important");
+      img.style.setProperty("max-width", "100%", "important");
+      img.style.setProperty("height", "auto", "important");
+      img.style.removeProperty("zoom");
+    });
+  }
+  function watchDetailZoom(view) {
+    if (!view || view.dataset.detailMarketZoom === "1") return;
+    view.dataset.detailMarketZoom = "1";
+    new MutationObserver(() => {
+      if (!detailZoomOwned) return;
+      const want = detailZoomScale(detailPercent);
+      const current = zoomNumber(view.style.zoom);
+      if (Number.isFinite(current) && Math.abs(current - want) < 0.001) return;
+      paintDetailZoom();
+    }).observe(view, { attributes: true, attributeFilter: ["style"] });
+  }
+  function readDetailBar(bar) {
+    if (!bar || bar.id !== "imageZoomBar") return;
+    const range = bar.querySelector("input[type='range']");
+    if (!range) return;
+    detailZoomOwned = true;
+    detailPercent = Number(range.value) || detailPercent;
+    const label = bar.querySelector("[data-zoom-label]");
+    if (label) label.textContent = Math.round(detailZoomScale(detailPercent) * 100) + "%";
+    paintDetailZoom();
+  }
+  function tuneDetailClose() {
+    const dialog = document.getElementById("detailDialog");
+    if (!dialog || dialog.dataset.detailClosing === "1") return;
+    const actions = dialog.querySelector(".dialog-actions");
+    if (!actions) return;
+    dialog.dataset.detailClosing = "1";
+    const save = actions.querySelector("button[type='submit'], .work-save, .btn-apply");
+    const closes = [...dialog.querySelectorAll("button")].filter((button) => button.textContent.replace(/\s+/g, "") === "닫기");
+    let keep = closes.find((button) => save && button.parentElement === actions && (button.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING));
+    if (!keep) keep = closes.find((button) => button.parentElement === actions) || null;
+    closes.forEach((button) => {
+      if (button !== keep) button.remove();
+    });
+    if (keep && keep.dataset.detailOneClose !== "1") {
+      keep.dataset.detailOneClose = "1";
+      keep.type = "button";
+      keep.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.close();
+      }, true);
+    }
+    dialog.dataset.detailClosing = "";
+  }
+  function deliveryMarketId() {
+    const select = document.getElementById("deliveryMarket");
+    const selected = select ? select.value : "";
+    const list = typeof markets !== "undefined" ? markets : [];
+    const treeId = typeof marketFilter !== "undefined" ? marketFilter : "";
+    const settingsId = typeof currentMarketId !== "undefined" ? currentMarketId : "";
+    return deliveryMarketChoice(selected, treeId, settingsId, list);
+  }
+  function fillDeliveryMarket() {
+    const pane = document.getElementById("deliveryPane");
+    if (pane && !document.getElementById("deliveryMarketField")) {
+      const row = document.createElement("div");
+      row.className = "delivery-row";
+      row.id = "deliveryMarketField";
+      row.innerHTML = '<span class="dl">마켓</span><select id="deliveryMarket"></select>';
+      const hint = pane.querySelector(".hint");
+      if (hint) hint.after(row);
+      else pane.insertBefore(row, pane.firstChild);
+      row.querySelector("select").addEventListener("change", () => {
+        if (typeof loadDeliveryCatalog !== "function") return;
+        loadDeliveryCatalog().catch(() => {});
+      });
+    }
+    const select = document.getElementById("deliveryMarket");
+    if (!select || typeof markets === "undefined") return;
+    const treeId = typeof marketFilter !== "undefined" ? marketFilter : "";
+    const settingsId = typeof currentMarketId !== "undefined" ? currentMarketId : "";
+    const want = deliveryMarketChoice("", treeId, settingsId, markets);
+    select.innerHTML = "";
+    markets.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.name || item.login_id || item.id;
+      select.appendChild(option);
+    });
+    if (want) select.value = want;
+  }
+  document.addEventListener("input", (event) => {
+    const bar = event.target && event.target.closest ? event.target.closest("#imageZoomBar") : null;
+    if (!bar) return;
+    readDetailBar(bar);
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target && event.target.closest ? event.target.closest("#imageZoomBar [data-zoom]") : null;
+    if (!button) return;
+    setTimeout(() => readDetailBar(document.getElementById("imageZoomBar")), 0);
+  }, true);
+  if (typeof withMarketParam === "function" && !withMarketParam.detailMarket) {
+    const marketParamBefore = withMarketParam;
+    const wrapped = function (path) {
+      const id = deliveryMarketId();
+      const item = String(path || "");
+      if (id && (item.indexOf("/api/addresses") >= 0 || item.indexOf("/api/bundle-groups") >= 0 || item.indexOf("/delivery-templates/import") >= 0)) {
+        return item.split("?")[0] + "?market_id=" + encodeURIComponent(id);
+      }
+      return marketParamBefore.apply(this, arguments);
+    };
+    wrapped.detailMarket = true;
+    withMarketParam = wrapped;
+  }
+  if (typeof openDeliveryEditor === "function" && !openDeliveryEditor.detailMarket) {
+    const openBefore = openDeliveryEditor;
+    const wrapped = function () {
+      fillDeliveryMarket();
+      return openBefore.apply(this, arguments);
+    };
+    wrapped.detailMarket = true;
+    openDeliveryEditor = wrapped;
+  }
+  ["openDetailEditor", "openImageEditor"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.detailMarket) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        tuneDetailClose();
+        watchDetailZoom(document.getElementById("detailVisual"));
+        if (detailZoomOwned) paintDetailZoom();
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.detailMarket = true;
+    window[name] = wrapped;
+  });
+  tuneDetailClose();
+  fillDeliveryMarket();
+  watchDetailZoom(document.getElementById("detailVisual"));
+  setTimeout(tuneDetailClose, 0);
+  setTimeout(fillDeliveryMarket, 0);
+})();
+"""
+DETAIL_MARKET_CSS = r"""
+/* detail-market1 */
+#detailDialog header #closeDetail { display: none !important; }
+#deliveryMarket { min-width: 180px; }
 """
 
 

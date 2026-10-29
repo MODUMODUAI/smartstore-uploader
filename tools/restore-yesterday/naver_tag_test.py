@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.70")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.71")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -423,6 +423,9 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("옵션 저장은 목록의 모든 줄을 저장합니다", help_html)
         self.assertIn("이미지 삭제는 목록 오른쪽에 보입니다", help_html)
         self.assertIn("배송권역과 제주추가", help_html)
+        self.assertIn("상세페이지 크기는 5%씩", help_html)
+        self.assertIn("상세페이지 닫기는 하나", help_html)
+        self.assertIn("주소록은 고른 마켓", help_html)
 
     def test_option_combo_read_uses_every_row(self):
         source = """
@@ -471,6 +474,40 @@ function selectedComboRows() {
         path = Path("/tmp/first-screen.js")
         path.write_text(patch.FIRST_SCREEN_JS, encoding="utf-8")
         subprocess.run(["node", "--check", str(path)], check=True)
+
+    def test_detail_zoom_and_market_address(self):
+        start = patch.DETAIL_MARKET_JS.index("/* detail-market-pure-start */")
+        end = patch.DETAIL_MARKET_JS.index("/* detail-market-pure-end */")
+        script = patch.DETAIL_MARKET_JS[start:end] + r"""
+if (detailZoomScale(105) !== 1.05) throw new Error("zoom " + detailZoomScale(105));
+if (detailZoomScale(103) !== 1.05) throw new Error("snap " + detailZoomScale(103));
+if (detailZoomScale(20) !== 0.25) throw new Error("min " + detailZoomScale(20));
+if (detailZoomScale(240) !== 2) throw new Error("max " + detailZoomScale(240));
+const markets = [{ id: "wish" }, { id: "baram" }];
+if (deliveryMarketChoice("", "baram", "wish", markets) !== "baram") throw new Error("tree");
+if (deliveryMarketChoice("wish", "baram", "wish", markets) !== "wish") throw new Error("select");
+if (deliveryMarketChoice("smartstore", "smartstore", "wish", markets) !== "wish") throw new Error("channel");
+if (deliveryMarketChoice("", "", "", markets) !== "wish") throw new Error("first");
+"""
+        path = Path("/tmp/detail-market-pure.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/detail-market.js")
+        full.write_text(patch.DETAIL_MARKET_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("/* detail-market1 */", patch.DETAIL_MARKET_JS)
+        self.assertIn("/* detail-market1 */", patch.DETAIL_MARKET_CSS)
+        self.assertNotIn("100vw", patch.DETAIL_MARKET_CSS)
+        self.assertIn('bar.id !== "imageZoomBar"', patch.DETAIL_MARKET_JS)
+        self.assertIn("/api/addresses", patch.DETAIL_MARKET_JS)
+        self.assertIn("deliveryMarketChoice", patch.DETAIL_MARKET_JS)
+        styled = patch.patch_css("/* first-screen1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* detail-market1 */", styled)
+        self.assertGreater(styled.rindex("/* detail-market1 */"), styled.rindex("/* first-screen1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\nfunction syncDeliveryFields(){ return 1; }\n")
+        self.assertIn("/* detail-market1 */", scripted)
+        self.assertGreater(scripted.rindex("/* detail-market1 */"), scripted.rindex("/* first-screen1 */"))
 
 
 if __name__ == "__main__":

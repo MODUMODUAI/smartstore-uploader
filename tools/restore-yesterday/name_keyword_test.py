@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.60")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.61")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -191,7 +191,8 @@ if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
             "<p>누르면 옆에 그 상품의 상세페이지가 함께 열립니다. 속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다.</p>"
         )
         self.assertIn("상세페이지 크기는 5%씩", help_html)
-        self.assertIn("속성 칸 크기는 5%씩", help_html)
+        self.assertIn("크기 조절은 없습니다", help_html)
+        self.assertNotIn("속성 칸 크기는 5%씩", help_html)
 
     def test_detail_dialog_keeps_intro_and_shrinks(self):
         self.assertIn("상세페이지추가글", patch.DETAIL_FIT_JS)

@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.60")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.61")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -178,6 +178,65 @@ if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Erro
         self.assertGreater(scripted.rindex("/* tag-dict1 */"), scripted.rindex("/* dialog-zoom1 */"))
         styled = patch.patch_css("/* dialog-zoom1 */\n")
         self.assertIn("/* tag-dict1 */", styled)
+
+    def test_pages_two_and_three_keep_tags_and_drop_brands(self):
+        ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True, "_NAVER_TAG3_NO_INSTALL": True}
+        exec(compile(patch.NAVER_TAG_SERVICE_PY, "<naver-tag>", "exec"), ns)
+        exec(compile(patch.NAVER_TAG2_SERVICE_PY, "<naver-tag2>", "exec"), ns)
+        exec(compile(patch.NAVER_TAG3_SERVICE_PY, "<naver-tag3>", "exec"), ns)
+        page1 = """
+        {"shoppingResult": {"products": [
+          {"productName": "보이스캐디 SL2", "brand": "보이스캐디", "manuTag": "보이스캐디,골프,오늘출발"}
+        ]}}
+        """
+        page2 = """
+        <html><script id="__NEXT_DATA__" type="application/json">{"shoppingResult":{"products":[
+          {"productName":"부쉬넬 A2","brand":"부쉬넬","manuTag":"부쉬넬,레이저,골프,초정밀부쉬넬"}
+        ]}}</script></html>
+        """
+        page3 = """
+        {"products": [{"productTitle": "니콘 쿨샷", "maker": "니콘", "sellerTags": [{"text": "니콘"}, {"text": "미니"}, {"text": "시계형"}]}]}
+        """
+        flat, page_tags, brands, states = ns["_naver_tag3_collect"]([page1, page2, page3], "거리측정기")
+        self.assertEqual(states, ["ok", "ok", "ok"])
+        self.assertIn("레이저", page_tags[1])
+        self.assertIn("미니", page_tags[2])
+        self.assertIn("시계형", page_tags[2])
+        self.assertNotIn("부쉬넬", flat)
+        self.assertNotIn("초정밀부쉬넬", flat)
+        self.assertNotIn("니콘", flat)
+        self.assertNotIn("보이스캐디", flat)
+        for brand in ("보이스캐디", "부쉬넬", "니콘"):
+            self.assertIn(brand, brands)
+        self.assertIn('"logic": "PART"', patch.NAVER_TAG3_SERVICE_PY)
+        self.assertIn("pagingIndex", patch.NAVER_TAG3_SERVICE_PY)
+        blocked = '<html><div class="content_error">쇼핑 서비스 접속이 일시적으로 제한되었습니다.</div></html>'
+        _, empty_pages, _, empty_states = ns["_naver_tag3_collect"]([page1, blocked, ""], "거리측정기")
+        self.assertEqual(empty_states[1], "blocked")
+        self.assertEqual(empty_states[2], "blocked")
+        self.assertTrue(empty_pages[0])
+        self.assertEqual(empty_pages[1], [])
+        scripted = patch.patch_answer("function openTagEditor(){ return 1; }\n")
+        self.assertIn("/* tag-page1 */", scripted)
+        self.assertGreater(scripted.rindex("/* tag-page1 */"), scripted.rindex("/* naver-tag2 */"))
+        full = Path("/tmp/tag-page-full.js")
+        full.write_text(patch.TAG_PAGE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+
+    def test_image_zoom_moves_right_and_attribute_bar_goes_away(self):
+        self.assertIn('range.step = "5"', patch.IMAGE_ZOOM_RIGHT_JS)
+        self.assertIn("closeImage", patch.IMAGE_ZOOM_RIGHT_JS)
+        self.assertIn("attributeZoomBar", patch.IMAGE_ZOOM_RIGHT_JS)
+        self.assertIn("bar.remove()", patch.IMAGE_ZOOM_RIGHT_JS)
+        self.assertIn("#attributeZoomBar { display: none", patch.IMAGE_ZOOM_RIGHT_CSS)
+        self.assertIn("margin: 0 0 0 auto", patch.IMAGE_ZOOM_RIGHT_CSS)
+        full = Path("/tmp/image-zoom-right.js")
+        full.write_text(patch.IMAGE_ZOOM_RIGHT_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openImageEditor(){ return 1; }\n")
+        self.assertIn("/* image-zoom-right1 */", scripted)
+        styled = patch.patch_css("body{}\n")
+        self.assertIn("/* image-zoom-right1 */", styled)
         help_html = patch.patch_help("<p>직접 넣거나 AI 채우기로 만듭니다.</p>")
         self.assertIn("태그사전 후보", help_html)
 

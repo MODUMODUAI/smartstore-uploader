@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.60"
+SCREEN_VERSION = "2026.10.28.61"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 60))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 61))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4144,8 +4144,20 @@ def patch_help(text: str) -> str:
     if name_zoom_help in text and "상세페이지 크기는 5%씩" not in text:
         text = text.replace(name_zoom_help, name_zoom_help + " 상세페이지 크기는 5%씩 조절합니다.", 1)
     attr_help = "속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다."
-    if attr_help in text and "속성 칸 크기는 5%씩" not in text:
+    if attr_help in text and "속성 칸 크기는 5%씩" not in text and "크기 조절이 없습니다" not in text:
         text = text.replace(attr_help, attr_help + " 속성 칸 크기는 5%씩 조절합니다.", 1)
+    if "속성 칸 크기는 5%씩 조절합니다." in text:
+        text = text.replace("속성 칸 크기는 5%씩 조절합니다.", "크기 조절은 없습니다.", 1)
+    image_zoom_help = "이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다."
+    if image_zoom_help in text and "오른쪽에서 5%씩" not in text:
+        text = text.replace(image_zoom_help, image_zoom_help + " 크기 조절은 오른쪽에서 5%씩 움직입니다.", 1)
+    tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
+    if tag_page_anchor in text and "1·2·3페이지" not in text:
+        text = text.replace(
+            tag_page_anchor,
+            tag_page_anchor + " 검색 태그는 1·2·3페이지를 각각 가져오고, 상품 브랜드와 검색에서 본 브랜드는 뺍니다.",
+            1,
+        )
     tag_dict_help = "직접 넣거나 AI 채우기로 만듭니다."
     if tag_dict_help in text and "태그사전 후보" not in text:
         text = text.replace(
@@ -5595,6 +5607,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + DETAIL_FIT_JS
     if "/* detail-intro-style1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_JS
+    if "/* tag-page1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_PAGE_JS
+    if "/* image-zoom-right1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5665,6 +5681,10 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_CSS
     if "/* load-spin1 */" not in text:
         text = text.rstrip() + "\n" + LOAD_SPIN_CSS
+    if "/* tag-page1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_PAGE_CSS
+    if "/* image-zoom-right1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_CSS
     return text
 
 
@@ -6665,6 +6685,8 @@ def patch_murray_sources(root: Path) -> bool:
     if _append_marked_source(service, NAVER_TAG2_SERVICE_PY, NAVER_TAG2_NEEDED, NAVER_TAG2_MARKER):
         changed = True
     if _append_marked_source(service, TAG_DICT_SERVICE_PY, TAG_DICT_NEEDED, TAG_DICT_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG3_SERVICE_PY, NAVER_TAG3_NEEDED, NAVER_TAG3_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
@@ -11221,6 +11243,608 @@ def _tag_dict_install():
 if not globals().get("_TAG_DICT_NO_INSTALL"):
     _tag_dict_install()
 '''
+NAVER_TAG3_MARKER = "# naver-tag3"
+NAVER_TAG3_NEEDED = ("# naver-tag2", "def _naver_search_product_tags", "def _tags_from_text")
+NAVER_TAG3_SERVICE_PY = r'''
+# naver-tag3
+# Pages 2 and 3 stay on the same cookie jar as page 1, and the shopping API
+# only returns later pages when the logic header is PART. Brand names are read
+# from the product JSON even when the page is HTML.
+import time as _naver_tag3_time
+
+_naver_tag3_found = {}
+_NAVER_TAG3_BRAND_KEYS = (
+    "brand", "brandName", "brandNm", "brndNm", "maker", "makerName", "makerNm", "manufacturer", "mkcoNm",
+)
+
+
+def _naver_tag3_blobs(text):
+    raw = str(text or "")
+    stripped = raw.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        return [stripped]
+    blobs = []
+    for match in _naver_tag_re.finditer(
+        r"<script[^>]*id=[\"']__NEXT_DATA__[\"'][^>]*>(.*?)</script>",
+        raw,
+        _naver_tag_re.S | _naver_tag_re.I,
+    ):
+        body = match.group(1).strip()
+        if body:
+            blobs.append(body)
+    return blobs or [raw]
+
+
+def _naver_tag3_quote_brands(text, brands):
+    sample = str(text or "")
+    for key in _NAVER_TAG3_BRAND_KEYS:
+        for match in _naver_tag_re.finditer(r'"' + key + r'"\s*:\s*"((?:\\.|[^"\\])*)"', sample):
+            try:
+                value = _naver_tag_json.loads('"' + match.group(1) + '"')
+            except Exception:
+                value = match.group(1)
+            token = _naver_norm_tag(value)
+            if len(token) >= 2:
+                brands.add(token)
+
+
+def _naver_tag3_has_products(text):
+    sample = str(text or "")
+    if "접속이 일시적으로 제한" in sample:
+        return False
+    return any(token in sample for token in ("manuTag", "sellerTags", "productName", "productTitle"))
+
+
+def _naver_tag3_state(text, tags):
+    sample = str(text or "")
+    if not sample.strip() or "접속이 일시적으로 제한" in sample:
+        return "blocked"
+    if tags:
+        return "ok"
+    return "empty"
+
+
+def _naver_tag3_brand_tag(norm, brands):
+    for brand in brands or []:
+        if len(brand) < 2:
+            continue
+        if norm == brand or norm.startswith(brand):
+            return True
+        if len(brand) >= 3 and brand in norm:
+            return True
+    return False
+
+
+def _naver_tag3_keep(tags, query, brands, counts):
+    kept = []
+    for tag in _naver_filter_search_tags(tags, query, brands, counts):
+        norm = _naver_norm_tag(tag)
+        if not norm or _naver_tag3_brand_tag(norm, brands):
+            continue
+        kept.append(norm)
+    return kept
+
+
+def _naver_tag3_collect(pages, query):
+    raw_pages = []
+    states = []
+    all_brands = set()
+    all_counts = {}
+    for text in list(pages or [])[:3]:
+        brands = set()
+        counts = {}
+        _naver_tag2_local.brands = brands
+        _naver_tag2_local.counts = counts
+        raw = []
+        for blob in _naver_tag3_blobs(text):
+            raw.extend(_tags_from_text(blob))
+            _naver_tag3_quote_brands(blob, brands)
+        _naver_tag3_quote_brands(text, brands)
+        all_brands.update(brands)
+        for key, value in counts.items():
+            all_counts[key] = all_counts.get(key, 0) + int(value)
+        raw_pages.append(raw)
+        states.append(_naver_tag3_state(text, raw))
+    while len(raw_pages) < 3:
+        raw_pages.append([])
+        states.append("blocked")
+    page_tags = [_naver_tag3_keep(raw, query, all_brands, all_counts) for raw in raw_pages]
+    for index, tags in enumerate(page_tags):
+        if tags:
+            states[index] = "ok"
+        elif states[index] != "blocked":
+            states[index] = "empty"
+    flat = []
+    for tags in page_tags:
+        for tag in tags:
+            if tag not in flat:
+                flat.append(tag)
+            if len(flat) >= 80:
+                return flat, page_tags, sorted(all_brands), states
+    return flat, page_tags, sorted(all_brands), states
+
+
+def _naver_tag3_fetch_pages(query):
+    pages = ["", "", ""]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "logic": "PART",
+    }
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    client = None
+    if httpx is not None:
+        try:
+            client = httpx.Client(headers=headers, follow_redirects=True, timeout=20.0)
+        except Exception:
+            client = None
+
+    def one(page):
+        referer = "https://search.shopping.naver.com/search/all?query=" + str(query) + "&pagingIndex=" + str(page) + "&pagingSize=40"
+        params = {
+            "sort": "rel",
+            "pagingIndex": str(page),
+            "pagingSize": "40",
+            "viewType": "list",
+            "productSet": "total",
+            "query": query,
+            "origQuery": query,
+            "adQuery": query,
+        }
+        text = ""
+        status = 0
+        try:
+            if client is not None:
+                response = client.get(
+                    "https://search.shopping.naver.com/api/search/all",
+                    params=params,
+                    headers={"Referer": referer, "logic": "PART"},
+                )
+                status, text = response.status_code, response.text or ""
+            else:
+                status, text = _naver_http_get(
+                    "https://search.shopping.naver.com/api/search/all",
+                    params,
+                    dict(headers, Referer=referer),
+                )
+        except Exception:
+            status, text = 0, ""
+        if status >= 400 or not _naver_tag3_has_products(text):
+            html_params = {
+                "query": query,
+                "pagingIndex": str(page),
+                "pagingSize": "40",
+                "sort": "rel",
+                "viewType": "list",
+                "productSet": "total",
+            }
+            try:
+                if client is not None:
+                    response = client.get(
+                        "https://search.shopping.naver.com/search/all",
+                        params=html_params,
+                        headers={"Referer": referer, "Accept": "text/html,application/xhtml+xml", "logic": "PART"},
+                    )
+                    text = response.text or ""
+                else:
+                    status, text = _naver_http_get(
+                        "https://search.shopping.naver.com/search/all",
+                        html_params,
+                        dict(headers, Referer=referer, Accept="text/html,application/xhtml+xml"),
+                    )
+            except Exception:
+                text = text or ""
+        return text or ""
+
+    try:
+        for index, page in enumerate((1, 2, 3)):
+            pages[index] = one(page)
+            if page < 3:
+                _naver_tag3_time.sleep(0.4)
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+    return pages
+
+
+_naver_search_product_tags_before_tag3 = _naver_search_product_tags
+
+
+def _naver_search_product_tags(query):
+    pages = _naver_tag3_fetch_pages(query)
+    if not any(_naver_tag3_has_products(text) for text in pages):
+        tags = _naver_search_product_tags_before_tag3(query)
+        found = _naver_tag2_found.get(str(query)) or {}
+        _naver_tag3_found[str(query)] = {
+            "brands": list(found.get("brands") or []),
+            "tags": tags,
+            "pageTags": [list(tags or []), [], []],
+            "pageStates": ["ok" if tags else "empty", "blocked", "blocked"],
+        }
+        return tags
+    flat, page_tags, brands, states = _naver_tag3_collect(pages, query)
+    _naver_known_brands.update(brands)
+    _naver_tag3_found[str(query)] = {
+        "brands": brands,
+        "tags": flat,
+        "pageTags": page_tags,
+        "pageStates": states,
+    }
+    if not flat and all(state == "blocked" for state in states):
+        raise RuntimeError("네이버 쇼핑 검색에서 태그를 가져오지 못했습니다.")
+    return flat
+
+
+async def _naver_search_route3(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    found = _naver_tag3_found.get(query) or {}
+    return _naver_json({
+        "query": query,
+        "pages": [1, 2, 3],
+        "pageTags": found.get("pageTags") or [[], [], []],
+        "pageStates": found.get("pageStates") or ["empty", "empty", "empty"],
+        "tags": tags,
+        "brands": found.get("brands") or [],
+    })
+
+
+def _naver_tag3_install():
+    if globals().get("_naver_tag3_installed"):
+        return
+    globals()["_naver_tag3_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-search", _naver_search_route3, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag3", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG3_NO_INSTALL"):
+    _naver_tag3_install()
+'''
+TAG_PAGE_JS = r"""
+/* tag-page1 */
+(function () {
+  const memory = [];
+  function norm(tag) {
+    if (typeof naverTagNorm === "function") return naverTagNorm(tag);
+    return String(tag || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+  }
+  function remember(brands) {
+    (brands || []).forEach((brand) => {
+      const token = norm(brand);
+      if (token.length >= 2 && memory.indexOf(token) < 0) memory.push(token);
+    });
+  }
+  function ownBrands() {
+    const found = [];
+    const item = typeof current !== "undefined" ? current : null;
+    if (!item) return found;
+    [item.brand, item.manufacturer, item.maker, item.maker_name].forEach((value) => {
+      const token = norm(value);
+      if (token.length >= 2 && found.indexOf(token) < 0) found.push(token);
+    });
+    return found;
+  }
+  function blockedBrand(tag) {
+    const token = norm(tag);
+    const list = memory.concat(ownBrands());
+    for (let index = 0; index < list.length; index += 1) {
+      const brand = list[index];
+      if (!brand || brand.length < 2) continue;
+      if (token === brand || token.indexOf(brand) === 0) return true;
+      if (brand.length >= 3 && token.indexOf(brand) >= 0) return true;
+    }
+    return false;
+  }
+  function stripDraft() {
+    if (typeof draftTags === "undefined" || !Array.isArray(draftTags)) return;
+    const next = draftTags.filter((tag) => !blockedBrand(tag));
+    if (next.length !== draftTags.length) draftTags = next;
+  }
+  function ensurePages() {
+    if (!document.querySelector(".naver-search-tags") && typeof ensureNaverTagPanel === "function") ensureNaverTagPanel();
+    const aside = document.querySelector(".naver-search-tags");
+    if (!aside || (aside.dataset.tagPage === "1" && document.getElementById("naverSearchTagPages"))) return;
+    aside.dataset.tagPage = "1";
+    const host = document.createElement("div");
+    host.id = "naverSearchTagPages";
+    host.className = "naver-search-tag-list";
+    [1, 2, 3].forEach((page) => {
+      const section = document.createElement("section");
+      const title = document.createElement("h4");
+      title.textContent = page + "페이지";
+      const box = document.createElement("div");
+      box.dataset.pageTags = String(page);
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.dataset.pageEmpty = String(page);
+      empty.hidden = true;
+      section.append(title, box, empty);
+      host.appendChild(section);
+    });
+    const old = document.getElementById("naverSearchTags");
+    if (old) old.replaceWith(host);
+    else aside.appendChild(host);
+  }
+  function paintPages(data) {
+    ensurePages();
+    const pageTags = Array.isArray(data && data.pageTags) ? data.pageTags : [Array.isArray(data && data.tags) ? data.tags : [], [], []];
+    const states = Array.isArray(data && data.pageStates) ? data.pageStates : ["ok", "ok", "ok"];
+    remember(data && data.brands);
+    const counts = [];
+    for (let page = 1; page <= 3; page += 1) {
+      const tags = (pageTags[page - 1] || []).filter((tag) => !blockedBrand(tag));
+      const box = document.querySelector('[data-page-tags="' + page + '"]');
+      const empty = document.querySelector('[data-page-empty="' + page + '"]');
+      if (box) {
+        box.innerHTML = "";
+        tags.forEach((tag) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = tag;
+          button.addEventListener("click", () => {
+            if (typeof addDraftTag === "function") addDraftTag(tag);
+          });
+          box.appendChild(button);
+        });
+      }
+      const state = tags.length ? "ok" : (states[page - 1] || "empty");
+      if (empty) {
+        empty.hidden = !!tags.length;
+        empty.textContent = state === "blocked" ? "가져오지 못함" : "없음";
+      }
+      counts.push(page + "페이지 " + (tags.length ? tags.length + "개" : (state === "blocked" ? "가져오지 못함" : "없음")));
+    }
+    const count = document.getElementById("naverSearchTagCount");
+    if (count) count.textContent = counts.join(" · ");
+    const hint = document.getElementById("naverSearchTagPage");
+    if (hint) hint.textContent = "1·2·3페이지";
+    stripDraft();
+    if (typeof renderTagChips === "function") renderTagChips();
+  }
+  if (typeof loadNaverSearchTags === "function" && !loadNaverSearchTags.tagPage) {
+    loadNaverSearchTags = async function () {
+      ensurePages();
+      const query = typeof naverTagQuery === "function" ? naverTagQuery() : "";
+      const count = document.getElementById("naverSearchTagCount");
+      if (!query) {
+        if (count) count.textContent = "카테고리의 마지막 분류가 없습니다.";
+        paintPages({ pageTags: [[], [], []], pageStates: ["empty", "empty", "empty"], brands: [] });
+        return;
+      }
+      if (count) count.textContent = query + " 1·2·3페이지를 가져오는 중입니다.";
+      try {
+        const data = await api("/api/tags/naver-search?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+        paintPages(data || {});
+      } catch (error) {
+        if (count) count.textContent = error.message || "검색 태그를 가져오지 못했습니다.";
+        paintPages({ pageTags: [[], [], []], pageStates: ["blocked", "blocked", "blocked"], brands: [] });
+      }
+    };
+    loadNaverSearchTags.tagPage = true;
+  }
+  if (typeof addDraftTag === "function" && !addDraftTag.tagPage) {
+    const addDraftBeforePage = addDraftTag;
+    addDraftTag = function (raw) {
+      const parts = String(raw || "").split(/[,#\s]+/).map((part) => part.trim()).filter(Boolean);
+      const allowed = parts.filter((part) => !blockedBrand(part));
+      if (parts.length && !allowed.length) {
+        if (typeof toast === "function") toast("브랜드는 태그에 넣지 않습니다.", true);
+        const input = document.getElementById("tagInput");
+        if (input) input.value = "";
+        return;
+      }
+      return addDraftBeforePage.call(this, allowed.join(" "));
+    };
+    addDraftTag.tagPage = true;
+  }
+  if (typeof renderTagChips === "function" && !renderTagChips.tagPage) {
+    const renderTagChipsBeforePage = renderTagChips;
+    renderTagChips = function () {
+      stripDraft();
+      return renderTagChipsBeforePage.apply(this, arguments);
+    };
+    renderTagChips.tagPage = true;
+  }
+  if (typeof fillTagsFromDictionary === "function" && !fillTagsFromDictionary.tagPage) {
+    const fillTagsBeforePage = fillTagsFromDictionary;
+    fillTagsFromDictionary = async function () {
+      const result = await fillTagsBeforePage.apply(this, arguments);
+      stripDraft();
+      if (typeof renderTagChips === "function") renderTagChips();
+      return result;
+    };
+    fillTagsFromDictionary.tagPage = true;
+  }
+})();
+"""
+TAG_PAGE_CSS = r"""
+/* tag-page1 */
+#naverSearchTagPages section { margin: 0 0 10px; }
+#naverSearchTagPages h4 { margin: 0 0 4px; font-size: 12px; }
+#naverSearchTagPages [data-page-tags] { display: flex; flex-direction: column; gap: 4px; }
+#naverSearchTagPages [data-page-tags] button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+"""
+IMAGE_ZOOM_RIGHT_JS = r"""
+/* image-zoom-right1 */
+(function () {
+  function snapImageZoom(value, delta) {
+    const step = 5;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : 25;
+    const snapped = Math.round(base / step) * step;
+    return Math.min(120, Math.max(20, snapped + (Number(delta) || 0) * step));
+  }
+  function retuneImageZoom() {
+    const image = document.getElementById("imageDialog");
+    const bar = document.getElementById("imageZoomBar");
+    if (!image || !bar) return;
+    const header = image.querySelector("header");
+    const close = document.getElementById("closeImage");
+    if (header && bar.parentElement !== header) {
+      if (close && close.parentElement === header) header.insertBefore(bar, close);
+      else header.appendChild(bar);
+    }
+    const range = bar.querySelector("input[type='range']");
+    if (range) {
+      range.min = "20";
+      range.max = "120";
+      range.step = "5";
+      const next = snapImageZoom(range.value, 0);
+      if (String(next) !== String(range.value)) {
+        range.value = String(next);
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      if (button.dataset.zoom5 === "1") return;
+      const fresh = button.cloneNode(true);
+      fresh.dataset.zoom5 = "1";
+      button.replaceWith(fresh);
+      fresh.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!range) return;
+        range.value = String(snapImageZoom(range.value, fresh.dataset.zoom));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+    const drop = document.getElementById("imageDrop");
+    if (drop && drop.dataset.zoom5 !== "1") {
+      drop.dataset.zoom5 = "1";
+      drop.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey || !range) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        range.value = String(snapImageZoom(range.value, event.deltaY > 0 ? -1 : 1));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { capture: true, passive: false });
+    }
+  }
+  let droppingAttributeZoom = false;
+  function dropAttributeZoom() {
+    if (droppingAttributeZoom) return;
+    droppingAttributeZoom = true;
+    try {
+      const bar = document.getElementById("attributeZoomBar");
+      if (bar) bar.remove();
+      const fields = document.getElementById("attributeFields");
+      if (!fields) return;
+      const body = fields.querySelector(":scope > .dialog-zoom-body");
+      if (body) {
+        while (body.firstChild) fields.insertBefore(body.firstChild, body);
+        body.remove();
+      }
+      fields.style.zoom = "";
+    } finally {
+      droppingAttributeZoom = false;
+    }
+  }
+  function watchAttributeZoom() {
+    const dialog = document.getElementById("attributeDialog");
+    if (!dialog || dialog.dataset.zoomOff === "1") return;
+    dialog.dataset.zoomOff = "1";
+    new MutationObserver(() => dropAttributeZoom()).observe(dialog, { childList: true, subtree: true });
+    dropAttributeZoom();
+  }
+  ["openAttributeEditor", "renderAttributeFields", "renderFallbackAttributes"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.attrZoomOff) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        dropAttributeZoom();
+        setTimeout(dropAttributeZoom, 0);
+        setTimeout(dropAttributeZoom, 50);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.attrZoomOff = true;
+    window[name] = wrapped;
+  });
+  if (typeof openImageEditor === "function" && !openImageEditor.zoomRight) {
+    const openImageEditorBefore = openImageEditor;
+    openImageEditor = function () {
+      const result = openImageEditorBefore.apply(this, arguments);
+      retuneImageZoom();
+      setTimeout(retuneImageZoom, 0);
+      return result;
+    };
+    openImageEditor.zoomRight = true;
+  }
+  retuneImageZoom();
+  watchAttributeZoom();
+  setTimeout(retuneImageZoom, 0);
+  setTimeout(dropAttributeZoom, 0);
+  setTimeout(dropAttributeZoom, 50);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      retuneImageZoom();
+      watchAttributeZoom();
+    });
+  }
+})();
+"""
+IMAGE_ZOOM_RIGHT_CSS = r"""
+/* image-zoom-right1 */
+#imageDialog header h2 { margin-right: auto; }
+#imageDialog #imageZoomBar {
+  margin: 0 0 0 auto;
+  flex: 0 0 auto;
+}
+#imageDialog #imageZoomBar input[type="range"] { width: 120px; }
+#attributeZoomBar { display: none !important; }
+"""
 
 
 def frozen_fix_plan() -> dict:
@@ -11254,6 +11878,7 @@ def frozen_fix_plan() -> dict:
             (NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_SERVICE_PY),
             (NAVER_TAG2_MARKER, NAVER_TAG2_NEEDED, NAVER_TAG2_SERVICE_PY),
             (TAG_DICT_MARKER, TAG_DICT_NEEDED, TAG_DICT_SERVICE_PY),
+            (NAVER_TAG3_MARKER, NAVER_TAG3_NEEDED, NAVER_TAG3_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),

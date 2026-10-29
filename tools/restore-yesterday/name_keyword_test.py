@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.59")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.60")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -230,6 +230,22 @@ if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
         styled = patch.patch_css("/* detail-fit1 */\n")
         self.assertIn("/* detail-intro-style1 */", styled)
         self.assertGreater(styled.rindex("/* detail-intro-style1 */"), styled.rindex("/* detail-fit1 */"))
+
+    def test_first_screen_shows_spinner_while_loading(self):
+        self.assertIn("작업 중", patch.LOAD_SPIN_HTML)
+        self.assertIn("/* load-spin1 */", patch.LOAD_SPIN_HTML)
+        self.assertIn("/api/products", patch.LOAD_SPIN_HTML)
+        self.assertIn("animation: load-spin", patch.LOAD_SPIN_CSS)
+        html = patch.patch_html('<p>왼쪽 마켓선택에서 마스터상품과 마켓으로 보낸 상품을 나눠 봅니다.</p><script src="/static/app.js?v=1"></script>')
+        self.assertIn("/* load-spin1 */", html)
+        self.assertLess(html.index("/* load-spin1 */"), html.index('<script src="/static/app.js'))
+        self.assertIn("작업 중 표시가 돕니다", html)
+        styled = patch.patch_css("body { margin: 0; }\n")
+        self.assertIn("/* load-spin1 */", styled)
+        script = patch.LOAD_SPIN_HTML.split("<script>", 1)[1].split("</script>", 1)[0]
+        full = Path("/tmp/load-spin1.js")
+        full.write_text(script, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
 
 
 if __name__ == "__main__":

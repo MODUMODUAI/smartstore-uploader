@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.59"
+SCREEN_VERSION = "2026.10.28.60"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 59))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 60))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4167,6 +4167,10 @@ def patch_help(text: str) -> str:
             "창 안의 AI추가글로 상세 위에 글을 넣고, 창은 화면보다 30% 작습니다.",
             1,
         )
+    load_spin_anchor = "왼쪽 마켓선택에서 마스터상품과 마켓으로 보낸 상품을 나눠 봅니다."
+    load_spin_help = "첫 화면에서 상품과 마켓을 가져오는 동안 가운데에 작업 중 표시가 돕니다."
+    if load_spin_anchor in text and load_spin_help not in text:
+        text = text.replace(load_spin_anchor, load_spin_anchor + " " + load_spin_help, 1)
     return text
 
 
@@ -4720,11 +4724,22 @@ def _set_version_label(text: str) -> str:
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
+    text = patch_load_spin(text)
     text = bump_asset(text, "styles.css", SCREEN_VERSION)
     text = bump_asset(text, "app.js", SCREEN_VERSION)
     text = _set_version_label(text)
     text = _ensure_screen_build(text)
     return _replace_old_versions(text)
+
+
+def patch_load_spin(text: str) -> str:
+    if "/* load-spin1 */" in text:
+        return text
+    needle = '<script src="/static/app.js'
+    pos = text.find(needle)
+    if pos < 0:
+        return text
+    return text[:pos] + LOAD_SPIN_HTML + text[pos:]
 
 
 COLLECT_URL_JS = r"""
@@ -5648,6 +5663,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + DETAIL_FIT_CSS
     if "/* detail-intro-style1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_CSS
+    if "/* load-spin1 */" not in text:
+        text = text.rstrip() + "\n" + LOAD_SPIN_CSS
     return text
 
 
@@ -10779,6 +10796,115 @@ DETAIL_INTRO_STYLE_CSS = r"""
   max-width: 46%;
   min-width: 120px;
 }
+"""
+LOAD_SPIN_HTML = r"""<div id="loadSpinner" class="load-spinner" role="status" aria-live="polite">
+  <div class="load-spin-ring" aria-hidden="true"></div>
+  <p>작업 중</p>
+</div>
+<script>
+/* load-spin1 */
+(function () {
+  const watch = ["/api/products", "/api/markets", "/api/wholesalers"];
+  let pending = 0;
+  let armed = true;
+  function pathOf(input) {
+    const raw = typeof input === "string" ? input : (input && input.url) || "";
+    try {
+      return new URL(raw, location.origin).pathname;
+    } catch (error) {
+      return String(raw).split("?")[0];
+    }
+  }
+  function tracked(input, init) {
+    if (!armed) return false;
+    let method = "GET";
+    if (init && init.method) method = init.method;
+    else if (typeof Request !== "undefined" && input instanceof Request) method = input.method || "GET";
+    if (String(method).toUpperCase() !== "GET") return false;
+    return watch.indexOf(pathOf(input)) >= 0;
+  }
+  function show(on) {
+    const box = document.getElementById("loadSpinner");
+    if (!box) return;
+    box.hidden = !on;
+    box.setAttribute("aria-busy", on ? "true" : "false");
+  }
+  show(true);
+  const native = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const track = tracked(input, init);
+    if (track) {
+      pending += 1;
+      show(true);
+    }
+    function finish() {
+      if (!track) return;
+      pending -= 1;
+      if (pending <= 0) {
+        pending = 0;
+        armed = false;
+        show(false);
+      }
+    }
+    return Promise.resolve(native(input, init)).then(function (response) {
+      finish();
+      return response;
+    }, function (error) {
+      finish();
+      throw error;
+    });
+  };
+  setTimeout(function () {
+    if (pending === 0) show(false);
+  }, 30000);
+})();
+</script>
+"""
+LOAD_SPIN_CSS = r"""
+/* load-spin1 */
+#loadSpinner {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+#loadSpinner[hidden] { display: none !important; }
+#loadSpinner .load-spin-ring {
+  width: 64px;
+  height: 64px;
+  border: 6px solid #d6e6f8;
+  border-top-color: #0078d7;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.92);
+  animation: load-spin 0.75s linear infinite;
+}
+#loadSpinner p {
+  margin: 0;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #c5d4e8;
+  border-radius: 6px;
+  color: #1a1a1a;
+  font-size: 15px;
+  font-weight: 700;
+}
+html[data-theme="dark"] #loadSpinner { background: rgba(12, 12, 12, 0.55); }
+html[data-theme="dark"] #loadSpinner .load-spin-ring {
+  border-color: #2a3d55;
+  border-top-color: #4da3ff;
+  box-shadow: 0 0 0 6px rgba(20, 20, 20, 0.9);
+}
+html[data-theme="dark"] #loadSpinner p {
+  background: rgba(28, 28, 28, 0.96);
+  color: #f2f2f2;
+  border-color: #555;
+}
+@keyframes load-spin { to { transform: rotate(360deg); } }
 """
 NAVER_TAG2_SERVICE_PY = r'''
 # naver-tag2

@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.64")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.65")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -247,6 +247,43 @@ if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
         full = Path("/tmp/load-spin1.js")
         full.write_text(script, encoding="utf-8")
         subprocess.run(["node", "--check", str(full)], check=True)
+
+    def test_name_pane_save_keywords_and_image_size(self):
+        start = patch.NAME_PANE_LIVE_JS.index("/* name-pane-pure-start */")
+        end = patch.NAME_PANE_LIVE_JS.index("/* name-pane-pure-end */")
+        script = patch.NAME_PANE_LIVE_JS[start:end] + r"""
+if (detailPaneImageWidth(400, 100) !== 400) throw new Error("100 " + detailPaneImageWidth(400, 100));
+if (detailPaneImageWidth(400, 105) !== 420) throw new Error("105 " + detailPaneImageWidth(400, 105));
+if (detailPaneImageWidth(400, 103) !== 420) throw new Error("snap " + detailPaneImageWidth(400, 103));
+if (detailPaneImageWidth(400, 25) !== 100) throw new Error("floor " + detailPaneImageWidth(400, 25));
+if (detailPaneImageWidth(400, 200) !== 800) throw new Error("ceil " + detailPaneImageWidth(400, 200));
+if (detailPaneImageWidth(333, 100) !== 333) throw new Error("fit " + detailPaneImageWidth(333, 100));
+"""
+        path = Path("/tmp/name-pane-live-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/name-pane-live-full.js")
+        full.write_text(patch.NAME_PANE_LIVE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("#03C75A", patch.NAME_PANE_LIVE_CSS)
+        self.assertIn("flex-direction: column", patch.NAME_PANE_LIVE_CSS)
+        self.assertIn("zoom: 1 !important", patch.NAME_PANE_LIVE_CSS)
+        self.assertIn("font-size", patch.NAME_PANE_LIVE_JS)
+        self.assertIn("1.2", patch.NAME_PANE_LIVE_JS)
+        self.assertIn("nameSuggestKeywords", patch.NAME_PANE_LIVE_JS)
+        scripted = patch.patch_answer("function openNameEditor(){ return 1; }\nfunction widenNameEditorColumn(){ return 1; }\n")
+        self.assertIn("/* name-pane-live1 */", scripted)
+        self.assertGreater(scripted.rindex("/* name-pane-live1 */"), scripted.rindex("/* prompt-narrow1 */"))
+        styled = patch.patch_css("/* prompt-narrow1 */\n")
+        self.assertIn("/* name-pane-live1 */", styled)
+        self.assertGreater(styled.rindex("/* name-pane-live1 */"), styled.rindex("/* prompt-narrow1 */"))
+        self.assertGreater(styled.rindex("max-width: 440px"), styled.rindex("min-width: min(760px, 100%)") if "min-width: min(760px, 100%)" in styled else 0)
+        help_html = patch.patch_help("<p>누르면 옆에 그 상품의 상세페이지가 함께 열립니다. 상세페이지 크기는 5%씩 조절합니다.</p>")
+        self.assertIn("저장은 네이버 초록색입니다", help_html)
+        self.assertIn("검색어는 왼쪽 아래", help_html)
+        self.assertIn("상세페이지는 더 넓습니다", help_html)
+        self.assertIn("글씨는 20% 큽니다", help_html)
+        self.assertIn("그림을 키우거나 줄입니다", help_html)
 
 
 if __name__ == "__main__":

@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.64"
+SCREEN_VERSION = "2026.10.28.65"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 64))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 65))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4160,6 +4160,13 @@ def patch_help(text: str) -> str:
     prompt_help = "창 가로는 화면보다 10% 좁습니다."
     if prompt_help in text and "프롬프트 칸은 30% 짧습니다" not in text:
         text = text.replace(prompt_help, prompt_help + " AI 실행 앞의 프롬프트 칸은 30% 짧습니다. 저장 메뉴는 조금 왼쪽에 있습니다.", 1)
+    name_pane_help = "상세페이지 크기는 5%씩 조절합니다."
+    if name_pane_help in text and "그림을 키우거나 줄입니다" not in text:
+        text = text.replace(
+            name_pane_help,
+            name_pane_help + " 저장은 네이버 초록색입니다. 검색어는 왼쪽 아래에 있고, 상세페이지는 더 넓습니다. 글씨는 20% 큽니다. 크기 조절은 그림을 키우거나 줄입니다.",
+            1,
+        )
     tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
     if tag_page_anchor in text and "1·2·3페이지" not in text:
         text = text.replace(
@@ -5626,6 +5633,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + PRODUCT_KEYWORD_JS
     if "/* prompt-narrow1 */" not in text:
         text = text.rstrip() + "\n" + PROMPT_NARROW_JS
+    if "/* name-pane-live1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_PANE_LIVE_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5708,6 +5717,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_NARROW_CSS
     if "/* prompt-narrow1 */" not in text:
         text = text.rstrip() + "\n" + PROMPT_NARROW_CSS
+    if "/* name-pane-live1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_PANE_LIVE_CSS
     return text
 
 
@@ -12290,6 +12301,221 @@ PROMPT_NARROW_CSS = r"""
 .prompt-menu-shift {
   padding-right: 24px;
   box-sizing: border-box;
+}
+"""
+NAME_PANE_LIVE_JS = r"""
+/* name-pane-live1 */
+(function () {
+  /* name-pane-pure-start */
+  function detailPaneImageWidth(fit, percent) {
+    const step = 5;
+    const current = Number(percent);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = Math.min(200, Math.max(25, snapped));
+    const pane = Math.max(1, Math.round(Number(fit) || 1));
+    return Math.max(1, Math.round(pane * next / 100));
+  }
+  /* name-pane-pure-end */
+  function snapPercent(value) {
+    return detailPaneImageWidth(100, value);
+  }
+  function enlargeNameText(root) {
+    if (!root) return;
+    const nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("h1,h2,h3,h4,h5,label,input,textarea,button,span,p,li,a,b,small,strong,em,th,td,div")));
+    const sizes = nodes.map((el) => {
+      if (!el || el.dataset.text120 === "1" || el.tagName === "IMG" || el.tagName === "INPUT" && el.type === "range") return 0;
+      const size = parseFloat(window.getComputedStyle(el).fontSize);
+      return size > 0 ? size : 0;
+    });
+    const scale = 1.2;
+    nodes.forEach((el, index) => {
+      if (!sizes[index]) return;
+      el.dataset.text120 = "1";
+      el.style.setProperty("font-size", (Math.round(sizes[index] * scale * 10) / 10) + "px", "important");
+    });
+  }
+  function placeNamePane() {
+    const dialog = document.getElementById("nameDialog");
+    const form = document.getElementById("nameForm");
+    const pane = document.getElementById("nameDetailPane");
+    const box = document.getElementById("nameSuggestKeywords");
+    if (form) {
+      form.classList.add("name-keywords-below");
+      form.style.setProperty("display", "flex", "important");
+      form.style.setProperty("flex-direction", "column", "important");
+      form.style.setProperty("flex", "0 0 440px", "important");
+      form.style.setProperty("width", "440px", "important");
+      form.style.setProperty("min-width", "300px", "important");
+      form.style.setProperty("max-width", "440px", "important");
+      form.style.setProperty("overflow", "hidden", "important");
+      const actions = form.querySelector(".dialog-actions");
+      if (box && actions && box.parentElement === form) form.insertBefore(box, actions);
+    }
+    if (pane) {
+      pane.style.setProperty("flex", "1 1 auto", "important");
+      pane.style.setProperty("width", "auto", "important");
+      pane.style.setProperty("min-width", "0", "important");
+      pane.style.setProperty("max-width", "none", "important");
+    }
+    if (dialog) enlargeNameText(dialog);
+  }
+  function paintDetailImages() {
+    const view = document.getElementById("nameDetailView");
+    const bar = document.getElementById("nameDetailZoomBar");
+    if (!view || !bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    const percent = snapPercent(range ? range.value : 100);
+    if (range && String(range.value) !== String(percent)) range.value = String(percent);
+    if (label) label.textContent = percent + "%";
+    const viewStyle = window.getComputedStyle(view);
+    const pad = (parseFloat(viewStyle.paddingLeft) || 0) + (parseFloat(viewStyle.paddingRight) || 0);
+    const fit = Math.max(1, Math.round(view.clientWidth - pad));
+    const width = detailPaneImageWidth(fit, percent);
+    const body = view.querySelector(":scope > .dialog-zoom-body");
+    if (body) {
+      body.style.setProperty("zoom", "1", "important");
+      body.style.setProperty("width", width + "px", "important");
+      body.style.setProperty("max-width", "none", "important");
+      body.style.setProperty("transform", "none", "important");
+    }
+    view.querySelectorAll("img").forEach((img) => {
+      img.style.setProperty("width", width + "px", "important");
+      img.style.setProperty("max-width", "none", "important");
+      img.style.setProperty("height", "auto", "important");
+    });
+  }
+  function bindDetailImages() {
+    const view = document.getElementById("nameDetailView");
+    const bar = document.getElementById("nameDetailZoomBar");
+    if (!view || !bar) return;
+    if (bar.dataset.detailImageSize !== "1") {
+      bar.dataset.detailImageSize = "1";
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : 100;
+        const next = snapPercent(current + Number(button.dataset.zoom) * 5);
+        if (range) range.value = String(next);
+        paintDetailImages();
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => paintDetailImages());
+    }
+    if (view.dataset.detailImageWheel !== "1") {
+      view.dataset.detailImageWheel = "1";
+      view.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : 100;
+        const next = snapPercent(current + (event.deltaY > 0 ? -5 : 5));
+        if (range) range.value = String(next);
+        paintDetailImages();
+      }, { capture: true, passive: false });
+      new MutationObserver(() => {
+        enlargeNameText(view);
+        paintDetailImages();
+      }).observe(view, { childList: true, subtree: true });
+    }
+    paintDetailImages();
+  }
+  function refreshNamePane() {
+    placeNamePane();
+    bindDetailImages();
+  }
+  if (typeof widenNameEditorColumn === "function" && !widenNameEditorColumn.namePaneLive) {
+    const widenBefore = widenNameEditorColumn;
+    widenNameEditorColumn = function () {
+      const result = widenBefore.apply(this, arguments);
+      placeNamePane();
+      return result;
+    };
+    widenNameEditorColumn.namePaneLive = true;
+  }
+  if (typeof openNameEditor === "function" && !openNameEditor.namePaneLive) {
+    const openNameEditorBefore = openNameEditor;
+    openNameEditor = function () {
+      const result = openNameEditorBefore.apply(this, arguments);
+      const finish = () => {
+        refreshNamePane();
+        setTimeout(refreshNamePane, 0);
+        setTimeout(refreshNamePane, 50);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    openNameEditor.namePaneLive = true;
+  }
+})();
+"""
+NAME_PANE_LIVE_CSS = r"""
+/* name-pane-live1 */
+#nameDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
+  font-weight: 700;
+}
+#nameDialog.name-with-detail #nameForm,
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm:has(aside) {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 0 440px !important;
+  width: 440px !important;
+  min-width: 300px !important;
+  max-width: 440px !important;
+  overflow: hidden !important;
+  align-self: stretch !important;
+}
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  flex: 0 0 auto !important;
+  flex-basis: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+#nameDialog #nameSuggestKeywords:not([hidden]) {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin-top: 8px;
+  overflow: auto;
+}
+#nameDialog #nameSuggestKeywords span {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+#nameDetailView {
+  overflow: auto;
+}
+#nameDetailView > .dialog-zoom-body {
+  zoom: 1 !important;
+  transform: none !important;
+}
+#nameDetailView img {
+  max-width: none;
+  height: auto;
 }
 """
 

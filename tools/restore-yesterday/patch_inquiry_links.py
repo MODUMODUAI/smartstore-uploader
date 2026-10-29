@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.61"
+SCREEN_VERSION = "2026.10.28.62"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 61))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 62))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4149,13 +4149,16 @@ def patch_help(text: str) -> str:
     if "속성 칸 크기는 5%씩 조절합니다." in text:
         text = text.replace("속성 칸 크기는 5%씩 조절합니다.", "크기 조절은 없습니다.", 1)
     image_zoom_help = "이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다."
-    if image_zoom_help in text and "오른쪽에서 5%씩" not in text:
+    if image_zoom_help in text and "오른쪽에서 5%씩" not in text and "그림 칸도 같이" not in text:
         text = text.replace(image_zoom_help, image_zoom_help + " 크기 조절은 오른쪽에서 5%씩 움직입니다.", 1)
+    image_live_help = "크기 조절은 오른쪽에서 5%씩 움직입니다."
+    if image_live_help in text and "그림 칸도 같이" not in text:
+        text = text.replace(image_live_help, "크기 조절은 오른쪽에서 5%씩 움직이고, 그림 칸도 같이 커지거나 작아집니다.", 1)
     tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
     if tag_page_anchor in text and "1·2·3페이지" not in text:
         text = text.replace(
             tag_page_anchor,
-            tag_page_anchor + " 검색 태그는 1·2·3페이지를 각각 가져오고, 상품 브랜드와 검색에서 본 브랜드는 뺍니다.",
+            tag_page_anchor + " 검색 태그는 1·2·3페이지를 각각 가져오고, 상품 브랜드와 검색에서 본 브랜드는 뺍니다. 오른쪽에는 그 상품 이름의 네이버 검색어도 같이 나옵니다.",
             1,
         )
     tag_dict_help = "직접 넣거나 AI 채우기로 만듭니다."
@@ -5611,6 +5614,10 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + TAG_PAGE_JS
     if "/* image-zoom-right1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_JS
+    if "/* image-zoom-live1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_JS
+    if "/* product-keyword1 */" not in text:
+        text = text.rstrip() + "\n" + PRODUCT_KEYWORD_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5685,6 +5692,10 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + TAG_PAGE_CSS
     if "/* image-zoom-right1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_CSS
+    if "/* image-zoom-live1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_CSS
+    if "/* product-keyword1 */" not in text:
+        text = text.rstrip() + "\n" + PRODUCT_KEYWORD_CSS
     return text
 
 
@@ -6687,6 +6698,8 @@ def patch_murray_sources(root: Path) -> bool:
     if _append_marked_source(service, TAG_DICT_SERVICE_PY, TAG_DICT_NEEDED, TAG_DICT_MARKER):
         changed = True
     if _append_marked_source(service, NAVER_TAG3_SERVICE_PY, NAVER_TAG3_NEEDED, NAVER_TAG3_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_KEYWORD_SERVICE_PY, NAVER_KEYWORD_NEEDED, NAVER_KEYWORD_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
@@ -11845,6 +11858,356 @@ IMAGE_ZOOM_RIGHT_CSS = r"""
 #imageDialog #imageZoomBar input[type="range"] { width: 120px; }
 #attributeZoomBar { display: none !important; }
 """
+IMAGE_ZOOM_LIVE_JS = r"""
+/* image-zoom-live1 */
+(function () {
+  const step = 5;
+  let percent = 25;
+  function clampPercent(value) {
+    const number = Number(value);
+    const base = Number.isFinite(number) ? number : percent;
+    const snapped = Math.round(base / step) * step;
+    return Math.min(120, Math.max(20, snapped));
+  }
+  function paintSlots(next) {
+    percent = clampPercent(next);
+    const size = Math.round(500 * percent / 100);
+    document.documentElement.style.setProperty("--image-slot-size", size + "px");
+    const thumbs = document.getElementById("imageThumbs");
+    if (thumbs) {
+      thumbs.style.setProperty("display", "grid", "important");
+      thumbs.style.setProperty("grid-template-columns", "repeat(5, " + size + "px)", "important");
+      thumbs.style.setProperty("width", "max-content", "important");
+      thumbs.style.setProperty("max-width", "none", "important");
+    }
+    document.querySelectorAll("#imageThumbs .image-slot").forEach((slot) => {
+      slot.style.setProperty("width", size + "px", "important");
+      slot.style.setProperty("height", size + "px", "important");
+      slot.style.setProperty("flex", "0 0 " + size + "px", "important");
+      slot.style.setProperty("aspect-ratio", "auto", "important");
+      slot.style.setProperty("min-width", size + "px", "important");
+    });
+    const bar = document.getElementById("imageZoomBar");
+    if (!bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) {
+      range.min = "20";
+      range.max = "120";
+      range.step = "5";
+      range.value = String(percent);
+    }
+    if (label) label.textContent = percent + "%";
+  }
+  function watchThumbs() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || thumbs.dataset.zoomLive === "1") return;
+    thumbs.dataset.zoomLive = "1";
+    new MutationObserver(() => paintSlots(percent)).observe(thumbs, { childList: true });
+  }
+  function bindBar() {
+    const image = document.getElementById("imageDialog");
+    let bar = document.getElementById("imageZoomBar");
+    if (!image || !bar) return;
+    const header = image.querySelector("header");
+    const close = document.getElementById("closeImage");
+    if (header && bar.parentElement !== header) {
+      if (close && close.parentElement === header) header.insertBefore(bar, close);
+      else header.appendChild(bar);
+    }
+    if (bar.dataset.zoomLive !== "1") {
+      const fresh = bar.cloneNode(true);
+      fresh.dataset.zoomLive = "1";
+      fresh.dataset.step5 = "1";
+      bar.replaceWith(fresh);
+      bar = fresh;
+      bar.querySelectorAll("[data-zoom]").forEach((button) => {
+        button.dataset.zoom5 = "1";
+      });
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        paintSlots(percent + Number(button.dataset.zoom) * step);
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => paintSlots(range.value));
+    }
+    watchThumbs();
+    const range = bar.querySelector("input[type='range']");
+    paintSlots(range && range.value ? range.value : percent);
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.zoomLive) {
+    const renderImageEditorBefore = renderImageEditor;
+    renderImageEditor = function () {
+      const result = renderImageEditorBefore.apply(this, arguments);
+      paintSlots(percent);
+      return result;
+    };
+    renderImageEditor.zoomLive = true;
+  }
+  if (typeof openImageEditor === "function" && !openImageEditor.zoomLive) {
+    const openImageEditorBefore = openImageEditor;
+    openImageEditor = function () {
+      const result = openImageEditorBefore.apply(this, arguments);
+      const finish = () => {
+        bindBar();
+        setTimeout(bindBar, 0);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    openImageEditor.zoomLive = true;
+  }
+  bindBar();
+  setTimeout(bindBar, 0);
+  setTimeout(bindBar, 80);
+})();
+"""
+IMAGE_ZOOM_LIVE_CSS = r"""
+/* image-zoom-live1 */
+#imageDialog .image-drop { overflow: auto; }
+#imageDialog #imageThumbs.image-thumbs {
+  display: grid !important;
+  grid-template-columns: repeat(5, var(--image-slot-size, 125px)) !important;
+  width: max-content !important;
+  max-width: none !important;
+}
+#imageDialog #imageThumbs .image-slot {
+  width: var(--image-slot-size, 125px) !important;
+  height: var(--image-slot-size, 125px) !important;
+  flex: 0 0 var(--image-slot-size, 125px) !important;
+  aspect-ratio: auto !important;
+  min-width: var(--image-slot-size, 125px) !important;
+  max-width: none !important;
+}
+"""
+NAVER_KEYWORD_MARKER = "# naver-keyword1"
+NAVER_KEYWORD_NEEDED = ("def _naver_http_get", "def _naver_json", "def _find_api_app")
+NAVER_KEYWORD_SERVICE_PY = r'''
+# naver-keyword1
+# The product's own Naver search suggestions are shown beside the category tags.
+try:
+    from starlette.requests import Request as _NaverRequest
+except Exception:
+    _NaverRequest = object
+
+
+def _naver_keyword_rows(payload):
+    words = []
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return words
+    for group in items:
+        if not isinstance(group, list):
+            continue
+        for row in group:
+            text = ""
+            if isinstance(row, list) and row:
+                text = str(row[0] or "")
+            elif isinstance(row, str):
+                text = row
+            text = " ".join(text.split())
+            if text and text not in words:
+                words.append(text)
+            if len(words) >= 20:
+                return words
+    return words
+
+
+def _naver_product_keywords(query):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://search.naver.com/",
+    }
+    status, text = _naver_http_get(
+        "https://ac.search.naver.com/nx/ac",
+        {
+            "q": query,
+            "con": "1",
+            "frm": "nv",
+            "ans": "2",
+            "r_format": "json",
+            "r_enc": "UTF-8",
+            "r_unicode": "0",
+            "t_koreng": "1",
+            "run": "2",
+            "rev": "4",
+            "q_enc": "UTF-8",
+            "st": "100",
+        },
+        headers,
+    )
+    if status >= 400 or not text:
+        raise RuntimeError("네이버 검색어를 가져오지 못했습니다.")
+    import json as _naver_keyword_json
+    try:
+        payload = _naver_keyword_json.loads(text)
+    except Exception as exc:
+        raise RuntimeError("네이버 검색어 응답을 읽지 못했습니다.") from exc
+    return _naver_keyword_rows(payload)
+
+
+async def _naver_keyword_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"query": "", "keywords": []})
+    try:
+        keywords = _naver_product_keywords(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "keywords": keywords})
+
+
+def _naver_keyword_install():
+    if globals().get("_naver_keyword_installed"):
+        return
+    globals()["_naver_keyword_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-keywords", _naver_keyword_route, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            import time as _naver_keyword_time
+            _naver_keyword_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-keyword1", daemon=True).start()
+
+
+if not globals().get("_NAVER_KEYWORD_NO_INSTALL"):
+    _naver_keyword_install()
+'''
+PRODUCT_KEYWORD_JS = r"""
+/* product-keyword1 */
+(function () {
+  function productKeywordQuery() {
+    const item = typeof current !== "undefined" ? current : null;
+    const name = item ? String(item.name || item.product_name || "").trim() : "";
+    if (name) return name;
+    return typeof naverTagQuery === "function" ? naverTagQuery() : "";
+  }
+  function ensureKeywordBox() {
+    if (!document.querySelector(".naver-search-tags") && typeof ensureNaverTagPanel === "function") ensureNaverTagPanel();
+    const aside = document.querySelector(".naver-search-tags");
+    if (!aside) return null;
+    let box = document.getElementById("naverProductKeywords");
+    if (box) return box;
+    const section = document.createElement("section");
+    section.id = "naverProductKeywordSection";
+    const title = document.createElement("h4");
+    title.textContent = "이 상품 검색어";
+    box = document.createElement("div");
+    box.id = "naverProductKeywords";
+    const empty = document.createElement("p");
+    empty.id = "naverProductKeywordEmpty";
+    empty.className = "hint";
+    empty.hidden = true;
+    empty.textContent = "검색어가 없습니다.";
+    section.append(title, box, empty);
+    const pages = document.getElementById("naverSearchTagPages");
+    if (pages) aside.insertBefore(section, pages);
+    else aside.appendChild(section);
+    return box;
+  }
+  function paintKeywords(keywords) {
+    const box = ensureKeywordBox();
+    const empty = document.getElementById("naverProductKeywordEmpty");
+    if (!box) return;
+    box.innerHTML = "";
+    (keywords || []).forEach((keyword) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = keyword;
+      button.addEventListener("click", () => {
+        if (typeof addDraftTag === "function") addDraftTag(keyword);
+      });
+      box.appendChild(button);
+    });
+    if (empty) empty.hidden = keywords && keywords.length > 0;
+  }
+  async function loadProductKeywords() {
+    ensureKeywordBox();
+    const query = productKeywordQuery();
+    const empty = document.getElementById("naverProductKeywordEmpty");
+    if (!query) {
+      paintKeywords([]);
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = "상품명이 없습니다.";
+      }
+      return;
+    }
+    try {
+      const data = await api("/api/tags/naver-keywords?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+      paintKeywords(Array.isArray(data && data.keywords) ? data.keywords : []);
+    } catch (error) {
+      paintKeywords([]);
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = error.message || "검색어를 가져오지 못했습니다.";
+      }
+    }
+  }
+  if (typeof loadNaverSearchTags === "function" && !loadNaverSearchTags.productKeywords) {
+    const loadTagsBeforeKeywords = loadNaverSearchTags;
+    loadNaverSearchTags = function () {
+      const result = loadTagsBeforeKeywords.apply(this, arguments);
+      loadProductKeywords();
+      return result;
+    };
+    loadNaverSearchTags.productKeywords = true;
+  }
+  if (typeof openTagEditor === "function" && !openTagEditor.productKeywords) {
+    const openTagBeforeKeywords = openTagEditor;
+    openTagEditor = function () {
+      const result = openTagBeforeKeywords.apply(this, arguments);
+      loadProductKeywords();
+      return result;
+    };
+    openTagEditor.productKeywords = true;
+  }
+})();
+"""
+PRODUCT_KEYWORD_CSS = r"""
+/* product-keyword1 */
+#naverProductKeywordSection { margin: 0 0 12px; }
+#naverProductKeywordSection h4 { margin: 0 0 4px; font-size: 12px; }
+#naverProductKeywords { display: flex; flex-direction: column; gap: 4px; }
+#naverProductKeywords button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+"""
 
 
 def frozen_fix_plan() -> dict:
@@ -11879,6 +12242,7 @@ def frozen_fix_plan() -> dict:
             (NAVER_TAG2_MARKER, NAVER_TAG2_NEEDED, NAVER_TAG2_SERVICE_PY),
             (TAG_DICT_MARKER, TAG_DICT_NEEDED, TAG_DICT_SERVICE_PY),
             (NAVER_TAG3_MARKER, NAVER_TAG3_NEEDED, NAVER_TAG3_SERVICE_PY),
+            (NAVER_KEYWORD_MARKER, NAVER_KEYWORD_NEEDED, NAVER_KEYWORD_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),

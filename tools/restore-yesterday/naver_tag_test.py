@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.61")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.62")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -239,6 +239,75 @@ if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Erro
         self.assertIn("/* image-zoom-right1 */", styled)
         help_html = patch.patch_help("<p>직접 넣거나 AI 채우기로 만듭니다.</p>")
         self.assertIn("태그사전 후보", help_html)
+
+    def test_image_zoom_changes_slot_by_five_percent(self):
+        self.assertIn("const step = 5", patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn("Math.round(500 * percent / 100)", patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn('fresh.dataset.zoomLive = "1"', patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn("stopImmediatePropagation", patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn("renderImageEditor", patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn("grid-template-columns", patch.IMAGE_ZOOM_LIVE_JS)
+        self.assertIn("repeat(5, var(--image-slot-size, 125px)) !important", patch.IMAGE_ZOOM_LIVE_CSS)
+        self.assertIn("width: var(--image-slot-size, 125px) !important", patch.IMAGE_ZOOM_LIVE_CSS)
+        full = Path("/tmp/image-zoom-live.js")
+        full.write_text(patch.IMAGE_ZOOM_LIVE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openImageEditor(){ return 1; }\nfunction renderImageEditor(){ return 1; }\n")
+        self.assertIn("/* image-zoom-live1 */", scripted)
+        self.assertGreater(scripted.rindex("/* image-zoom-live1 */"), scripted.rindex("/* image-zoom-right1 */"))
+        styled = patch.patch_css("/* image-row5 */\n")
+        self.assertIn("/* image-zoom-live1 */", styled)
+        self.assertGreater(styled.rindex("/* image-zoom-live1 */"), styled.rindex("/* image-row5 */"))
+        help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
+        self.assertIn("그림 칸도 같이 커지거나 작아집니다", help_html)
+
+    def test_product_keywords_come_from_naver_autocomplete(self):
+        ns = {"_NAVER_KEYWORD_NO_INSTALL": True}
+        exec(compile(patch.NAVER_KEYWORD_SERVICE_PY, "<naver-keyword>", "exec"), ns)
+        payload = {
+            "items": [[
+                ["골프거리측정기", "0"],
+                ["거리측정기", "0"],
+                ["골프 거리측정기 순위", "0"],
+                ["거리측정기 케이스", "0"],
+                ["부쉬넬 거리측정기", "0"],
+                ["레이저 거리측정기", "0"],
+                ["보이스캐디 거리측정기", "0"],
+                ["레이저 거리측정기", "0"],
+                ["니콘 거리측정기", "0"],
+                ["도미 거리측정기", "0"],
+            ]]
+        }
+        words = ns["_naver_keyword_rows"](payload)
+        self.assertEqual(words[0], "골프거리측정기")
+        self.assertIn("레이저 거리측정기", words)
+        self.assertEqual(words.count("레이저 거리측정기"), 1)
+        self.assertLessEqual(len(words), 20)
+        self.assertIn("부쉬넬 거리측정기", words)
+        seen = {}
+
+        def fake_get(url, params, headers):
+            seen["url"] = url
+            seen["q"] = params.get("q")
+            seen["st"] = params.get("st")
+            return 200, '{"items":[[["골프거리측정기","0"],["레이저 거리측정기","0"]]]}'
+
+        ns["_naver_http_get"] = fake_get
+        got = ns["_naver_product_keywords"]("부쉬넬 거리측정기")
+        self.assertEqual(seen["url"], "https://ac.search.naver.com/nx/ac")
+        self.assertEqual(seen["q"], "부쉬넬 거리측정기")
+        self.assertEqual(seen["st"], "100")
+        self.assertEqual(got, ["골프거리측정기", "레이저 거리측정기"])
+        self.assertIn("/api/tags/naver-keywords", patch.NAVER_KEYWORD_SERVICE_PY)
+        full = Path("/tmp/product-keyword.js")
+        full.write_text(patch.PRODUCT_KEYWORD_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openTagEditor(){ return 1; }\nfunction loadNaverSearchTags(){ return 1; }\n")
+        self.assertIn("/* product-keyword1 */", scripted)
+        self.assertIn("이 상품 검색어", patch.PRODUCT_KEYWORD_JS)
+        self.assertGreater(scripted.rindex("/* product-keyword1 */"), scripted.rindex("/* tag-page1 */"))
+        help_html = patch.patch_help("<p>카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다.</p>")
+        self.assertIn("그 상품 이름의 네이버 검색어", help_html)
 
 
 if __name__ == "__main__":

@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.50"
+SCREEN_VERSION = "2026.10.28.51"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 50))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 51))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5523,6 +5523,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_COUNT_JS
     if "/* name-layout1 */" not in text:
         text = text.rstrip() + "\n" + NAME_LAYOUT_JS
+    if "/* dialog-resize1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_RESIZE_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5577,6 +5579,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_COUNT_CSS
     if "/* name-layout1 */" not in text:
         text = text.rstrip() + "\n" + NAME_LAYOUT_CSS
+    if "/* dialog-resize1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_RESIZE_CSS
     return text
 
 
@@ -8946,6 +8950,206 @@ NAME_LAYOUT_CSS = r"""
     border-left: 0;
     border-top: 1px solid var(--line, #d6dbe3);
   }
+}
+"""
+DIALOG_RESIZE_JS = r"""
+/* dialog-resize1 */
+/* resize-pure-start */
+function dialogResizeBox(edge, startLeft, startWidth, dx, viewWidth, minWidth) {
+  const margin = 8;
+  const startRight = startLeft + startWidth;
+  let left = startLeft;
+  let right = startRight;
+  if (edge === "right") right = startRight + dx;
+  else left = startLeft + dx;
+  if (right - left < minWidth) {
+    if (edge === "left") left = right - minWidth;
+    else right = left + minWidth;
+  }
+  if (left < margin) {
+    left = margin;
+    if (right - left < minWidth) right = left + minWidth;
+  }
+  if (right > viewWidth - margin) {
+    right = viewWidth - margin;
+    if (right - left < minWidth) left = Math.max(margin, right - minWidth);
+  }
+  return { left: Math.round(left), width: Math.round(right - left) };
+}
+/* resize-pure-end */
+function pinDialogBox(dialog) {
+  const rect = dialog.getBoundingClientRect();
+  dialog.classList.add("dialog-moved");
+  dialog.style.margin = "0";
+  dialog.style.position = "fixed";
+  dialog.style.left = rect.left + "px";
+  dialog.style.top = rect.top + "px";
+  dialog.style.width = rect.width + "px";
+  dialog.style.maxWidth = "none";
+  return rect;
+}
+function relaxNameColumnWidth() {
+  const input = document.getElementById("nameInput");
+  const form = document.getElementById("nameForm");
+  if (!input || !form) return;
+  let node = input.parentElement;
+  while (node && node !== form) {
+    node.style.setProperty("max-width", "none", "important");
+    node = node.parentElement;
+  }
+}
+function trackDialogResize(event, onMove) {
+  event.preventDefault();
+  event.stopPropagation();
+  document.body.classList.add("col-resizing");
+  const move = (ev) => onMove(ev);
+  const stop = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    document.removeEventListener("pointercancel", stop);
+    document.body.classList.remove("col-resizing");
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+  document.addEventListener("pointercancel", stop);
+}
+function mountDialogEdgeResize(dialog) {
+  if (!dialog || dialog.dataset.edgeResize === "1") return;
+  dialog.dataset.edgeResize = "1";
+  ["left", "right"].forEach((edge) => {
+    const handle = document.createElement("div");
+    handle.className = "dialog-resize-handle dialog-resize-" + edge;
+    handle.title = "좌우로 끌어 창 너비를 조절합니다";
+    dialog.appendChild(handle);
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = pinDialogBox(dialog);
+      const startX = event.clientX;
+      trackDialogResize(event, (ev) => {
+        const box = dialogResizeBox(edge, rect.left, rect.width, ev.clientX - startX, window.innerWidth, 360);
+        dialog.style.left = box.left + "px";
+        dialog.style.width = box.width + "px";
+        dialog.style.maxWidth = "none";
+      });
+    });
+  });
+  dialog.addEventListener("close", () => {
+    dialog.style.maxWidth = "";
+    dialog.style.minWidth = "";
+  });
+}
+function mountDialogEdgeResizeAll() {
+  document.querySelectorAll("dialog").forEach(mountDialogEdgeResize);
+}
+function setPaneWidth(pane, width) {
+  pane.style.setProperty("flex", "0 0 " + width + "px", "important");
+  pane.style.setProperty("width", width + "px", "important");
+  pane.style.setProperty("max-width", "none", "important");
+  pane.style.setProperty("min-width", "0px", "important");
+}
+function mountSplitter(parent, pane, minPane, minRest) {
+  if (!parent || !pane || pane.dataset.splitterReady === "1") return;
+  pane.dataset.splitterReady = "1";
+  const handle = document.createElement("div");
+  handle.className = "dialog-pane-resizer";
+  handle.title = "좌우로 끌어 너비를 조절합니다";
+  parent.insertBefore(handle, pane);
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const previous = pane.previousElementSibling === handle ? handle.previousElementSibling : pane.previousElementSibling;
+    const target = previous && previous !== handle ? previous : pane;
+    const startWidth = target.getBoundingClientRect().width;
+    const startX = event.clientX;
+    trackDialogResize(event, (ev) => {
+      const parentWidth = parent.getBoundingClientRect().width || window.innerWidth;
+      const next = Math.round(startWidth + (ev.clientX - startX));
+      const width = Math.max(minPane, Math.min(parentWidth - minRest, next));
+      setPaneWidth(target, width);
+      relaxNameColumnWidth();
+    });
+  });
+}
+function mountNameSplitters() {
+  const layout = document.getElementById("nameDetailLayout");
+  const form = document.getElementById("nameForm");
+  const detail = document.getElementById("nameDetailPane");
+  if (layout && detail) mountSplitter(layout, detail, 360, 240);
+  const input = document.getElementById("nameInput");
+  if (!form || !input) return;
+  let node = input.parentElement;
+  while (node && node !== form) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const style = window.getComputedStyle(parent);
+    const row = (style.display === "flex" || style.display === "inline-flex") && String(style.flexDirection || "row").indexOf("column") !== 0;
+    if (row && node.nextElementSibling) {
+      mountSplitter(parent, node.nextElementSibling, 320, 220);
+      break;
+    }
+    node = parent;
+  }
+}
+if (typeof openNameEditor === "function" && !openNameEditor.dialogResizeWrapped) {
+  const openNameEditorBeforeResize = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeResize.apply(this, arguments);
+    relaxNameColumnWidth();
+    mountNameSplitters();
+    setTimeout(() => {
+      relaxNameColumnWidth();
+      mountNameSplitters();
+    }, 0);
+    return result;
+  };
+  openNameEditor.dialogResizeWrapped = true;
+}
+mountDialogEdgeResizeAll();
+try {
+  if (typeof HTMLDialogElement === "function" && HTMLDialogElement.prototype.showModal && !HTMLDialogElement.prototype.showModal.dialogResizeWrapped) {
+    const showModalBeforeResize = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () {
+      mountDialogEdgeResize(this);
+      return showModalBeforeResize.apply(this, arguments);
+    };
+    HTMLDialogElement.prototype.showModal.dialogResizeWrapped = true;
+  }
+} catch (error) {}
+"""
+DIALOG_RESIZE_CSS = r"""
+/* dialog-resize1 */
+.dialog-resize-handle,
+.dialog-pane-resizer {
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 30;
+}
+.dialog-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+}
+.dialog-resize-left { left: 0; }
+.dialog-resize-right { right: 0; }
+.dialog-pane-resizer {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  align-self: stretch;
+  margin: 0;
+  background: transparent;
+}
+.dialog-resize-handle:hover,
+.dialog-pane-resizer:hover,
+body.col-resizing .dialog-resize-handle,
+body.col-resizing .dialog-pane-resizer { background: #0078d7; }
+#nameDialog.name-with-detail #nameForm,
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  max-width: none;
+}
+@media (max-width: 980px) {
+  #nameDialog .dialog-pane-resizer { display: none; }
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

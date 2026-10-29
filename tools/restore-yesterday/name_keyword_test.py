@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.50")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.51")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -78,6 +78,28 @@ if (menuSaveClosesDialog("/api/delivery-templates/abc", { method: "PUT" }) !== "
         layout_js = Path("/tmp/name-layout.js")
         layout_js.write_text(patch.NAME_LAYOUT_JS, encoding="utf-8")
         subprocess.run(["node", "--check", str(layout_js)], check=True)
+        self.assertIn("/* dialog-resize1 */", patch.DIALOG_RESIZE_JS)
+        self.assertIn("dialog-resize-handle", patch.DIALOG_RESIZE_CSS)
+        styled_resize = patch.patch_css(styled)
+        self.assertGreater(styled_resize.rindex("/* dialog-resize1 */"), styled_resize.rindex("/* name-layout1 */"))
+        start = patch.DIALOG_RESIZE_JS.index("/* resize-pure-start */")
+        end = patch.DIALOG_RESIZE_JS.index("/* resize-pure-end */")
+        script = patch.DIALOG_RESIZE_JS[start:end] + r"""
+const right = dialogResizeBox("right", 100, 400, 80, 1400, 360);
+if (right.left !== 100 || right.width !== 480) throw new Error("right " + JSON.stringify(right));
+const left = dialogResizeBox("left", 200, 500, -40, 1400, 360);
+if (left.left !== 160 || left.width !== 540) throw new Error("left " + JSON.stringify(left));
+const clamped = dialogResizeBox("left", 20, 400, -80, 1400, 360);
+if (clamped.left !== 8 || clamped.left + clamped.width !== 420) throw new Error("clamp " + JSON.stringify(clamped));
+const shrunk = dialogResizeBox("right", 100, 500, -80, 1400, 360);
+if (shrunk.width !== 420 || shrunk.left !== 100) throw new Error("shrink " + JSON.stringify(shrunk));
+"""
+        resize_js = Path("/tmp/dialog-resize-test.js")
+        resize_js.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(resize_js)], check=True)
+        full_js = Path("/tmp/dialog-resize-full.js")
+        full_js.write_text(patch.DIALOG_RESIZE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full_js)], check=True)
 
 
 if __name__ == "__main__":

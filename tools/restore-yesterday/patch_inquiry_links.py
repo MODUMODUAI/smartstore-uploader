@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.71"
+SCREEN_VERSION = "2026.10.28.72"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 71))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 72))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4195,6 +4195,13 @@ def patch_help(text: str) -> str:
             detail_market_help + " 상세페이지 크기는 5%씩 커집니다. 상세페이지 닫기는 하나입니다. 배송지 주소록은 고른 마켓에서 불러옵니다.",
             1,
         )
+    store_number_help = "배송지 주소록은 고른 마켓에서 불러옵니다."
+    if store_number_help in text and "스마트스토어번호는 판매자코드" not in text:
+        text = text.replace(
+            store_number_help,
+            store_number_help + " 스마트스토어번호는 판매자코드 앞에 있습니다. 이미 등록한 상품은 상품정보 업데이트할까요? 라고 묻고 그 번호로 업데이트합니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5696,6 +5703,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + FIRST_SCREEN_JS
     if "/* detail-market1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_MARKET_JS
+    if "/* store-number1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_NUMBER_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5790,6 +5799,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + FIRST_SCREEN_CSS
     if "/* detail-market1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_MARKET_CSS
+    if "/* store-number1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_NUMBER_CSS
     return text
 
 
@@ -13675,6 +13686,218 @@ DETAIL_MARKET_CSS = r"""
 /* detail-market1 */
 #detailDialog header #closeDetail { display: none !important; }
 #deliveryMarket { min-width: 180px; }
+"""
+STORE_NUMBER_JS = r"""
+/* store-number1 */
+(function () {
+  /* store-number-pure-start */
+  function smartStoreNumber(item) {
+    const channel = String(item && item.channel_product_no || "").trim();
+    if (channel) return channel;
+    return String(item && item.origin_product_no || "").trim();
+  }
+  function storeRegisterSplit(items) {
+    const fresh = [];
+    const registered = [];
+    (items || []).forEach((item) => {
+      if (smartStoreNumber(item)) registered.push(item);
+      else fresh.push(item);
+    });
+    return { fresh: fresh, registered: registered };
+  }
+  function storeUpdateAsk(count) {
+    const total = Number(count) || 0;
+    if (total > 1) return "선택한 " + total + "개입니다. 상품정보 업데이트할까요?";
+    return "상품정보 업데이트할까요?";
+  }
+  function storeSameMarket(items) {
+    const ids = [];
+    (items || []).forEach((item) => {
+      const id = item && item.market_id;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (ids.length > 1) return "";
+    return ids[0] || "";
+  }
+  /* store-number-pure-end */
+  function ensureStoreNumberColumn() {
+    const sellerCol = document.querySelector("#productGrid col[data-col='seller']");
+    if (sellerCol && !document.querySelector("#productGrid col[data-col='store_no']")) {
+      const col = document.createElement("col");
+      col.dataset.col = "store_no";
+      col.style.width = "140px";
+      sellerCol.before(col);
+    }
+    const heads = document.querySelectorAll("#productGrid thead th");
+    let sellerHead = null;
+    heads.forEach((th) => {
+      if (th.textContent.replace(/\s+/g, "") === "판매자코드") sellerHead = th;
+    });
+    if (sellerHead && !document.getElementById("storeNumberHead")) {
+      const th = document.createElement("th");
+      th.id = "storeNumberHead";
+      th.textContent = "스마트스토어번호";
+      sellerHead.before(th);
+    }
+  }
+  function paintStoreNumbers() {
+    ensureStoreNumberColumn();
+    const body = document.getElementById("productTable");
+    if (!body) return;
+    body.querySelectorAll("tr").forEach((row) => {
+      const seller = row.querySelector("[data-field='seller_code']");
+      const cell = seller && seller.closest ? seller.closest("td") : null;
+      if (!cell || cell.previousElementSibling && cell.previousElementSibling.dataset.storeNo === "1") return;
+      const id = row.dataset.id;
+      const list = typeof products !== "undefined" && Array.isArray(products) ? products : [];
+      const item = list.find((rowItem) => rowItem && String(rowItem.id) === String(id));
+      const td = document.createElement("td");
+      td.dataset.storeNo = "1";
+      const number = smartStoreNumber(item);
+      td.textContent = number;
+      td.title = number ? "스마트스토어 상품번호 " + number : "";
+      cell.before(td);
+    });
+  }
+  async function updateRegisteredProducts(items) {
+    const rows = items || [];
+    if (!rows.length) return;
+    if (typeof setBusy === "function") setBusy(true, "상품정보 업데이트 중 (0/" + rows.length + ")");
+    let ok = 0;
+    let fail = 0;
+    try {
+      for (let index = 0; index < rows.length; index += 1) {
+        if (typeof throwIfCancelled === "function") throwIfCancelled();
+        const item = rows[index];
+        if (typeof setBusy === "function") setBusy(true, "상품정보 업데이트 중 (" + (index + 1) + "/" + rows.length + ")");
+        try {
+          if (typeof saveCurrentRow === "function") await saveCurrentRow(item.id);
+          const saved = await api("/api/products/" + item.id + "/register", {
+            method: "POST",
+            body: JSON.stringify({
+              update: true,
+              origin_product_no: item.origin_product_no || "",
+              channel_product_no: item.channel_product_no || "",
+            }),
+            quiet: true,
+          });
+          const next = saved && typeof saved === "object" ? saved : {};
+          if (typeof patchLocalProduct === "function") {
+            patchLocalProduct(item.id, Object.assign({}, next, {
+              status: next.status || "registered",
+              origin_product_no: next.origin_product_no || item.origin_product_no || "",
+              channel_product_no: next.channel_product_no || item.channel_product_no || "",
+            }));
+          }
+          if (typeof log === "function") log((next.name || item.name || "상품") + " 상품정보를 업데이트했습니다.", "ok");
+          ok += 1;
+        } catch (error) {
+          if (typeof isAbortError === "function" && isAbortError(error)) throw error;
+          fail += 1;
+          if (typeof log === "function") log((item.name || "상품") + " 업데이트 실패: " + (error && error.message ? error.message : error), "err");
+        }
+      }
+      if (typeof loadProducts === "function") await loadProducts();
+      paintStoreNumbers();
+      if (typeof toast === "function") {
+        if (fail) toast(ok + "개 업데이트, " + fail + "개 실패", true);
+        else if (ok) toast(ok + "개 상품정보를 업데이트했습니다.");
+      }
+    } finally {
+      if (typeof setBusy === "function") setBusy(false);
+    }
+  }
+  function askStoreUpdate(split) {
+    const message = split.fresh.length
+      ? "이미 등록한 상품은 새로 등록하지 않습니다. 상품정보 업데이트할까요?"
+      : storeUpdateAsk(split.registered.length);
+    return window.confirm(message);
+  }
+  function guardRegisterItems(items) {
+    if (typeof isMasterProduct === "function" && items.some((item) => isMasterProduct(item) || !item.market_id)) {
+      if (typeof toast === "function") toast("마스터상품은 등록할 수 없습니다. 먼저 마켓으로 보낸 뒤 그 마켓에서 등록하세요.", true);
+      return false;
+    }
+    if (items.length && !storeSameMarket(items)) {
+      if (typeof toast === "function") toast("선택한 상품의 마켓이 서로 다릅니다. 같은 마켓 상품만 등록하세요.", true);
+      return false;
+    }
+    return true;
+  }
+  if (typeof renderProductSheet === "function" && !renderProductSheet.storeNumber) {
+    const renderBefore = renderProductSheet;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      paintStoreNumbers();
+      return result;
+    };
+    wrapped.storeNumber = true;
+    ["shipCol", "marginCol", "naverOptionShip"].forEach((key) => {
+      if (renderBefore[key]) wrapped[key] = renderBefore[key];
+    });
+    renderProductSheet = wrapped;
+  }
+  if (typeof registerSelected === "function" && !registerSelected.storeNumber) {
+    const registerBefore = registerSelected;
+    const wrapped = async function () {
+      const items = typeof requireSelected === "function" ? requireSelected() : [];
+      const split = storeRegisterSplit(items);
+      if (!items.length) return;
+      if (!split.registered.length) return registerBefore.apply(this, arguments);
+      if (!guardRegisterItems(items)) return;
+      const update = askStoreUpdate(split);
+      if (!split.fresh.length) {
+        if (update) return updateRegisteredProducts(split.registered);
+        return;
+      }
+      const saved = new Set(selectedIds);
+      selectedIds = new Set(split.fresh.map((item) => item.id));
+      try {
+        const result = await registerBefore.apply(this, arguments);
+        if (update) await updateRegisteredProducts(split.registered);
+        return result;
+      } finally {
+        selectedIds = saved;
+      }
+    };
+    wrapped.storeNumber = true;
+    registerSelected = wrapped;
+  }
+  if (typeof proceedRegisterSelected === "function" && !proceedRegisterSelected.storeNumber) {
+    const proceedBefore = proceedRegisterSelected;
+    const wrapped = async function (options) {
+      const items = typeof requireSelected === "function" ? requireSelected() : [];
+      const split = storeRegisterSplit(items);
+      if (!items.length) return;
+      if (!split.registered.length) return proceedBefore.apply(this, arguments);
+      if (!guardRegisterItems(items)) return;
+      const update = askStoreUpdate(split);
+      const saved = new Set(selectedIds);
+      let result;
+      if (split.fresh.length) {
+        selectedIds = new Set(split.fresh.map((item) => item.id));
+        try {
+          result = await proceedBefore.apply(this, arguments);
+        } finally {
+          selectedIds = saved;
+        }
+      }
+      if (update) await updateRegisteredProducts(split.registered);
+      return result;
+    };
+    wrapped.storeNumber = true;
+    proceedRegisterSelected = wrapped;
+  }
+  paintStoreNumbers();
+  setTimeout(paintStoreNumbers, 0);
+})();
+"""
+STORE_NUMBER_CSS = r"""
+/* store-number1 */
+#productGrid td[data-store-no="1"] {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 """
 
 

@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.71")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.72")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -426,6 +426,8 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("상세페이지 크기는 5%씩", help_html)
         self.assertIn("상세페이지 닫기는 하나", help_html)
         self.assertIn("주소록은 고른 마켓", help_html)
+        self.assertIn("스마트스토어번호는 판매자코드", help_html)
+        self.assertIn("상품정보 업데이트할까요?", help_html)
 
     def test_option_combo_read_uses_every_row(self):
         source = """
@@ -508,6 +510,42 @@ if (deliveryMarketChoice("", "", "", markets) !== "wish") throw new Error("first
         scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\nfunction syncDeliveryFields(){ return 1; }\n")
         self.assertIn("/* detail-market1 */", scripted)
         self.assertGreater(scripted.rindex("/* detail-market1 */"), scripted.rindex("/* first-screen1 */"))
+
+    def test_store_number_column_and_update_instead_of_duplicate(self):
+        start = patch.STORE_NUMBER_JS.index("/* store-number-pure-start */")
+        end = patch.STORE_NUMBER_JS.index("/* store-number-pure-end */")
+        script = patch.STORE_NUMBER_JS[start:end] + r"""
+const numbered = { channel_product_no: "88001", origin_product_no: "100" };
+const originOnly = { origin_product_no: "100" };
+const fresh = { name: "새상품" };
+if (smartStoreNumber(numbered) !== "88001") throw new Error("channel");
+if (smartStoreNumber(originOnly) !== "100") throw new Error("origin");
+if (smartStoreNumber(fresh) !== "") throw new Error("fresh");
+const split = storeRegisterSplit([numbered, fresh, originOnly]);
+if (split.fresh.length !== 1 || split.registered.length !== 2) throw new Error("split");
+if (storeUpdateAsk(1) !== "상품정보 업데이트할까요?") throw new Error("ask1");
+if (storeUpdateAsk(3).indexOf("상품정보 업데이트할까요?") < 0) throw new Error("ask3");
+if (storeSameMarket([{ market_id: "wish" }, { market_id: "baram" }]) !== "") throw new Error("markets");
+if (storeSameMarket([{ market_id: "baram" }, { market_id: "baram" }]) !== "baram") throw new Error("same");
+"""
+        path = Path("/tmp/store-number-pure.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/store-number.js")
+        full.write_text(patch.STORE_NUMBER_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("스마트스토어번호", patch.STORE_NUMBER_JS)
+        self.assertIn("판매자코드", patch.STORE_NUMBER_JS)
+        self.assertIn("update: true", patch.STORE_NUMBER_JS)
+        self.assertIn("새로 등록하지 않습니다", patch.STORE_NUMBER_JS)
+        self.assertNotIn("100vw", patch.STORE_NUMBER_CSS)
+        styled = patch.patch_css("/* detail-market1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* store-number1 */", styled)
+        self.assertGreater(styled.rindex("/* store-number1 */"), styled.rindex("/* detail-market1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        scripted = patch.patch_answer("function renderProductSheet(){ return 1; }\nfunction registerSelected(){ return 1; }\nfunction proceedRegisterSelected(){ return 1; }\n")
+        self.assertIn("/* store-number1 */", scripted)
+        self.assertGreater(scripted.rindex("/* store-number1 */"), scripted.rindex("/* detail-market1 */"))
 
 
 if __name__ == "__main__":

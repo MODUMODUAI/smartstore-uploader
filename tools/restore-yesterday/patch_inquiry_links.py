@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.56"
+SCREEN_VERSION = "2026.10.28.57"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 56))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 57))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4146,6 +4146,13 @@ def patch_help(text: str) -> str:
     attr_help = "속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다."
     if attr_help in text and "속성 칸 크기는 5%씩" not in text:
         text = text.replace(attr_help, attr_help + " 속성 칸 크기는 5%씩 조절합니다.", 1)
+    tag_dict_help = "직접 넣거나 AI 채우기로 만듭니다."
+    if tag_dict_help in text and "태그사전 후보" not in text:
+        text = text.replace(
+            tag_dict_help,
+            tag_dict_help + " 태그를 치면 네이버 태그사전 후보가 아래에 나오고, 고르면 들어갑니다.",
+            1,
+        )
     return text
 
 
@@ -5553,6 +5560,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAVER_TAG2_JS
     if "/* dialog-zoom1 */" not in text:
         text = text.rstrip() + "\n" + DIALOG_ZOOM_JS
+    if "/* tag-dict1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_DICT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5615,6 +5624,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_CSS
     if "/* dialog-zoom1 */" not in text:
         text = text.rstrip() + "\n" + DIALOG_ZOOM_CSS
+    if "/* tag-dict1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_DICT_CSS
     return text
 
 
@@ -6613,6 +6624,8 @@ def patch_murray_sources(root: Path) -> bool:
     if _append_marked_source(service, NAVER_TAG_SERVICE_PY, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_MARKER):
         changed = True
     if _append_marked_source(service, NAVER_TAG2_SERVICE_PY, NAVER_TAG2_NEEDED, NAVER_TAG2_MARKER):
+        changed = True
+    if _append_marked_source(service, TAG_DICT_SERVICE_PY, TAG_DICT_NEEDED, TAG_DICT_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
@@ -10413,6 +10426,228 @@ DIALOG_ZOOM_CSS = r"""
   transform-origin: top left;
 }
 """
+TAG_DICT_JS = r"""
+/* tag-dict1 */
+/* tag-dict-pure-start */
+function tagDictQuery(value) {
+  return String(value || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+}
+function tagDictDirectLabel(query) {
+  const text = tagDictQuery(query);
+  return text ? "직접입력: " + text : "";
+}
+function tagDictParts(text, query) {
+  const raw = String(text || "");
+  const needle = tagDictQuery(query);
+  if (!needle) return [{ text: raw, hit: false }];
+  const index = raw.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return [{ text: raw, hit: false }];
+  const parts = [];
+  if (index > 0) parts.push({ text: raw.slice(0, index), hit: false });
+  parts.push({ text: raw.slice(index, index + needle.length), hit: true });
+  if (index + needle.length < raw.length) parts.push({ text: raw.slice(index + needle.length), hit: false });
+  return parts;
+}
+function tagDictTexts(tags) {
+  const seen = [];
+  (tags || []).forEach((item) => {
+    const text = typeof item === "string" ? item.trim() : String((item && (item.text || item.tagName || item.name)) || "").trim();
+    if (text && seen.indexOf(text) < 0) seen.push(text);
+  });
+  return seen.slice(0, 8);
+}
+/* tag-dict-pure-end */
+(function () {
+  let tagDictToken = 0;
+  let tagDictTimer = 0;
+  let tagDictPicking = false;
+  let tagDictComposing = false;
+  function tagDictBox() {
+    const input = document.getElementById("tagInput");
+    if (!input) return null;
+    let box = document.getElementById("tagDictBox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "tagDictBox";
+    box.className = "tag-dict";
+    box.hidden = true;
+    input.insertAdjacentElement("afterend", box);
+    box.addEventListener("mousedown", (event) => event.preventDefault());
+    box.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-tag]");
+      if (!button || !box.contains(button)) return;
+      event.preventDefault();
+      chooseTagDict(button.dataset.tag || "");
+    });
+    return box;
+  }
+  function hideTagDict() {
+    const box = document.getElementById("tagDictBox");
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = "";
+  }
+  function chooseTagDict(tag) {
+    tagDictPicking = true;
+    hideTagDict();
+    if (tag && typeof addDraftTag === "function") addDraftTag(tag);
+    setTimeout(() => { tagDictPicking = false; }, 0);
+  }
+  function paintTagDict(query, tags) {
+    const box = tagDictBox();
+    if (!box) return;
+    box.innerHTML = "";
+    const direct = tagDictDirectLabel(query);
+    if (direct) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tag-dict-direct";
+      button.dataset.tag = tagDictQuery(query);
+      button.textContent = direct;
+      box.appendChild(button);
+    }
+    tagDictTexts(tags).forEach((tag) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tag-dict-item";
+      button.dataset.tag = tag;
+      tagDictParts(tag, query).forEach((part) => {
+        const node = document.createElement(part.hit ? "mark" : "span");
+        node.textContent = part.text;
+        button.appendChild(node);
+      });
+      box.appendChild(button);
+    });
+    box.hidden = !box.children.length;
+  }
+  function moveTagDict(delta) {
+    const box = document.getElementById("tagDictBox");
+    if (!box || box.hidden) return;
+    const rows = [...box.querySelectorAll("[data-tag]")];
+    if (!rows.length) return;
+    const current = rows.findIndex((row) => row.classList.contains("active"));
+    const next = current < 0 ? (delta > 0 ? 0 : rows.length - 1) : (current + delta + rows.length) % rows.length;
+    rows.forEach((row) => row.classList.remove("active"));
+    rows[next].classList.add("active");
+  }
+  async function loadTagDict(query) {
+    const token = ++tagDictToken;
+    const category = typeof naverTagQuery === "function" ? naverTagQuery() : "";
+    let tags = [];
+    if (typeof api === "function") {
+      try {
+        const data = await api(
+          "/api/tags/naver-dictionary-suggest?q=" + encodeURIComponent(query) + "&category=" + encodeURIComponent(category),
+          { method: "GET", quiet: true }
+        );
+        tags = data && Array.isArray(data.tags) ? data.tags : [];
+      } catch (error) {
+        tags = [];
+      }
+    }
+    if (token !== tagDictToken) return;
+    const input = document.getElementById("tagInput");
+    if (!input || tagDictQuery(input.value) !== query) return;
+    paintTagDict(query, tags);
+  }
+  function scheduleTagDict() {
+    if (tagDictPicking || tagDictComposing) return;
+    const input = document.getElementById("tagInput");
+    const query = input ? tagDictQuery(input.value) : "";
+    clearTimeout(tagDictTimer);
+    if (!query) {
+      tagDictToken += 1;
+      hideTagDict();
+      return;
+    }
+    paintTagDict(query, []);
+    tagDictTimer = setTimeout(() => loadTagDict(query), 200);
+  }
+  function bindTagDict() {
+    const input = document.getElementById("tagInput");
+    if (!input || input.dataset.tagDict === "1") return;
+    input.dataset.tagDict = "1";
+    tagDictBox();
+    input.addEventListener("compositionstart", () => { tagDictComposing = true; });
+    input.addEventListener("compositionend", () => {
+      tagDictComposing = false;
+      scheduleTagDict();
+    });
+    input.addEventListener("input", () => {
+      if (!tagDictComposing) scheduleTagDict();
+    });
+    input.addEventListener("keydown", (event) => {
+      const box = document.getElementById("tagDictBox");
+      const open = box && !box.hidden && box.querySelector("[data-tag]");
+      if (!open) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        moveTagDict(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        hideTagDict();
+        return;
+      }
+      if (event.key === "Enter") {
+        const active = box.querySelector(".active") || box.querySelector("[data-tag]");
+        if (!active) return;
+        event.preventDefault();
+        event.stopPropagation();
+        chooseTagDict(active.dataset.tag || "");
+      }
+    }, true);
+    input.addEventListener("blur", () => setTimeout(hideTagDict, 0));
+    const dialog = document.getElementById("tagDialog");
+    if (dialog && dialog.dataset.tagDict !== "1") {
+      dialog.dataset.tagDict = "1";
+      dialog.addEventListener("close", hideTagDict);
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindTagDict);
+  else bindTagDict();
+  setTimeout(bindTagDict, 0);
+})();
+"""
+TAG_DICT_CSS = r"""
+/* tag-dict1 */
+#tagEditor { position: relative; }
+.tag-dict {
+  margin: 6px 0 8px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
+}
+.tag-dict button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #f3f3f3;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: #222;
+  cursor: pointer;
+}
+.tag-dict button:last-child { border-bottom: 0; }
+.tag-dict button:hover,
+.tag-dict button.active { background: #f6f7f9; }
+.tag-dict-direct { color: #8d939c; font-size: 13px; }
+.tag-dict mark {
+  background: #e4f07a;
+  color: inherit;
+  padding: 0 1px;
+}
+html[data-theme="dark"] .tag-dict { background: #1c1c1c; border-color: #333; }
+html[data-theme="dark"] .tag-dict button { background: transparent; color: #eee; border-bottom-color: #2c2c2c; }
+html[data-theme="dark"] .tag-dict button:hover,
+html[data-theme="dark"] .tag-dict button.active { background: #2a2a2a; }
+html[data-theme="dark"] .tag-dict-direct { color: #b0b6bf; }
+html[data-theme="dark"] .tag-dict mark { background: #c6d84a; color: #111; }
+"""
 NAVER_TAG2_SERVICE_PY = r'''
 # naver-tag2
 # Search tags drop page chrome and brand names. Brand names found on shopping
@@ -10637,6 +10872,97 @@ def _naver_tag2_install():
 if not globals().get("_NAVER_TAG2_NO_INSTALL"):
     _naver_tag2_install()
 '''
+TAG_DICT_MARKER = "# tag-dict1"
+TAG_DICT_NEEDED = ("# naver-tag2", "_naver_dictionary_before_tag2")
+TAG_DICT_SERVICE_PY = r'''
+# tag-dict1
+# Typing a tag asks Naver's tag dictionary for words that continue it.
+# The typed word stays, unlike the category search which drops its own name.
+
+
+def _tag_dict_suggest(keyword, category=""):
+    source = globals().get("_naver_dictionary_before_tag2")
+    if not callable(source):
+        return []
+    rows = source(keyword)
+    blocked = set()
+    for brand in globals().get("_naver_known_brands") or []:
+        token = _naver_norm_tag(brand)
+        if len(token) >= 2:
+            blocked.add(token)
+    for part in _naver_tag_re.split(r"[\s>/]+", str(category or "")):
+        token = _naver_norm_tag(part)
+        if len(token) >= 2:
+            blocked.add(token)
+    kept = []
+    seen = set()
+    for row in rows or []:
+        text = row.get("text") if isinstance(row, dict) else str(row or "")
+        norm = _naver_norm_tag(text)
+        if not norm or norm in seen or _naver_junk_tag(norm):
+            continue
+        if any(norm == token or norm.startswith(token) for token in blocked):
+            continue
+        seen.add(norm)
+        code = row.get("code") if isinstance(row, dict) else None
+        kept.append({"text": str(text).strip() or norm, "code": code})
+        if len(kept) >= 8:
+            break
+    return kept
+
+
+async def _tag_dict_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    category = str(request.query_params.get("category") or "").strip()
+    if not query:
+        return _naver_json({"query": "", "tags": []})
+    try:
+        tags = _tag_dict_suggest(query, category)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags})
+
+
+def _tag_dict_install():
+    if globals().get("_tag_dict_installed"):
+        return
+    globals()["_tag_dict_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-dictionary-suggest", _tag_dict_route, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="tag-dict1", daemon=True).start()
+
+
+if not globals().get("_TAG_DICT_NO_INSTALL"):
+    _tag_dict_install()
+'''
 
 
 def frozen_fix_plan() -> dict:
@@ -10669,6 +10995,7 @@ def frozen_fix_plan() -> dict:
             (GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED, GODO_IMAGE2_SERVICE_PY),
             (NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_SERVICE_PY),
             (NAVER_TAG2_MARKER, NAVER_TAG2_NEEDED, NAVER_TAG2_SERVICE_PY),
+            (TAG_DICT_MARKER, TAG_DICT_NEEDED, TAG_DICT_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),

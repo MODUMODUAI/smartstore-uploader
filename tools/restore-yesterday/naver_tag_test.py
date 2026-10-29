@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.56")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.57")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -121,6 +121,65 @@ if (naverTagKeep("거리측정기", [], [], ["거리측정기"])) throw new Erro
         subprocess.run(["node", "--check", str(full)], check=True)
         scripted = patch.patch_answer("function openNameEditor(){ return 1; }\n")
         self.assertIn("/* naver-tag2 */", scripted)
+
+    def test_dictionary_suggest_keeps_typed_prefix(self):
+        ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True, "_TAG_DICT_NO_INSTALL": True}
+        exec(compile(patch.NAVER_TAG_SERVICE_PY, "<naver-tag>", "exec"), ns)
+        exec(compile(patch.NAVER_TAG2_SERVICE_PY, "<naver-tag2>", "exec"), ns)
+        exec(compile(patch.TAG_DICT_SERVICE_PY, "<tag-dict>", "exec"), ns)
+        ns["_naver_known_brands"].update({"부쉬넬"})
+
+        def fake_dictionary(keyword):
+            self.assertEqual(keyword, "견고한")
+            return [
+                {"text": "견고한", "code": 1},
+                {"text": "견고한자", "code": 2},
+                {"text": "견고한재질", "code": 3},
+                {"text": "견고한선반", "code": 4},
+                {"text": "견고한텐트", "code": 5},
+                {"text": "부쉬넬견고", "code": 6},
+                {"text": "선반튼튼", "code": 7},
+                {"text": "1페이지 30개", "code": 8},
+            ]
+
+        ns["_naver_dictionary_before_tag2"] = fake_dictionary
+        rows = ns["_tag_dict_suggest"]("견고한", "선반")
+        self.assertEqual(
+            [row["text"] for row in rows],
+            ["견고한", "견고한자", "견고한재질", "견고한선반", "견고한텐트"],
+        )
+        blocked = ns["_naver_filter_search_tags"](
+            ["견고한", "견고한자", "견고한재질"],
+            "견고한",
+            set(),
+            {},
+        )
+        self.assertEqual(blocked, [])
+        start = patch.TAG_DICT_JS.index("/* tag-dict-pure-start */")
+        end = patch.TAG_DICT_JS.index("/* tag-dict-pure-end */")
+        script = patch.TAG_DICT_JS[start:end] + r"""
+if (tagDictDirectLabel("견고한") !== "직접입력: 견고한") throw new Error("direct");
+if (tagDictDirectLabel("  ") !== "") throw new Error("blank");
+const parts = tagDictParts("견고한선반", "견고한");
+if (parts.length !== 2 || !parts[0].hit || parts[0].text !== "견고한" || parts[1].text !== "선반") throw new Error("parts");
+const exact = tagDictParts("견고한", "견고한");
+if (exact.length !== 1 || !exact[0].hit) throw new Error("exact");
+const texts = tagDictTexts([{text: "견고한"}, "견고한자", {text: "견고한"}, "견고한재질"]);
+if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Error(texts.join(","));
+"""
+        path = Path("/tmp/tag-dict-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/tag-dict-full.js")
+        full.write_text(patch.TAG_DICT_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openTagEditor(){ return 1; }\n")
+        self.assertIn("/* tag-dict1 */", scripted)
+        self.assertGreater(scripted.rindex("/* tag-dict1 */"), scripted.rindex("/* dialog-zoom1 */"))
+        styled = patch.patch_css("/* dialog-zoom1 */\n")
+        self.assertIn("/* tag-dict1 */", styled)
+        help_html = patch.patch_help("<p>직접 넣거나 AI 채우기로 만듭니다.</p>")
+        self.assertIn("태그사전 후보", help_html)
 
 
 if __name__ == "__main__":

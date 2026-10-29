@@ -512,7 +512,7 @@ class GodoImage4Test(unittest.TestCase):
         self.assertNotIn("magnify", rank_js)
         self.assertIn(patch.GODO_IMAGE4_MARKER, patch.frozen_fix_plan()["app.scraper"][-1][0])
         self.assertIn(patch.GODO_IMAGE4_MARKER, patch.frozen_fix_plan()["app.shop_catalog"][-1][0])
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.56")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.57")
 
 
 if __name__ == "__main__":

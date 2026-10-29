@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.73"
+SCREEN_VERSION = "2026.10.28.74"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 73))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 74))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4209,6 +4209,13 @@ def patch_help(text: str) -> str:
             store_choice_help + " 이미 등록한 상품은 정보업데이트 또는 새상품으로 등록을 고릅니다. 기본은 정보업데이트입니다.",
             1,
         )
+    image_pick_help = "기본은 정보업데이트입니다."
+    if image_pick_help in text and "고른 칸이 초록으로" not in text:
+        text = text.replace(
+            image_pick_help,
+            image_pick_help + " 이미지바꾸기에서 그림이나 목록을 누르면 고른 칸이 초록으로 표시됩니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5714,6 +5721,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + STORE_NUMBER_JS
     if "/* store-choice1 */" not in text:
         text = text.rstrip() + "\n" + STORE_CHOICE_JS
+    if "/* image-pick1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5812,6 +5821,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + STORE_NUMBER_CSS
     if "/* store-choice1 */" not in text:
         text = text.rstrip() + "\n" + STORE_CHOICE_CSS
+    if "/* image-pick1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_CSS
     return text
 
 
@@ -14098,6 +14109,125 @@ STORE_CHOICE_CSS = r"""
   background: #03C75A;
   color: #fff;
   border: 0;
+}
+"""
+IMAGE_PICK_JS = r"""
+/* image-pick1 */
+(function () {
+  /* image-pick-pure-start */
+  function imagePickKey(image, index) {
+    const url = String(image && (image.source_url || image.file || "") || "").trim();
+    if (url) return "url:" + url;
+    return "index:" + String(index);
+  }
+  function imagePickFind(images, key) {
+    const list = images || [];
+    for (let index = 0; index < list.length; index += 1) {
+      if (imagePickKey(list[index], index) === key) return index;
+    }
+    return -1;
+  }
+  function imagePickIndex(slotIndex, rowIndex) {
+    if (slotIndex >= 0) return slotIndex;
+    if (rowIndex >= 0) return rowIndex;
+    return -1;
+  }
+  /* image-pick-pure-end */
+  let pickedKey = "";
+  function draftList() {
+    return typeof draftImages !== "undefined" && Array.isArray(draftImages) ? draftImages : null;
+  }
+  function paintImagePick() {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog) return;
+    dialog.querySelectorAll(".image-slot, #imageUrlTable tr").forEach((node) => node.classList.remove("image-picked"));
+    const list = draftList();
+    let index = -1;
+    if (list) index = imagePickFind(list, pickedKey);
+    else if (pickedKey.indexOf("index:") === 0) index = Number(pickedKey.slice(6));
+    if (index < 0) return;
+    const slots = dialog.querySelectorAll("#imageThumbs .image-slot");
+    const rows = dialog.querySelectorAll("#imageUrlTable tr");
+    if (slots[index]) slots[index].classList.add("image-picked");
+    if (rows[index]) rows[index].classList.add("image-picked");
+  }
+  function rememberImagePick(index) {
+    const list = draftList();
+    const image = list && list[index];
+    pickedKey = image ? imagePickKey(image, index) : "index:" + index;
+  }
+  document.addEventListener("click", (event) => {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog || !event.target || !event.target.closest || !dialog.contains(event.target)) return;
+    const button = event.target.closest("button");
+    const slots = [...dialog.querySelectorAll("#imageThumbs .image-slot")];
+    const rows = [...dialog.querySelectorAll("#imageUrlTable tr")];
+    if (button && dialog.contains(button)) {
+      const row = button.closest("tr");
+      const slot = button.closest(".image-slot");
+      const index = imagePickIndex(slot ? slots.indexOf(slot) : -1, row ? rows.indexOf(row) : -1);
+      if (index < 0) return;
+      const list = draftList();
+      const key = list && list[index] ? imagePickKey(list[index], index) : "index:" + index;
+      if (key === pickedKey) pickedKey = "";
+      return;
+    }
+    if (typeof imageDragMoved !== "undefined" && imageDragMoved) return;
+    const slot = event.target.closest("#imageThumbs .image-slot");
+    const row = !slot && event.target.closest("#imageUrlTable tr");
+    if (slot && !slot.querySelector("img")) return;
+    const index = imagePickIndex(slot ? slots.indexOf(slot) : -1, row ? rows.indexOf(row) : -1);
+    if (index < 0) return;
+    rememberImagePick(index);
+    paintImagePick();
+  }, true);
+  if (typeof renderImageEditor === "function" && !renderImageEditor.imagePick) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      paintImagePick();
+      return result;
+    };
+    wrapped.imagePick = true;
+    ["zoomLive", "imageRoleZoom", "naverOptionShip", "firstScreen"].forEach((key) => {
+      if (renderBefore[key]) wrapped[key] = renderBefore[key];
+    });
+    renderImageEditor = wrapped;
+  }
+})();
+"""
+IMAGE_PICK_CSS = r"""
+/* image-pick1 */
+#imageDialog #imageThumbs .image-slot { position: relative; }
+#imageDialog #imageThumbs .image-slot.image-picked {
+  box-shadow: inset 0 0 0 3px #03C75A;
+  outline: 3px solid #03C75A;
+}
+#imageDialog #imageThumbs .image-slot.image-picked::after {
+  content: "선택";
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  z-index: 4;
+  background: #03C75A;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+#imageDialog #imageUrlTable tr.image-picked td {
+  background: #143024;
+  color: #d9ffe8;
+  box-shadow: inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+}
+#imageDialog #imageUrlTable tr.image-picked td:first-child {
+  box-shadow: inset 2px 0 0 #03C75A, inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+  color: #03C75A;
+  font-weight: 700;
+}
+#imageDialog #imageUrlTable tr.image-picked td:last-child {
+  box-shadow: inset -2px 0 0 #03C75A, inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
 }
 """
 

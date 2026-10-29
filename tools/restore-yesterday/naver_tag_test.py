@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.73")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.74")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -430,6 +430,7 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("상품정보 업데이트할까요?", help_html)
         self.assertIn("새상품으로 등록", help_html)
         self.assertIn("기본은 정보업데이트", help_html)
+        self.assertIn("고른 칸이 초록으로", help_html)
 
     def test_option_combo_read_uses_every_row(self):
         source = """
@@ -589,6 +590,41 @@ if (storeChoiceNumber({ channel_product_no: "88001", origin_product_no: "100" })
         scripted = patch.patch_answer("function registerSelected(){ return 1; }\nfunction proceedRegisterSelected(){ return 1; }\n")
         self.assertIn("/* store-choice1 */", scripted)
         self.assertGreater(scripted.rindex("/* store-choice1 */"), scripted.rindex("/* store-number1 */"))
+
+    def test_image_pick_marks_thumb_and_list(self):
+        start = patch.IMAGE_PICK_JS.index("/* image-pick-pure-start */")
+        end = patch.IMAGE_PICK_JS.index("/* image-pick-pure-end */")
+        script = patch.IMAGE_PICK_JS[start:end] + r"""
+const images = [{ source_url: "a.jpg" }, { file: "b.jpg" }, { source_url: "" }];
+if (imagePickKey(images[0], 0) !== "url:a.jpg") throw new Error("url");
+if (imagePickKey(images[1], 1) !== "url:b.jpg") throw new Error("file");
+if (imagePickKey(images[2], 2) !== "index:2") throw new Error("index");
+if (imagePickFind(images, "url:b.jpg") !== 1) throw new Error("find");
+const moved = [images[1], images[0], images[2]];
+if (imagePickFind(moved, "url:b.jpg") !== 0) throw new Error("moved");
+if (imagePickFind(images, "url:missing") !== -1) throw new Error("missing");
+if (imagePickIndex(2, -1) !== 2) throw new Error("slot");
+if (imagePickIndex(-1, 1) !== 1) throw new Error("row");
+if (imagePickIndex(-1, -1) !== -1) throw new Error("none");
+"""
+        path = Path("/tmp/image-pick-pure.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/image-pick.js")
+        full.write_text(patch.IMAGE_PICK_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("image-picked", patch.IMAGE_PICK_JS)
+        self.assertIn("image-picked", patch.IMAGE_PICK_CSS)
+        self.assertIn("#03C75A", patch.IMAGE_PICK_CSS)
+        self.assertIn('content: "선택"', patch.IMAGE_PICK_CSS)
+        self.assertNotIn("100vw", patch.IMAGE_PICK_CSS)
+        styled = patch.patch_css("/* store-choice1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* image-pick1 */", styled)
+        self.assertGreater(styled.rindex("/* image-pick1 */"), styled.rindex("/* store-choice1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\n")
+        self.assertIn("/* image-pick1 */", scripted)
+        self.assertGreater(scripted.rindex("/* image-pick1 */"), scripted.rindex("/* store-choice1 */"))
 
 
 if __name__ == "__main__":

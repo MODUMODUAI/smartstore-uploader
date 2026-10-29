@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.45"
+SCREEN_VERSION = "2026.10.28.46"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 45))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 46))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5498,6 +5498,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + GODO_IMAGE2_JS
     if "/* godo-image3 */" not in text:
         text = text.rstrip() + "\n" + GODO_IMAGE3_JS
+    if "/* naver-tag1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5542,9 +5544,11 @@ def patch_css(text: str) -> str:
         extra += MASTER_LOGIN2_CSS
     if "/* master-login3 */" not in text:
         extra += MASTER_LOGIN3_CSS
-    if not extra:
-        return text
-    return text.rstrip() + "\n" + extra
+    if extra:
+        text = text.rstrip() + "\n" + extra
+    if "/* naver-tag1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG_CSS
+    return text
 
 
 def write_screen_version(root: Path) -> bool:
@@ -6534,6 +6538,8 @@ def patch_murray_sources(root: Path) -> bool:
     if _append_marked_source(scraper, GODO_IMAGE3_SCRAPER_PY, GODO_IMAGE3_SCRAPER_NEEDED, GODO_IMAGE3_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE3_CATALOG_PY, GODO_IMAGE3_CATALOG_NEEDED, GODO_IMAGE3_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG_SERVICE_PY, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
@@ -7783,6 +7789,7 @@ def write_fix_status(root: Path) -> bool:
             (service, GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED),
             (service, GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED),
             (service, GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED),
+            (service, NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED),
         ),
     }
     files = {}
@@ -7801,6 +7808,671 @@ def write_fix_status(root: Path) -> bool:
 
 GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
 GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
+NAVER_TAG_MARKER = "# naver-tag1"
+NAVER_TAG_JS = r"""
+/* naver-tag1 */
+let naverTagLoad = 0;
+
+function naverTagQuery() {
+  const named = typeof categoryLeafName === "function"
+    ? categoryLeafName(current?.category_name || current?.source_category || "")
+    : "";
+  if (named && named !== "카테고리") return named;
+  return String(current?.category_keyword || "").trim();
+}
+
+function ensureNaverTagPanel() {
+  const form = document.getElementById("tagForm");
+  if (!form || document.getElementById("naverSearchTags")) return;
+  const actions = form.querySelector(".dialog-actions");
+  const layout = document.createElement("div");
+  layout.className = "tag-layout";
+  const main = document.createElement("div");
+  main.className = "tag-main";
+  const header = form.querySelector("header");
+  [...form.children].forEach((child) => {
+    if (child === header || child === actions) return;
+    main.appendChild(child);
+  });
+  const aside = document.createElement("aside");
+  aside.className = "naver-search-tags";
+  aside.innerHTML = "<h3>검색 태그</h3><p id=\"naverSearchTagCount\" class=\"hint\"></p><p id=\"naverSearchTagPage\" class=\"hint\">1–3페이지</p><div id=\"naverSearchTags\" class=\"naver-search-tag-list\"></div>";
+  layout.append(main, aside);
+  if (actions) form.insertBefore(layout, actions);
+  else form.appendChild(layout);
+}
+
+function ensureNaverTagButton() {
+  if (document.getElementById("tagFillDictionary")) return;
+  const ai = document.getElementById("tagFillAi");
+  if (!ai || !ai.parentElement) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "tagFillDictionary";
+  button.textContent = "태그넣기";
+  button.addEventListener("click", () => {
+    fillTagsFromDictionary().catch((error) => toast(error.message, true));
+  });
+  ai.parentElement.insertBefore(button, ai);
+}
+
+function renderNaverSearchTags(tags) {
+  const box = document.getElementById("naverSearchTags");
+  if (!box) return;
+  box.innerHTML = "";
+  (tags || []).forEach((tag) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = tag;
+    button.addEventListener("click", () => addDraftTag(tag));
+    box.appendChild(button);
+  });
+}
+
+async function loadNaverSearchTags() {
+  ensureNaverTagPanel();
+  const token = ++naverTagLoad;
+  const query = naverTagQuery();
+  const count = document.getElementById("naverSearchTagCount");
+  const page = document.getElementById("naverSearchTagPage");
+  if (page) page.textContent = "1–3페이지";
+  if (!query) {
+    if (count) count.textContent = "카테고리의 마지막 분류가 없습니다.";
+    renderNaverSearchTags([]);
+    return;
+  }
+  if (count) count.textContent = query + " 검색 태그를 가져오는 중입니다.";
+  renderNaverSearchTags([]);
+  try {
+    const data = await api("/api/tags/naver-search?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+    if (token !== naverTagLoad) return;
+    const tags = Array.isArray(data.tags) ? data.tags : [];
+    if (count) count.textContent = query + " 검색 태그 " + tags.length + "개";
+    renderNaverSearchTags(tags);
+  } catch (error) {
+    if (token !== naverTagLoad) return;
+    if (count) count.textContent = error.message || "검색 태그를 가져오지 못했습니다.";
+  }
+}
+
+async function fillTagsFromDictionary() {
+  if (!current) return toast("먼저 상품을 선택해 주세요.", true);
+  if (typeof masterEditBlocked === "function" && masterEditBlocked()) return;
+  const query = naverTagQuery();
+  if (!query) return toast("카테고리의 마지막 분류를 지정해 주세요.", true);
+  const button = document.getElementById("tagFillDictionary");
+  const previous = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "가져오는 중";
+  }
+  try {
+    const data = await api("/api/tags/naver-dictionary?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+    const tags = (Array.isArray(data.tags) ? data.tags : []).map((item) => {
+      if (typeof item === "string") return item.trim();
+      return String(item?.text || "").trim();
+    }).filter(Boolean);
+    if (!tags.length) return toast("네이버 태그사전에 태그가 없습니다.", true);
+    const seen = [];
+    tags.forEach((tag) => {
+      if (!seen.includes(tag)) seen.push(tag);
+    });
+    draftTags = seen.slice(0, 10);
+    renderTagChips();
+    toast("네이버 태그사전을 넣었습니다.");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previous || "태그넣기";
+    }
+  }
+}
+
+function bootNaverTags() {
+  ensureNaverTagPanel();
+  ensureNaverTagButton();
+  if (typeof openTagEditor === "function" && !openTagEditor._naverTag1) {
+    const openTagEditorBefore = openTagEditor;
+    const wrapped = function () {
+      ensureNaverTagPanel();
+      ensureNaverTagButton();
+      const result = openTagEditorBefore.apply(this, arguments);
+      loadNaverSearchTags();
+      return result;
+    };
+    wrapped._naverTag1 = true;
+    openTagEditor = wrapped;
+  }
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootNaverTags);
+else bootNaverTags();
+"""
+NAVER_TAG_CSS = r"""
+/* naver-tag1 */
+#tagDialog { width: min(980px, calc(100vw - 24px)); }
+.tag-layout { display: flex; gap: 16px; align-items: stretch; }
+.tag-main { flex: 1 1 auto; min-width: 0; }
+.naver-search-tags {
+  flex: 0 0 280px;
+  width: 280px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 160px));
+}
+.naver-search-tags h3 { margin: 0 0 4px; font-size: 14px; }
+.naver-search-tags .hint { margin: 0 0 4px; }
+.naver-search-tag-list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.naver-search-tag-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+@media (max-width: 800px) {
+  .tag-layout { flex-direction: column; }
+  .naver-search-tags { width: auto; flex-basis: auto; }
+}
+"""
+NAVER_TAG_SERVICE_PY = r'''
+# naver-tag1
+# Tag fill uses Naver's tag dictionary as returned. The search-tag list is the
+# seller tags on Naver shopping results for the leaf category, pages 1 to 3.
+import base64 as _naver_tag_base64
+import json as _naver_tag_json
+import re as _naver_tag_re
+import time as _naver_tag_time
+
+try:
+    from starlette.requests import Request as _NaverRequest
+except Exception:
+    _NaverRequest = object
+
+_NAVER_AUTO_TAGS = {"오늘출발", "오늘발송", "오늘도착", "무료교환", "무료반품", "무료배송"}
+_naver_token_cache = {"token": "", "until": 0.0}
+
+
+def _naver_tag_token(value):
+    text = str(value or "").strip()
+    if text.startswith("#"):
+        text = text[1:].strip()
+    text = text.replace("\u200b", "")
+    if not text or text in _NAVER_AUTO_TAGS or len(text) > 30:
+        return ""
+    return text
+
+
+def _naver_split_tags(blob):
+    found = []
+    for part in _naver_tag_re.split(r"[,|/·]+", str(blob or "")):
+        token = _naver_tag_token(part)
+        if token:
+            found.append(token)
+    return found
+
+
+def _naver_tags_from_product(product):
+    found = []
+    if not isinstance(product, dict):
+        return found
+    for key in ("manuTag", "manualTag", "sellerTag", "searchTag"):
+        if product.get(key):
+            found.extend(_naver_split_tags(product.get(key)))
+    for key in ("sellerTags", "tags", "tagList", "manuTags"):
+        value = product.get(key)
+        if isinstance(value, str):
+            found.extend(_naver_split_tags(value))
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    token = _naver_tag_token(item)
+                elif isinstance(item, dict):
+                    token = _naver_tag_token(item.get("text") or item.get("tag") or item.get("name") or "")
+                else:
+                    token = ""
+                if token:
+                    found.append(token)
+    return found
+
+
+def _naver_walk_products(node, out, seen):
+    if isinstance(node, dict):
+        marker = id(node)
+        if marker in seen:
+            return
+        seen.add(marker)
+        if any(key in node for key in ("manuTag", "sellerTags", "productTitle", "productName", "mallProductId")):
+            out.extend(_naver_tags_from_product(node))
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _naver_walk_products(value, out, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _naver_walk_products(item, out, seen)
+
+
+def _naver_unique_tags(tags):
+    ordered = []
+    for tag in tags:
+        if tag and tag not in ordered:
+            ordered.append(tag)
+        if len(ordered) >= 300:
+            break
+    return ordered
+
+
+def _tags_from_text(text):
+    raw = str(text or "")
+    tags = []
+    stripped = raw.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            data = _naver_tag_json.loads(raw)
+        except Exception:
+            data = None
+        if data is not None:
+            _naver_walk_products(data, tags, set())
+    if not tags:
+        for match in _naver_tag_re.finditer(r'"manuTag"\s*:\s*"((?:\\.|[^"\\])*)"', raw):
+            try:
+                blob = _naver_tag_json.loads('"' + match.group(1) + '"')
+            except Exception:
+                blob = match.group(1)
+            tags.extend(_naver_split_tags(blob))
+    return _naver_unique_tags(tags)
+
+
+def _collect_search_tags(pages):
+    ordered = []
+    for text in pages or []:
+        for tag in _tags_from_text(text):
+            if tag not in ordered:
+                ordered.append(tag)
+            if len(ordered) >= 300:
+                return ordered
+    return ordered
+
+
+def _naver_http_get(url, params, headers):
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    if httpx is not None:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=20.0) as client:
+            response = client.get(url, params=params)
+            return response.status_code, response.text or ""
+    import urllib.parse
+    import urllib.request
+    full = url + "?" + urllib.parse.urlencode(params)
+    request = urllib.request.Request(full, headers=headers)
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.status, response.read().decode("utf-8", "replace")
+
+
+def _naver_http_post_form(url, form):
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    if httpx is not None:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            response = client.post(url, data=form)
+            return response.status_code, response.text or ""
+    import urllib.parse
+    import urllib.request
+    data = urllib.parse.urlencode(form).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.status, response.read().decode("utf-8", "replace")
+
+
+def _naver_search_product_tags(query):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Referer": "https://search.shopping.naver.com/search/all?query=" + str(query),
+    }
+    pages = []
+    failures = 0
+    for page in (1, 2, 3):
+        params = {
+            "sort": "rel",
+            "pagingIndex": str(page),
+            "pagingSize": "40",
+            "viewType": "list",
+            "productSet": "total",
+            "query": query,
+            "origQuery": query,
+            "adQuery": query,
+        }
+        try:
+            status, text = _naver_http_get("https://search.shopping.naver.com/api/search/all", params, headers)
+        except Exception:
+            status, text = 0, ""
+        if status >= 400 or not _tags_from_text(text):
+            try:
+                status, text = _naver_http_get(
+                    "https://search.shopping.naver.com/search/all",
+                    {"query": query, "pagingIndex": str(page), "pagingSize": "40"},
+                    headers,
+                )
+            except Exception:
+                status, text = 0, ""
+        if status >= 400 or not text:
+            failures += 1
+            continue
+        pages.append(text)
+    tags = _collect_search_tags(pages)
+    if not tags and failures:
+        raise RuntimeError("네이버 쇼핑 검색에서 태그를 가져오지 못했습니다.")
+    return tags
+
+
+def _dictionary_rows(payload):
+    rows = payload
+    if isinstance(payload, dict):
+        rows = []
+        for key in ("tags", "recommendTags", "contents", "data", "items"):
+            if isinstance(payload.get(key), list):
+                rows = payload[key]
+                break
+    out = []
+    seen = set()
+    if not isinstance(rows, list):
+        return out
+    for item in rows:
+        if isinstance(item, str):
+            text = item.strip()
+            code = None
+        elif isinstance(item, dict):
+            text = str(item.get("text") or item.get("tagName") or item.get("name") or "").strip()
+            code = item.get("code")
+            if code is None:
+                code = item.get("id")
+        else:
+            continue
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append({"text": text, "code": code})
+    return out
+
+
+def _dictionary_from_app(keyword):
+    import sys
+    names = ("recommend_tags", "get_recommend_tags", "search_recommend_tags", "naver_recommend_tags")
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in names:
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                return fn(keyword)
+            except TypeError:
+                continue
+            except Exception:
+                return None
+    return None
+
+
+def _existing_commerce_token():
+    import sys
+    names = ("commerce_token", "naver_commerce_token", "get_commerce_token", "smartstore_token")
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in names:
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                token = fn()
+            except Exception:
+                continue
+            if isinstance(token, str) and len(token) > 20:
+                return token
+            if isinstance(token, dict):
+                value = token.get("access_token") or token.get("token")
+                if isinstance(value, str) and len(value) > 20:
+                    return value
+    return ""
+
+
+def _commerce_credentials():
+    import sys
+    chosen = None
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in ("list_markets", "load_markets", "get_markets", "read_markets"):
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                data = fn()
+            except Exception:
+                continue
+            rows = data if isinstance(data, list) else []
+            if isinstance(data, dict):
+                items = data.get("items") or data.get("markets") or []
+                rows = items if isinstance(items, list) else []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                channel = str(row.get("channel") or row.get("channel_id") or "smartstore").lower()
+                if channel and "smart" not in channel and "naver" not in channel:
+                    continue
+                client_id = str(row.get("naver_client_id") or row.get("api_key") or row.get("client_id") or "").strip()
+                secret = str(row.get("naver_client_secret") or row.get("api_secret") or row.get("client_secret") or "").strip()
+                account = str(row.get("naver_account_id") or row.get("account_id") or "").strip()
+                if not client_id or not secret or "*" in secret:
+                    continue
+                chosen = (client_id, secret, account)
+                if row.get("is_default"):
+                    return chosen
+    return chosen
+
+
+def _commerce_access_token():
+    now = _naver_tag_time.time()
+    if _naver_token_cache["token"] and _naver_token_cache["until"] > now:
+        return _naver_token_cache["token"]
+    existing = _existing_commerce_token()
+    if existing:
+        _naver_token_cache["token"] = existing
+        _naver_token_cache["until"] = now + 60
+        return existing
+    creds = _commerce_credentials()
+    if not creds:
+        return ""
+    client_id, secret, account = creds
+    try:
+        import bcrypt
+    except Exception:
+        return ""
+    timestamp = str(int(_naver_tag_time.time() * 1000))
+    try:
+        hashed = bcrypt.hashpw((client_id + "_" + timestamp).encode("utf-8"), secret.encode("utf-8"))
+    except Exception:
+        return ""
+    sign = _naver_tag_base64.b64encode(hashed).decode("utf-8")
+    form = {
+        "client_id": client_id,
+        "timestamp": timestamp,
+        "client_secret_sign": sign,
+        "grant_type": "client_credentials",
+        "type": "SELF",
+    }
+    if account:
+        form["account_id"] = account
+    try:
+        status, text = _naver_http_post_form("https://api.commerce.naver.com/external/v1/oauth2/token", form)
+    except Exception:
+        return ""
+    if status >= 400:
+        return ""
+    try:
+        payload = _naver_tag_json.loads(text)
+    except Exception:
+        return ""
+    token = str(payload.get("access_token") or "")
+    if not token:
+        return ""
+    try:
+        expires = int(payload.get("expires_in") or 3600)
+    except (TypeError, ValueError):
+        expires = 3600
+    _naver_token_cache["token"] = token
+    _naver_token_cache["until"] = now + max(60, expires - 60)
+    return token
+
+
+def _naver_dictionary(keyword):
+    found = _dictionary_from_app(keyword)
+    if found is not None:
+        tags = _dictionary_rows(found)
+        if tags:
+            return tags
+    token = _commerce_access_token()
+    if not token:
+        raise RuntimeError("네이버 태그사전을 가져오려면 스마트스토어 연동이 필요합니다.")
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+    status, text = _naver_http_get(
+        "https://api.commerce.naver.com/external/v2/tags/recommend-tags",
+        {"keyword": keyword},
+        headers,
+    )
+    if status == 404:
+        status, text = _naver_http_get(
+            "https://api.commerce.naver.com/external/v1/tags/recommend-tags",
+            {"keyword": keyword},
+            headers,
+        )
+    if status >= 400:
+        raise RuntimeError("네이버 태그사전 조회에 실패했습니다.")
+    try:
+        payload = _naver_tag_json.loads(text)
+    except Exception as exc:
+        raise RuntimeError("네이버 태그사전 응답을 읽지 못했습니다.") from exc
+    return _dictionary_rows(payload)
+
+
+def _naver_json(payload, status=200):
+    from starlette.responses import JSONResponse
+    return JSONResponse(payload, status_code=status)
+
+
+async def _naver_search_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "pages": [1, 2, 3], "tags": tags})
+
+
+async def _naver_dictionary_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_dictionary(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags})
+
+
+def _find_api_app():
+    import sys
+    best = None
+    best_score = 0
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in ("app", "api", "application"):
+            candidate = getattr(module, name, None)
+            routes = getattr(candidate, "routes", None)
+            if not routes:
+                continue
+            score = 0
+            for route in routes:
+                path = str(getattr(route, "path", "") or getattr(route, "rule", "") or "")
+                if "/api/products" in path:
+                    score += 5
+                elif "/api/" in path:
+                    score += 1
+            if score > best_score:
+                best = candidate
+                best_score = score
+    return best
+
+
+def _add_naver_tag_routes(app):
+    paths = {"/api/tags/naver-search": _naver_search_route, "/api/tags/naver-dictionary": _naver_dictionary_route}
+    existing = set()
+    for route in getattr(app, "routes", []):
+        existing.add(str(getattr(route, "path", "") or getattr(route, "rule", "") or ""))
+    for path, handler in paths.items():
+        if path in existing:
+            continue
+        if hasattr(app, "add_api_route"):
+            app.add_api_route(path, handler, methods=["GET"])
+        else:
+            from starlette.routing import Route
+            app.router.routes.append(Route(path, handler, methods=["GET"]))
+
+
+def _naver_tag_install():
+    if globals().get("_naver_tag_installed"):
+        return
+    globals()["_naver_tag_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        _add_naver_tag_routes(app)
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag1", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG_NO_INSTALL"):
+    _naver_tag_install()
+'''
+NAVER_TAG_SERVICE_NEEDED = ("def collect_product",)
 
 
 def frozen_fix_plan() -> dict:
@@ -7830,6 +8502,7 @@ def frozen_fix_plan() -> dict:
             (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
             (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
             (GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED, GODO_IMAGE2_SERVICE_PY),
+            (NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),

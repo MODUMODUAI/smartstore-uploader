@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.65"
+SCREEN_VERSION = "2026.10.28.66"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 65))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 66))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4160,6 +4160,13 @@ def patch_help(text: str) -> str:
     prompt_help = "창 가로는 화면보다 10% 좁습니다."
     if prompt_help in text and "프롬프트 칸은 30% 짧습니다" not in text:
         text = text.replace(prompt_help, prompt_help + " AI 실행 앞의 프롬프트 칸은 30% 짧습니다. 저장 메뉴는 조금 왼쪽에 있습니다.", 1)
+    collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
+    if collected_help in text and "AI속성채우기" not in text:
+        text = text.replace(
+            collected_help,
+            "AI속성채우기는 상세페이지의 글과 이미지를 읽습니다. 닫기는 저장하지 않고 창을 닫습니다. 속성 내용 글씨는 20% 큽니다.",
+            1,
+        )
     name_pane_help = "상세페이지 크기는 5%씩 조절합니다."
     if name_pane_help in text and "그림을 키우거나 줄입니다" not in text:
         text = text.replace(
@@ -5635,6 +5642,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + PROMPT_NARROW_JS
     if "/* name-pane-live1 */" not in text:
         text = text.rstrip() + "\n" + NAME_PANE_LIVE_JS
+    if "/* attribute-foot1 */" not in text:
+        text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5719,6 +5728,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + PROMPT_NARROW_CSS
     if "/* name-pane-live1 */" not in text:
         text = text.rstrip() + "\n" + NAME_PANE_LIVE_CSS
+    if "/* attribute-foot1 */" not in text:
+        text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_CSS
     return text
 
 
@@ -12515,6 +12526,105 @@ NAME_PANE_LIVE_CSS = r"""
 }
 #nameDetailView img {
   max-width: none;
+  height: auto;
+}
+"""
+ATTRIBUTE_FOOT_JS = r"""
+/* attribute-foot1 */
+(function () {
+  const scale = 1.2;
+  function enlargeAttributeText(root) {
+    if (!root) return;
+    const nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("p,span,label,input,textarea,select,th,td,div,li,a,b,strong,em,small")));
+    const sizes = nodes.map((el) => {
+      if (!el || el.dataset.attrText120 === "1") return 0;
+      if (el.tagName === "INPUT" && el.type === "range") return 0;
+      const size = parseFloat(window.getComputedStyle(el).fontSize);
+      return size > 0 ? size : 0;
+    });
+    nodes.forEach((el, index) => {
+      if (!sizes[index]) return;
+      el.dataset.attrText120 = "1";
+      el.style.setProperty("font-size", (Math.round(sizes[index] * scale * 10) / 10) + "px", "important");
+    });
+  }
+  function tuneAttributeFoot() {
+    const dialog = document.getElementById("attributeDialog");
+    if (!dialog) return;
+    const collected = document.getElementById("attributeFillCollected");
+    if (collected) collected.remove();
+    const ai = document.getElementById("attributeFillAi");
+    if (ai && ai.textContent.replace(/\s+/g, "") !== "AI속성채우기") ai.textContent = "AI속성채우기";
+    const actions = dialog.querySelector(".dialog-actions");
+    const close = document.getElementById("closeAttribute");
+    if (close && actions) {
+      close.type = "button";
+      close.textContent = "닫기";
+      close.classList.add("attribute-close");
+      if (close.parentElement !== actions) actions.appendChild(close);
+      if (close.dataset.attributeClose !== "1") {
+        close.dataset.attributeClose = "1";
+        close.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          dialog.close();
+        });
+      }
+    }
+    enlargeAttributeText(document.getElementById("attributeCategory"));
+    const help = dialog.querySelector(".attribute-help");
+    enlargeAttributeText(help);
+    enlargeAttributeText(document.getElementById("attributeMessage"));
+    enlargeAttributeText(document.getElementById("attributeFields"));
+  }
+  function watchAttributeFields() {
+    const fields = document.getElementById("attributeFields");
+    if (!fields || fields.dataset.attrTextWatch === "1") return;
+    fields.dataset.attrTextWatch = "1";
+    new MutationObserver(() => enlargeAttributeText(fields)).observe(fields, { childList: true, subtree: true });
+  }
+  ["openAttributeEditor", "renderAttributeFields", "renderFallbackAttributes"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.attributeFoot) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        watchAttributeFields();
+        tuneAttributeFoot();
+        setTimeout(tuneAttributeFoot, 0);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.attributeFoot = true;
+    window[name] = wrapped;
+  });
+  tuneAttributeFoot();
+  watchAttributeFields();
+  setTimeout(tuneAttributeFoot, 0);
+})();
+"""
+ATTRIBUTE_FOOT_CSS = r"""
+/* attribute-foot1 */
+#attributeFillCollected { display: none !important; }
+#attributeDialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+}
+#attributeDialog .dialog-actions #closeAttribute.attribute-close {
+  border: 1px solid var(--button-border, #a0a0a0) !important;
+  background: var(--button, #e8e8e8) !important;
+  color: var(--text, #111) !important;
+  font-size: inherit !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+  padding: 4px 12px !important;
+  min-width: 64px;
   height: auto;
 }
 """

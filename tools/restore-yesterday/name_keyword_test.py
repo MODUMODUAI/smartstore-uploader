@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.65")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.66")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -284,6 +284,32 @@ if (detailPaneImageWidth(333, 100) !== 333) throw new Error("fit " + detailPaneI
         self.assertIn("상세페이지는 더 넓습니다", help_html)
         self.assertIn("글씨는 20% 큽니다", help_html)
         self.assertIn("그림을 키우거나 줄입니다", help_html)
+
+    def test_attribute_foot_removes_collected_and_closes(self):
+        self.assertIn("attributeFillCollected", patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn("collected.remove()", patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn("AI속성채우기", patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn('close.type = "button"', patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn("dialog.close()", patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn("const scale = 1.2", patch.ATTRIBUTE_FOOT_JS)
+        self.assertIn("display: none !important", patch.ATTRIBUTE_FOOT_CSS)
+        self.assertIn("#attributeDialog .dialog-actions #closeAttribute.attribute-close", patch.ATTRIBUTE_FOOT_CSS)
+        full = Path("/tmp/attribute-foot.js")
+        full.write_text(patch.ATTRIBUTE_FOOT_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openAttributeEditor(){ return 1; }\n")
+        self.assertIn("/* attribute-foot1 */", scripted)
+        self.assertGreater(scripted.rindex("/* attribute-foot1 */"), scripted.rindex("/* name-pane-live1 */"))
+        styled = patch.patch_css("/* name-pane-live1 */\n")
+        self.assertIn("/* attribute-foot1 */", styled)
+        self.assertGreater(styled.rindex("/* attribute-foot1 */"), styled.rindex("/* name-pane-live1 */"))
+        help_html = patch.patch_help(
+            "<p>수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다.</p>"
+        )
+        self.assertIn("AI속성채우기", help_html)
+        self.assertIn("닫기는 저장하지 않고 창을 닫습니다", help_html)
+        self.assertIn("속성 내용 글씨는 20% 큽니다", help_html)
+        self.assertNotIn("수집값 채우기는 가져온 값을 넣고", help_html)
 
 
 if __name__ == "__main__":

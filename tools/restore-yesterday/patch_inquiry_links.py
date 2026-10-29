@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.67"
+SCREEN_VERSION = "2026.10.28.68"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 67))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 68))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4167,6 +4167,13 @@ def patch_help(text: str) -> str:
             image_role_help + " 오른쪽 닫기는 없고, 저장은 네이버 초록색입니다. 대표이미지 조절은 이미지 칸 위에 있고 5%씩 움직입니다. 오른쪽 조절은 상세페이지 크기이고 5%씩 움직입니다.",
             1,
         )
+    image_delete_help = "오른쪽 조절은 상세페이지 크기이고 5%씩 움직입니다."
+    if image_delete_help in text and "첫 사진이 대표이미지" not in text:
+        text = text.replace(
+            image_delete_help,
+            image_delete_help + " 이미지 삭제는 첫 화면 그림 위에 있습니다. 첫 사진이 대표이미지입니다. 배송비는 칸에 직접 넣을 수 있습니다. 옵션은 목록을 만들어 저장하고, 태그 저장은 네이버 초록색입니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5653,6 +5660,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_JS
     if "/* image-role-zoom1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_JS
+    if "/* naver-option-ship1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5741,6 +5750,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_CSS
     if "/* image-role-zoom1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_CSS
+    if "/* naver-option-ship1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_CSS
     return text
 
 
@@ -12884,6 +12895,471 @@ html[data-theme="dark"] #imageDialog .dialog-actions button[type="submit"] {
   background: #03C75A !important;
   color: #fff !important;
   border-color: #02a84d !important;
+}
+"""
+NAVER_OPTION_SHIP_JS = r"""
+/* naver-option-ship1 */
+(function () {
+  /* naver-option-pure-start */
+  function markRepresentative(images) {
+    return (images || []).map((image, index) => {
+      const copy = {};
+      Object.keys(image || {}).forEach((key) => { copy[key] = image[key]; });
+      copy.representative = index === 0;
+      return copy;
+    });
+  }
+  function optionListFromGroups(groups, existing, stock, simple) {
+    const qty = Number(stock || 9999);
+    const kept = new Map();
+    (existing || []).forEach((item) => {
+      const values = item && item.values ? item.values : [];
+      if (!values.length) return;
+      kept.set(values.join("\u0001"), item);
+    });
+    const use = (values, group) => {
+      const prev = kept.get(values.join("\u0001")) || {};
+      return {
+        group: group || prev.group || "",
+        values: values,
+        price: Number(prev.price || 0),
+        stock: prev.stock == null ? qty : Number(prev.stock),
+        status: prev.status || "SALE",
+        code: prev.code || "",
+        usable: prev.usable !== false,
+        id: prev.id || "",
+      };
+    };
+    if (!groups || !groups.length) return [];
+    if (simple) {
+      const rows = [];
+      groups.forEach((group) => {
+        (group.values || []).forEach((value) => rows.push(use([value], group.name)));
+      });
+      return rows.slice(0, 200);
+    }
+    let rows = [{ values: [] }];
+    groups.forEach((group) => {
+      const next = [];
+      (group.values || []).forEach((value) => {
+        rows.forEach((row) => next.push({ values: row.values.concat([value]) }));
+      });
+      rows = next;
+    });
+    return rows.slice(0, 200).map((row) => use(row.values, ""));
+  }
+  function shipAmountFromText(text) {
+    const raw = String(text == null ? "" : text).replace(/,/g, "").replace(/원/g, "").trim();
+    if (!raw) return null;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    return Math.round(amount);
+  }
+  /* naver-option-pure-end */
+  function markDraftFirst() {
+    if (typeof draftImages === "undefined" || !Array.isArray(draftImages)) return;
+    draftImages.forEach((image, index) => {
+      if (image) image.representative = index === 0;
+    });
+  }
+  function mountSlotDeletes() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || typeof draftImages === "undefined") return;
+    [...thumbs.querySelectorAll(".image-slot")].forEach((slot, index) => {
+      if (!draftImages[index] || slot.querySelector(".image-slot-delete")) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "image-slot-delete";
+      button.textContent = "삭제";
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        draftImages.splice(index, 1);
+        markDraftFirst();
+        if (typeof renderImageEditor === "function") renderImageEditor();
+      });
+      slot.appendChild(button);
+    });
+  }
+  function paintNaverOptionTable(rows) {
+    const body = document.getElementById("optionComboTable");
+    if (!body) return;
+    const table = body.parentElement;
+    const head = table ? table.querySelector("thead tr") : null;
+    const groups = typeof readOptionGroups === "function" ? readOptionGroups() : [];
+    const names = groups.map((group) => group.name).filter(Boolean);
+    if (head) {
+      head.innerHTML = "";
+      const titles = ["", "옵션번호"].concat(names.length ? names : ["옵션명"], ["옵션가", "재고수량", "판매상태", "관리코드", "사용여부", "삭제"]);
+      titles.forEach((title, index) => {
+        const cell = document.createElement("th");
+        if (index === 0) {
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.id = "selectAllCombos";
+          box.addEventListener("change", () => {
+            body.querySelectorAll("[data-combo-check]").forEach((item) => { item.checked = box.checked; });
+          });
+          cell.appendChild(box);
+        } else {
+          cell.textContent = title;
+        }
+        head.appendChild(cell);
+      });
+    }
+    body.innerHTML = "";
+    (rows || []).forEach((row, index) => {
+      const tr = document.createElement("tr");
+      const price = Number(row.price || 0);
+      const sign = price < 0 ? "-" : "+";
+      const values = row.values || [];
+      tr.dataset.values = JSON.stringify(values);
+      tr.dataset.group = row.group || "";
+      const check = document.createElement("td");
+      check.innerHTML = '<input type="checkbox" data-combo-check />';
+      const number = document.createElement("td");
+      number.textContent = row.id ? String(row.id) : String(index + 1);
+      tr.append(check, number);
+      const columns = names.length ? names : [""];
+      columns.forEach((name, nameIndex) => {
+        const cell = document.createElement("td");
+        if (row.group) cell.textContent = row.group === name ? (values[0] || "") : "";
+        else cell.textContent = values[nameIndex] || "";
+        tr.appendChild(cell);
+      });
+      const priceCell = document.createElement("td");
+      priceCell.innerHTML = '<span class="option-price-cell"><select data-combo-sign><option value="+">+</option><option value="-">-</option></select><input data-combo-price type="number" step="10" /></span>';
+      const stockCell = document.createElement("td");
+      stockCell.innerHTML = '<input data-combo-stock type="number" />';
+      const statusCell = document.createElement("td");
+      statusCell.innerHTML = '<select data-combo-status><option value="SALE">판매중</option><option value="SUSPENSION">판매중지</option></select>';
+      const codeCell = document.createElement("td");
+      codeCell.innerHTML = '<input data-combo-code />';
+      const usableCell = document.createElement("td");
+      usableCell.innerHTML = '<select data-combo-usable><option value="true">Y</option><option value="false">N</option></select>';
+      const removeCell = document.createElement("td");
+      removeCell.innerHTML = '<button type="button" class="remove-combo" aria-label="삭제">×</button>';
+      tr.append(priceCell, stockCell, statusCell, codeCell, usableCell, removeCell);
+      tr.querySelector("[data-combo-sign]").value = sign;
+      tr.querySelector("[data-combo-price]").value = String(Math.abs(price));
+      tr.querySelector("[data-combo-stock]").value = String(Number(row.stock || 9999));
+      tr.querySelector("[data-combo-status]").value = row.status === "SUSPENSION" ? "SUSPENSION" : "SALE";
+      tr.querySelector("[data-combo-code]").value = row.code || "";
+      tr.querySelector("[data-combo-usable]").value = row.usable === false ? "false" : "true";
+      tr.querySelector(".remove-combo").addEventListener("click", () => tr.remove());
+      body.appendChild(tr);
+    });
+  }
+  function refreshOptionList() {
+    if (typeof optionEnabled === "function" && !optionEnabled()) return;
+    if (typeof readOptionGroups !== "function" || typeof readOptionCombos !== "function") return;
+    const groups = readOptionGroups();
+    if (!groups.length) return;
+    const simple = typeof optionTypeValue === "function" && optionTypeValue() === "SIMPLE";
+    const stock = typeof current !== "undefined" && current ? current.stock : 9999;
+    const rows = optionListFromGroups(groups, readOptionCombos(), stock, simple);
+    if (typeof renderOptionCombos === "function") renderOptionCombos(rows);
+  }
+  function ensureDirectOption() {
+    const form = document.getElementById("optionForm");
+    if (!form || document.getElementById("directOptionField")) return;
+    const actions = form.querySelector(":scope > .dialog-actions");
+    const field = document.createElement("div");
+    field.className = "option-field";
+    field.id = "directOptionField";
+    field.innerHTML = '<span class="option-label">직접입력형</span><div><div class="option-toggle"><button type="button" id="directOptionOn">설정함</button><button type="button" id="directOptionOff" class="active">설정안함</button></div><div id="directOptionBox" hidden><textarea id="directOptionText" rows="3" placeholder="구매자가 직접 입력할 항목"></textarea><button type="button" id="directOptionDone" class="btn-apply">설정완료</button></div></div>';
+    if (actions) form.insertBefore(field, actions);
+    else form.appendChild(field);
+    const box = field.querySelector("#directOptionBox");
+    const on = field.querySelector("#directOptionOn");
+    const off = field.querySelector("#directOptionOff");
+    const setOn = (enabled) => {
+      on.classList.toggle("active", enabled);
+      off.classList.toggle("active", !enabled);
+      box.hidden = !enabled;
+    };
+    on.addEventListener("click", () => setOn(true));
+    off.addEventListener("click", () => setOn(false));
+    field.querySelector("#directOptionDone").addEventListener("click", () => {
+      if (typeof current !== "undefined" && current) current.input_options = field.querySelector("#directOptionText").value.trim();
+    });
+    const sort = document.createElement("div");
+    sort.className = "option-field";
+    sort.id = "optionSortField";
+    sort.innerHTML = '<span class="option-label">정렬 순서</span><div><select id="optionSortOrder"><option value="register">등록순</option></select></div>';
+    const count = document.getElementById("optionGroupCount");
+    const countField = count && count.closest(".option-field");
+    if (countField && countField.parentElement) countField.parentElement.insertBefore(sort, countField.nextSibling);
+  }
+  function fillDirectOption() {
+    const text = document.getElementById("directOptionText");
+    if (!text || typeof current === "undefined" || !current) return;
+    text.value = current.input_options || "";
+    const enabled = Boolean(String(current.input_options || "").trim());
+    const on = document.getElementById("directOptionOn");
+    const off = document.getElementById("directOptionOff");
+    const box = document.getElementById("directOptionBox");
+    if (on) on.classList.toggle("active", enabled);
+    if (off) off.classList.toggle("active", !enabled);
+    if (box) box.hidden = !enabled;
+  }
+  function tuneOptionDialog() {
+    ensureDirectOption();
+    fillDirectOption();
+    const save = document.querySelector("#optionForm > .dialog-actions button[type='submit']");
+    if (save) {
+      save.classList.add("btn-apply");
+      save.textContent = "옵션 저장";
+    }
+    document.querySelectorAll("#optionEditor .remove-option-value").forEach((button) => {
+      button.textContent = "×";
+      button.setAttribute("aria-label", "삭제");
+    });
+  }
+  function shipKey(id) {
+    return "modumodu-manual-ship:" + id;
+  }
+  function readStoredShip(id) {
+    try {
+      const stored = localStorage.getItem(shipKey(id));
+      if (stored == null || stored === "") return null;
+      return shipAmountFromText(stored);
+    } catch (error) {
+      return null;
+    }
+  }
+  function writeStoredShip(id, amount) {
+    try {
+      if (amount == null) localStorage.removeItem(shipKey(id));
+      else localStorage.setItem(shipKey(id), String(amount));
+    } catch (error) {}
+  }
+  function applyStoredShips() {
+    if (typeof products === "undefined" || !Array.isArray(products)) return;
+    products.forEach((item) => {
+      if (!item || !item.id) return;
+      if (!item._shipAutoReady && typeof wholesaleShipAmount === "function") {
+        item._shipAutoReady = true;
+        item._shipAuto = wholesaleShipAmount(item);
+      }
+      const stored = readStoredShip(item.id);
+      if (stored == null) {
+        if (item._shipManual) {
+          item.shipping_fee = item._shipAuto;
+          item._shipManual = false;
+        }
+        return;
+      }
+      item.shipping_fee = stored;
+      item._shipManual = true;
+    });
+  }
+  function installShipInputs() {
+    document.querySelectorAll("#productTable td[data-ship='1']").forEach((cell) => {
+      if (cell.querySelector("input")) return;
+      const row = cell.closest("tr");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.className = "manual-ship-input";
+      input.value = cell.textContent.replace(/,/g, "").trim();
+      input.title = "배송비를 직접 입력합니다. 비우면 가져온 배송비를 씁니다.";
+      input.dataset.field = "manual_ship";
+      cell.textContent = "";
+      cell.appendChild(input);
+      const commit = () => {
+        if (typeof products === "undefined") return;
+        const item = products.find((rowItem) => rowItem && String(rowItem.id) === String(row && row.dataset.id));
+        if (!item) return;
+        const amount = shipAmountFromText(input.value);
+        if (!item._shipAutoReady && typeof wholesaleShipAmount === "function") {
+          item._shipAutoReady = true;
+          item._shipAuto = item._shipManual ? item._shipAuto : wholesaleShipAmount(item);
+        }
+        writeStoredShip(item.id, amount);
+        if (amount == null) {
+          item.shipping_fee = item._shipAuto;
+          item._shipManual = false;
+        } else {
+          item.shipping_fee = amount;
+          item._shipManual = true;
+        }
+        const master = typeof isMasterProduct === "function" && isMasterProduct(item);
+        const finish = () => {
+          if (typeof renderProductSheet === "function") renderProductSheet();
+        };
+        if (master || typeof saveProduct !== "function") {
+          finish();
+          return;
+        }
+        Promise.resolve(saveProduct(item, { shipping_fee: item.shipping_fee }, true)).then(finish, finish);
+      };
+      input.addEventListener("change", commit);
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        input.blur();
+      });
+    });
+  }
+  function watchShipTable() {
+    const body = document.getElementById("productTable");
+    if (!body || body.dataset.manualShipWatch === "1") return;
+    body.dataset.manualShipWatch = "1";
+    new MutationObserver(() => installShipInputs()).observe(body, { childList: true, subtree: true });
+  }
+  function tuneShipColumn() {
+    applyStoredShips();
+    installShipInputs();
+    watchShipTable();
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.naverOptionShip) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      markDraftFirst();
+      const result = renderBefore.apply(this, arguments);
+      mountSlotDeletes();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    if (renderBefore.zoomLive) wrapped.zoomLive = true;
+    if (renderBefore.imageRoleZoom) wrapped.imageRoleZoom = true;
+    renderImageEditor = wrapped;
+  }
+  if (typeof saveDraftImages === "function" && !saveDraftImages.naverOptionShip) {
+    const saveBefore = saveDraftImages;
+    const wrapped = function () {
+      markDraftFirst();
+      return saveBefore.apply(this, arguments);
+    };
+    wrapped.naverOptionShip = true;
+    saveDraftImages = wrapped;
+  }
+  if (typeof renderOptionCombos === "function" && !renderOptionCombos.naverOptionShip) {
+    const renderCombosBefore = renderOptionCombos;
+    const wrapped = function (rows) {
+      paintNaverOptionTable(rows);
+      return rows;
+    };
+    wrapped.naverOptionShip = true;
+    renderOptionCombos = wrapped;
+    void renderCombosBefore;
+  }
+  if (typeof renderOptionNameRows === "function" && !renderOptionNameRows.naverOptionShip) {
+    const renderNamesBefore = renderOptionNameRows;
+    const wrapped = function () {
+      const result = renderNamesBefore.apply(this, arguments);
+      tuneOptionDialog();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    renderOptionNameRows = wrapped;
+  }
+  if (typeof openOptionEditor === "function" && !openOptionEditor.naverOptionShip) {
+    const openBefore = openOptionEditor;
+    const wrapped = function () {
+      const result = openBefore.apply(this, arguments);
+      tuneOptionDialog();
+      fillDirectOption();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    openOptionEditor = wrapped;
+  }
+  if (typeof renderProductSheet === "function" && !renderProductSheet.naverOptionShip) {
+    const renderSheetBefore = renderProductSheet;
+    const wrapped = function () {
+      applyStoredShips();
+      const result = renderSheetBefore.apply(this, arguments);
+      tuneShipColumn();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    if (renderSheetBefore.shipCol) wrapped.shipCol = true;
+    if (renderSheetBefore.marginCol) wrapped.marginCol = true;
+    renderProductSheet = wrapped;
+  }
+  const optionForm = document.getElementById("optionForm");
+  if (optionForm && optionForm.dataset.naverOptionShip !== "1") {
+    optionForm.dataset.naverOptionShip = "1";
+    optionForm.addEventListener("submit", () => {
+      const text = document.getElementById("directOptionText");
+      const enabled = document.getElementById("directOptionOn") && document.getElementById("directOptionOn").classList.contains("active");
+      if (typeof current !== "undefined" && current && text) current.input_options = enabled ? text.value.trim() : "";
+      refreshOptionList();
+    }, true);
+  }
+  if (typeof saveProduct === "function" && !saveProduct.naverOptionShip) {
+    const saveProductBefore = saveProduct;
+    const wrapped = async function (product, patch) {
+      if (patch && patch.options && product && product.input_options != null && patch.input_options == null) {
+        patch.input_options = product.input_options;
+      }
+      return saveProductBefore.apply(this, arguments);
+    };
+    wrapped.naverOptionShip = true;
+    saveProduct = wrapped;
+  }
+  tuneOptionDialog();
+  setTimeout(tuneShipColumn, 0);
+  setTimeout(tuneShipColumn, 200);
+})();
+"""
+NAVER_OPTION_SHIP_CSS = r"""
+/* naver-option-ship1 */
+#imageDialog #imageThumbs .image-slot { position: relative; }
+#imageDialog .image-slot-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  min-width: 40px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  line-height: 22px;
+}
+#optionDialog {
+  max-height: calc(100vh - 24px);
+}
+#optionDialog form {
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+#optionDialog form > .dialog-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--page, #fff);
+  padding-top: 8px;
+}
+#optionDialog #applyOptionList,
+#optionDialog #directOptionDone,
+#optionDialog form > .dialog-actions button[type="submit"],
+#tagDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
+  font-weight: 700;
+}
+#optionDialog .remove-option-value,
+#optionDialog .remove-combo {
+  min-width: 28px;
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+#productGrid td[data-ship="1"] .manual-ship-input {
+  width: 72px;
+  text-align: right;
+  box-sizing: border-box;
 }
 """
 

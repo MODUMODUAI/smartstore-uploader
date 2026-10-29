@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.67")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.68")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -376,6 +376,50 @@ if (roleZoomStep(25, 1, 20, 120) === 50) throw new Error("jumped 25");
         self.assertIn("오른쪽 조절은 상세페이지 크기", help_html)
         self.assertIn("오른쪽 닫기는 없고", help_html)
         self.assertIn("저장은 네이버 초록색입니다", help_html)
+
+    def test_naver_option_save_and_manual_ship(self):
+        start = patch.NAVER_OPTION_SHIP_JS.index("/* naver-option-pure-start */")
+        end = patch.NAVER_OPTION_SHIP_JS.index("/* naver-option-pure-end */")
+        script = patch.NAVER_OPTION_SHIP_JS[start:end] + r"""
+const marked = markRepresentative([{ id: "a" }, { id: "b" }]);
+if (!marked[0].representative || marked[1].representative) throw new Error("rep " + JSON.stringify(marked));
+const rows = optionListFromGroups(
+  [{ name: "색상", values: ["화이트", "블랙"] }],
+  [{ values: ["화이트"], price: 500, stock: 3, code: "W" }],
+  9999,
+  false
+);
+if (rows.length !== 2) throw new Error("len " + rows.length);
+if (rows[0].price !== 500 || rows[0].stock !== 3 || rows[0].code !== "W") throw new Error("kept " + JSON.stringify(rows[0]));
+if (rows[1].values[0] !== "블랙" || rows[1].price !== 0) throw new Error("new " + JSON.stringify(rows[1]));
+if (shipAmountFromText("3,000") !== 3000) throw new Error("ship");
+if (shipAmountFromText("") !== null) throw new Error("empty");
+if (shipAmountFromText("-1") !== null) throw new Error("neg");
+"""
+        path = Path("/tmp/naver-option-ship-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/naver-option-ship.js")
+        full.write_text(patch.NAVER_OPTION_SHIP_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("image-slot-delete", patch.NAVER_OPTION_SHIP_JS)
+        self.assertIn("직접입력형", patch.NAVER_OPTION_SHIP_JS)
+        self.assertIn("옵션번호", patch.NAVER_OPTION_SHIP_JS)
+        self.assertIn("manual-ship-input", patch.NAVER_OPTION_SHIP_JS)
+        self.assertIn("#03C75A", patch.NAVER_OPTION_SHIP_CSS)
+        self.assertIn("#tagDialog .dialog-actions button[type=\"submit\"]", patch.NAVER_OPTION_SHIP_CSS)
+        self.assertNotIn("100vw", patch.NAVER_OPTION_SHIP_CSS)
+        scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\nfunction renderOptionCombos(){ return 1; }\nfunction openOptionEditor(){ return 1; }\n")
+        self.assertIn("/* naver-option-ship1 */", scripted)
+        self.assertGreater(scripted.rindex("/* naver-option-ship1 */"), scripted.rindex("/* image-role-zoom1 */"))
+        styled = patch.patch_css("/* image-role-zoom1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* naver-option-ship1 */", styled)
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw"))
+        help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
+        self.assertIn("첫 사진이 대표이미지", help_html)
+        self.assertIn("이미지 삭제는 첫 화면", help_html)
+        self.assertIn("배송비는 칸에 직접", help_html)
+        self.assertIn("태그 저장은 네이버 초록색", help_html)
 
 
 if __name__ == "__main__":

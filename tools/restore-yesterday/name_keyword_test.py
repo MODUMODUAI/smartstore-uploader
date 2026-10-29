@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.57")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.58")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -192,6 +192,27 @@ if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
         )
         self.assertIn("상세페이지 크기는 5%씩", help_html)
         self.assertIn("속성 칸 크기는 5%씩", help_html)
+
+    def test_detail_dialog_keeps_intro_and_shrinks(self):
+        self.assertIn("상세페이지추가글", patch.DETAIL_FIT_JS)
+        self.assertIn("fillDetailIntroInEditor", patch.DETAIL_FIT_JS)
+        self.assertIn("width: 70vw", patch.DETAIL_FIT_CSS)
+        self.assertIn("height: 70vh", patch.DETAIL_FIT_CSS)
+        self.assertNotIn("#imageDialog", patch.DETAIL_FIT_CSS)
+        full = Path("/tmp/detail-fit-full.js")
+        full.write_text(patch.DETAIL_FIT_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openDetailEditor(){ return 1; }\n")
+        self.assertIn("/* detail-fit1 */", scripted)
+        self.assertGreater(scripted.rindex("/* detail-fit1 */"), scripted.rindex("/* tag-dict1 */"))
+        styled = patch.patch_css("/* image-work1 */\n#detailDialog { width: 100vw; height: 100vh; }\n")
+        self.assertIn("/* detail-fit1 */", styled)
+        self.assertGreater(styled.rindex("70vw"), styled.rindex("100vw"))
+        help_html = patch.patch_help(
+            "<p>상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다.</p>"
+        )
+        self.assertIn("창 안에도 상세페이지추가글", help_html)
+        self.assertIn("30% 작습니다", help_html)
 
 
 if __name__ == "__main__":

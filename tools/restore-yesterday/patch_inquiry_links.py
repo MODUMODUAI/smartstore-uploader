@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.57"
+SCREEN_VERSION = "2026.10.28.58"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 57))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 58))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4153,6 +4153,13 @@ def patch_help(text: str) -> str:
             tag_dict_help + " 태그를 치면 네이버 태그사전 후보가 아래에 나오고, 고르면 들어갑니다.",
             1,
         )
+    detail_fit_help = "상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다."
+    if detail_fit_help in text and "창 안에도 상세페이지추가글" not in text:
+        text = text.replace(
+            detail_fit_help,
+            detail_fit_help + " 창 안에도 상세페이지추가글이 있고, 창은 화면보다 30% 작습니다.",
+            1,
+        )
     return text
 
 
@@ -5562,6 +5569,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + DIALOG_ZOOM_JS
     if "/* tag-dict1 */" not in text:
         text = text.rstrip() + "\n" + TAG_DICT_JS
+    if "/* detail-fit1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_FIT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5626,6 +5635,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + DIALOG_ZOOM_CSS
     if "/* tag-dict1 */" not in text:
         text = text.rstrip() + "\n" + TAG_DICT_CSS
+    if "/* detail-fit1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_FIT_CSS
     return text
 
 
@@ -10647,6 +10658,67 @@ html[data-theme="dark"] .tag-dict button:hover,
 html[data-theme="dark"] .tag-dict button.active { background: #2a2a2a; }
 html[data-theme="dark"] .tag-dict-direct { color: #b0b6bf; }
 html[data-theme="dark"] .tag-dict mark { background: #c6d84a; color: #111; }
+"""
+DETAIL_FIT_JS = r"""
+/* detail-fit1 */
+(function () {
+  function mountDetailIntroMenu() {
+    const header = document.querySelector("#detailDialog header");
+    const close = document.getElementById("closeDetail");
+    if (!header || !close || document.getElementById("detailIntroMenu")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "detailIntroMenu";
+    button.className = "detail-intro-menu";
+    button.textContent = "상세페이지추가글";
+    button.addEventListener("click", () => {
+      if (typeof fillDetailIntroInEditor !== "function") return;
+      fillDetailIntroInEditor().catch((error) => {
+        if (typeof toast === "function") toast(error.message, true);
+      });
+    });
+    close.before(button);
+  }
+  if (typeof fillDetailIntroInEditor === "function" && !fillDetailIntroInEditor.detailFitWrapped) {
+    const fillDetailIntroBeforeFit = fillDetailIntroInEditor;
+    fillDetailIntroInEditor = async function () {
+      const menu = document.getElementById("detailIntroMenu");
+      if (menu) {
+        menu.disabled = true;
+        menu.textContent = "만드는 중...";
+      }
+      try {
+        return await fillDetailIntroBeforeFit.apply(this, arguments);
+      } finally {
+        if (menu) {
+          menu.disabled = false;
+          menu.textContent = "상세페이지추가글";
+        }
+      }
+    };
+    fillDetailIntroInEditor.detailFitWrapped = true;
+  }
+  mountDetailIntroMenu();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountDetailIntroMenu);
+  setTimeout(mountDetailIntroMenu, 0);
+})();
+"""
+DETAIL_FIT_CSS = r"""
+/* detail-fit1 */
+#detailDialog {
+  width: 70vw;
+  height: 70vh;
+  max-width: 70vw;
+  max-height: 70vh;
+  margin: auto;
+  inset: 0;
+}
+#detailIntroMenu {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
 """
 NAVER_TAG2_SERVICE_PY = r'''
 # naver-tag2

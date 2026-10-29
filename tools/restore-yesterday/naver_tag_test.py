@@ -46,7 +46,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.52")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.53")
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.52")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.53")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -121,6 +121,11 @@ if (menuSaveRequestCloses("/api/products/collect", "POST")) throw new Error("col
         full_save = Path("/tmp/menu-save-close-full.js")
         full_save.write_text(patch.MENU_SAVE_CLOSE2_JS, encoding="utf-8")
         subprocess.run(["node", "--check", str(full_save)], check=True)
+        self.assertIn("repeat(5, minmax(0, 1fr))", patch.IMAGE_ROW5_CSS)
+        styled_images = patch.patch_css("/* image-work1 */\n/* dialog-resize1 */\n")
+        self.assertIn("/* image-row5 */", styled_images)
+        self.assertGreater(styled_images.rindex("/* image-row5 */"), styled_images.rindex("/* image-work1 */"))
+        self.assertGreater(styled_images.rindex("/* image-row5 */"), styled_images.rindex("/* dialog-resize1 */"))
 
 
 if __name__ == "__main__":

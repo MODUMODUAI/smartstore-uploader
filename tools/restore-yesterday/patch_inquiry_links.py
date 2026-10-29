@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.52"
+SCREEN_VERSION = "2026.10.28.53"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 52))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 53))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5583,6 +5583,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_LAYOUT_CSS
     if "/* dialog-resize1 */" not in text:
         text = text.rstrip() + "\n" + DIALOG_RESIZE_CSS
+    if "/* image-row5 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROW5_CSS
     return text
 
 
@@ -9238,6 +9240,26 @@ body.col-resizing .dialog-pane-resizer { background: #0078d7; }
 }
 @media (max-width: 980px) {
   #nameDialog .dialog-pane-resizer { display: none; }
+}
+"""
+IMAGE_ROW5_CSS = r"""
+/* image-row5 */
+#imageDialog #imageThumbs.image-thumbs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, calc(5 * var(--image-slot-size, 125px) + 4 * 8px));
+  max-width: 100%;
+  align-content: start;
+  align-items: start;
+}
+#imageDialog #imageThumbs .image-slot {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  flex: none;
+  flex-basis: auto;
+  min-width: 0;
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

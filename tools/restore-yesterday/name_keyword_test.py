@@ -35,7 +35,32 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.48")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.49")
+        self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
+        self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
+        self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
+        self.assertIn("deliveryDialog", patch.NAME_COUNT_JS)
+        help_html = patch.patch_help(
+            "<li>상품명: 공급처 상품명 그대로입니다. 상품명바꾸기와 상품명AI로 바꾼 뒤에는 그 이름이 저장됩니다.</li>"
+        )
+        self.assertIn("100자까지이고, 칸 오른쪽에 글자수가 보입니다", help_html)
+
+    def test_name_count_and_menu_save_close(self):
+        start = patch.NAME_COUNT_JS.index("function nameCharCount")
+        end = patch.NAME_COUNT_JS.index("if (typeof inputCell")
+        script = patch.NAME_COUNT_JS[start:end] + r"""
+if (nameCharCount("가나다") !== 3) throw new Error("ko");
+if (nameCharCount("abc") !== 3) throw new Error("en");
+if (menuSaveClosesDialog("/api/benefit", { method: "PUT" }) !== "benefitDialog") throw new Error("benefit");
+if (menuSaveClosesDialog("/api/name-keywords", { method: "GET" }) !== "") throw new Error("get keywords");
+if (menuSaveClosesDialog("/api/name-keywords", { method: "PUT" }) !== "nameKeywordDialog") throw new Error("keywords");
+if (menuSaveClosesDialog("/api/delivery-templates", { method: "POST" }) !== "deliveryDialog") throw new Error("delivery");
+if (menuSaveClosesDialog("/api/delivery-templates/import", { method: "POST" }) !== "") throw new Error("import");
+if (menuSaveClosesDialog("/api/delivery-templates/abc", { method: "PUT" }) !== "deliveryDialog") throw new Error("delivery put");
+"""
+        path = Path("/tmp/name-count-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
 
 
 if __name__ == "__main__":

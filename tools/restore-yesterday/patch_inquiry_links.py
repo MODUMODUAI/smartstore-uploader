@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.48"
+SCREEN_VERSION = "2026.10.28.49"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 48))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 49))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4119,6 +4119,13 @@ def patch_help(text: str) -> str:
     name_help_new = name_help + " 누르면 옆에 그 상품의 상세페이지가 함께 열립니다."
     if name_help in text and "옆에 그 상품의 상세페이지" not in text:
         text = text.replace(name_help, name_help_new, 1)
+    name_field_help = "상품명: 공급처 상품명 그대로입니다. 상품명바꾸기와 상품명AI로 바꾼 뒤에는 그 이름이 저장됩니다."
+    if name_field_help in text and "100자까지" not in text:
+        text = text.replace(
+            name_field_help,
+            name_field_help + " 스마트스토어 상품명은 100자까지이고, 칸 오른쪽에 글자수가 보입니다.",
+            1,
+        )
     return text
 
 
@@ -5512,6 +5519,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAVER_TAG_JS
     if "/* name-keyword-tags1 */" not in text:
         text = text.rstrip() + "\n" + NAME_FORBID_JS
+    if "/* name-count1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_COUNT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5562,6 +5571,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAVER_TAG_CSS
     if "/* name-keyword-tags1 */" not in text:
         text = text.rstrip() + "\n" + NAME_FORBID_CSS
+    if "/* name-count1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_COUNT_CSS
     return text
 
 
@@ -8698,6 +8709,129 @@ NAME_FORBID_CSS = r"""
   #nameDialog.name-with-detail #nameForm { width: auto; max-width: none; flex-basis: auto; }
   #nameDialog.name-with-detail .name-detail-pane { border-left: 0; border-top: 1px solid var(--line, #d6dbe3); }
   #nameDialog.name-with-detail .name-detail-view { max-height: 42vh; }
+}
+"""
+NAME_COUNT_JS = r"""
+/* name-count1 */
+function nameCharCount(value) {
+  return Array.from(String(value || "")).length;
+}
+function paintNameCount(node, value) {
+  if (!node) return;
+  const count = nameCharCount(value);
+  node.textContent = count + "/100";
+  node.classList.toggle("over", count > 100);
+}
+function mountNameCharCount() {
+  const input = document.getElementById("nameInput");
+  if (!input || document.getElementById("nameCharCount")) return;
+  const count = document.createElement("span");
+  count.id = "nameCharCount";
+  count.className = "name-char-count";
+  const parent = input.parentNode;
+  if (parent) parent.classList.add("name-count-field");
+  input.insertAdjacentElement("afterend", count);
+  const refresh = () => paintNameCount(count, input.value);
+  input.addEventListener("input", refresh);
+  refresh();
+  window.refreshNameCharCount = refresh;
+}
+function attachNameCellCount(cell) {
+  if (!cell || cell.querySelector(".name-char-count")) return;
+  cell.classList.add("name-count-cell");
+  const count = document.createElement("span");
+  count.className = "name-char-count";
+  const read = () => {
+    const input = cell.querySelector("input");
+    if (input && !input.hidden) return input.value;
+    const view = cell.querySelector(".cell-view");
+    return view ? view.textContent : "";
+  };
+  const refresh = () => paintNameCount(count, read());
+  cell.appendChild(count);
+  const input = cell.querySelector("input");
+  if (input) {
+    input.addEventListener("input", refresh);
+    input.addEventListener("blur", refresh);
+  }
+  refresh();
+}
+function closeMenuDialog(id) {
+  const dialog = document.getElementById(id);
+  if (dialog && dialog.open) dialog.close();
+}
+function menuSaveClosesDialog(path, options) {
+  const method = String((options && options.method) || "GET").toUpperCase();
+  const url = String(path || "").split("?")[0];
+  if (method === "PUT" && url.indexOf("/api/benefit") >= 0) return "benefitDialog";
+  if (method === "PUT" && url.indexOf("/api/name-keywords") >= 0) return "nameKeywordDialog";
+  if (method === "POST" && /\/api\/delivery-templates$/.test(url)) return "deliveryDialog";
+  if (method === "PUT" && /\/api\/delivery-templates\/(?!import$)[^/]+$/.test(url)) return "deliveryDialog";
+  return "";
+}
+if (typeof inputCell === "function" && !inputCell.nameCountWrapped) {
+  const inputCellBeforeCount = inputCell;
+  inputCell = function (value, field, type, locked) {
+    const cell = inputCellBeforeCount.apply(this, arguments);
+    if (field === "name" && !locked && cell) attachNameCellCount(cell);
+    return cell;
+  };
+  inputCell.nameCountWrapped = true;
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameCountWrapped) {
+  const openNameEditorBeforeCount = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeCount.apply(this, arguments);
+    if (typeof window.refreshNameCharCount === "function") window.refreshNameCharCount();
+    return result;
+  };
+  openNameEditor.nameCountWrapped = true;
+}
+if (typeof api === "function" && !api.menuSaveCloseWrapped) {
+  const apiBeforeMenuSave = api;
+  api = async function (path, options) {
+    const data = await apiBeforeMenuSave.apply(this, arguments);
+    const dialogId = menuSaveClosesDialog(path, options);
+    if (dialogId) closeMenuDialog(dialogId);
+    if (String(path || "").indexOf("/name/suggest") >= 0 && typeof window.refreshNameCharCount === "function") {
+      setTimeout(window.refreshNameCharCount, 0);
+    }
+    return data;
+  };
+  api.menuSaveCloseWrapped = true;
+}
+mountNameCharCount();
+"""
+NAME_COUNT_CSS = r"""
+/* name-count1 */
+.name-char-count {
+  color: #1f9d55;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.name-char-count.over { color: #e11d48; }
+html[data-theme="dark"] .name-char-count { color: #3ddc84; }
+html[data-theme="dark"] .name-char-count.over { color: #fb7185; }
+.name-count-field { position: relative; }
+.name-count-field .name-char-count {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+#nameInput { padding-right: 72px; padding-bottom: 22px; }
+td.name-count-cell { position: relative; }
+td.name-count-cell .name-char-count {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+td.name-count-cell .cell-view,
+td.name-count-cell input {
+  padding-right: 58px;
+  box-sizing: border-box;
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

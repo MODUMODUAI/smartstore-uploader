@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.53")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.54")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -126,6 +126,41 @@ if (menuSaveRequestCloses("/api/products/collect", "POST")) throw new Error("col
         self.assertIn("/* image-row5 */", styled_images)
         self.assertGreater(styled_images.rindex("/* image-row5 */"), styled_images.rindex("/* image-work1 */"))
         self.assertGreater(styled_images.rindex("/* image-row5 */"), styled_images.rindex("/* dialog-resize1 */"))
+
+    def test_list_image_zoom_and_wholesale_shipping(self):
+        start = patch.LIST_ZOOM_SHIP_JS.index("/* zoom-ship-pure-start */")
+        end = patch.LIST_ZOOM_SHIP_JS.index("/* zoom-ship-pure-end */")
+        script = patch.LIST_ZOOM_SHIP_JS[start:end] + r"""
+if (listImagePixels(100) !== 500) throw new Error("500 " + listImagePixels(100));
+if (listImagePixels(50) !== 250) throw new Error("250 " + listImagePixels(50));
+if (zoomByStep(50, 20, 120, 5, 1) !== 55) throw new Error("step");
+if (zoomByStep(50, 50, 200, 5, -1) !== 50) throw new Error("floor");
+if (zoomByStep(103, 25, 200, 5, 0) !== 105) throw new Error("snap");
+if (wholesaleShipAmount({ shipping_fee: 2500 }) !== 2500) throw new Error("fee");
+if (wholesaleShipAmount({ shipping_fee: 0 }) !== 0) throw new Error("zero");
+if (wholesaleShipAmount({ shipping_type: "F", shipping: 3000 }) !== 0) throw new Error("free");
+if (wholesaleShipAmount({ shipping_type: "C", shipping: 4000 }) !== 0) throw new Error("collect");
+if (wholesaleShipAmount({ delivery_fee: 3000 }) !== null) throw new Error("template");
+if (wholesaleShipAmount({ extra: { shipping_fee: 1500 } }) !== 1500) throw new Error("nested");
+if (marginRateWithShip(10000, 6000, 1000, 3000) !== 0) throw new Error("rate");
+if (marginRateWithShip(10000, 6000, 1000, 0) !== 30) throw new Error("noship");
+if (marginAdjustedForShip(20, 10000, 1000, 3000) !== 0) throw new Error("adjust");
+if (shipFromMarginTitle("마켓 (판매가 10000 - 수수료 1000 - 공급가 6000 - 배송비 3000) / 판매가") !== 3000) throw new Error("title");
+"""
+        path = Path("/tmp/list-zoom-ship-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/list-zoom-ship-full.js")
+        full.write_text(patch.LIST_ZOOM_SHIP_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        styled = patch.patch_css("/* image-row5 */\n")
+        self.assertIn("/* list-zoom-ship1 */", styled)
+        scripted = patch.patch_answer("function openNameEditor(){ return 1; }\n")
+        self.assertIn("/* list-zoom-ship1 */", scripted)
+        self.assertGreater(scripted.rindex("/* list-zoom-ship1 */"), scripted.rindex("/* menu-save-close2 */"))
+        help_html = patch.patch_help("<p>목록의 그림을 누르면 아래 미리보기에 보입니다.</p>")
+        self.assertIn("500×500", help_html)
+        self.assertIn("도매처 배송비", help_html)
 
 
 if __name__ == "__main__":

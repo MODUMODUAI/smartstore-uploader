@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.53"
+SCREEN_VERSION = "2026.10.28.54"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 53))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 54))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4126,6 +4126,13 @@ def patch_help(text: str) -> str:
             name_field_help + " 스마트스토어 상품명은 100자까지이고, 칸 오른쪽에 글자수가 보입니다.",
             1,
         )
+    list_image_help = "목록의 그림을 누르면 아래 미리보기에 보입니다."
+    if list_image_help in text and "500×500" not in text:
+        text = text.replace(
+            list_image_help,
+            list_image_help + " 미리보기나 목록 그림을 누르면 500×500으로 커지고, 크기는 5%씩 조절합니다. 마진율 옆 배송비는 도매처 배송비이고, 마진율은 그 배송비를 빼서 계산합니다.",
+            1,
+        )
     return text
 
 
@@ -5527,6 +5534,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + DIALOG_RESIZE_JS
     if "/* menu-save-close2 */" not in text:
         text = text.rstrip() + "\n" + MENU_SAVE_CLOSE2_JS
+    if "/* list-zoom-ship1 */" not in text:
+        text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5585,6 +5594,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + DIALOG_RESIZE_CSS
     if "/* image-row5 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_ROW5_CSS
+    if "/* list-zoom-ship1 */" not in text:
+        text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_CSS
     return text
 
 
@@ -9260,6 +9271,298 @@ IMAGE_ROW5_CSS = r"""
   flex: none;
   flex-basis: auto;
   min-width: 0;
+}
+"""
+LIST_ZOOM_SHIP_JS = r"""
+/* list-zoom-ship1 */
+/* zoom-ship-pure-start */
+function zoomByStep(value, min, max, step, delta) {
+  const base = Math.round((Number(value) - min) / step) * step + min;
+  const next = base + Number(delta || 0) * step;
+  return Math.min(max, Math.max(min, next));
+}
+function listImagePixels(percent) {
+  return Math.round(500 * zoomByStep(percent, 25, 200, 5, 0) / 100);
+}
+function wholesaleShipAmount(item) {
+  const seen = new Set();
+  const read = (node) => {
+    if (!node || typeof node !== "object" || seen.has(node)) return null;
+    seen.add(node);
+    const type = String(node.shipping_type || node.shipping_fee_type || "").trim().toUpperCase();
+    if (type === "F" || type === "FREE" || type === "무료") return 0;
+    if (type === "C" || type === "착불") return 0;
+    const keys = [
+      "wholesale_shipping_fee", "wholesale_shipping",
+      "supplier_shipping_fee", "supplier_shipping",
+      "origin_shipping_fee", "source_shipping_fee",
+      "shipping_fee", "parcel_fee", "courier_fee", "shipping",
+    ];
+    for (const key of keys) {
+      if (node[key] == null || node[key] === "") continue;
+      const amount = Number(String(node[key]).replace(/,/g, "").replace(/원/g, "").trim());
+      if (!Number.isFinite(amount) || amount < 0) continue;
+      return amount;
+    }
+    return null;
+  };
+  if (!item || typeof item !== "object") return null;
+  const direct = read(item);
+  if (direct != null) return direct;
+  for (const key of ["wholesale", "supplier", "source", "extra"]) {
+    const nested = read(item[key]);
+    if (nested != null) return nested;
+  }
+  return null;
+}
+function marginRateWithShip(price, cost, fee, ship) {
+  const sale = Number(price);
+  if (!(sale > 0)) return NaN;
+  return (sale - Number(fee || 0) - Number(cost || 0) - Number(ship || 0)) / sale * 100;
+}
+function marginAdjustedForShip(currentPercent, price, oldShip, ship) {
+  const current = Number(currentPercent);
+  const sale = Number(price);
+  if (!Number.isFinite(current) || !(sale > 0)) return current;
+  return current + (Number(oldShip) - Number(ship)) / sale * 100;
+}
+function shipFromMarginTitle(title) {
+  const match = String(title || "").match(/(?:배송비|택배비)\s+([\d,]+(?:\.\d+)?)/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) ? amount : null;
+}
+/* zoom-ship-pure-end */
+(function () {
+  function productTableEl() {
+    return document.getElementById("productGrid");
+  }
+  function shipForItem(item) {
+    const own = wholesaleShipAmount(item);
+    if (own != null) return own;
+    if (!item || !item.master_id || typeof products === "undefined" || !Array.isArray(products)) return null;
+    const master = products.find((row) => row && row.id === item.master_id);
+    return master ? wholesaleShipAmount(master) : null;
+  }
+  function ensureShipHeader() {
+    const table = productTableEl();
+    if (!table) return;
+    const marginTh = table.querySelector("thead th[data-margin-col='1']");
+    if (!marginTh || table.querySelector("thead th[data-ship-col='1']")) return;
+    const th = document.createElement("th");
+    th.dataset.shipCol = "1";
+    th.textContent = "배송비";
+    th.title = "도매처 배송비. 마진율은 판매가에서 공급가, 수수료, 이 배송비를 뺀 비율입니다.";
+    marginTh.after(th);
+    const marginCol = table.querySelector("col[data-col='margin']");
+    if (marginCol && !table.querySelector("col[data-col='wholesale-ship']")) {
+      const col = document.createElement("col");
+      col.dataset.col = "wholesale-ship";
+      col.style.width = "84px";
+      marginCol.after(col);
+    }
+  }
+  function paintShipRow(row, item) {
+    if (!row) return;
+    const marginCell = row.querySelector("td[data-margin='1']");
+    if (!marginCell) return;
+    let cell = marginCell.nextElementSibling;
+    if (!cell || cell.dataset.ship !== "1") {
+      cell = document.createElement("td");
+      cell.dataset.ship = "1";
+      marginCell.after(cell);
+    }
+    const ship = shipForItem(item);
+    if (ship == null) {
+      cell.textContent = "";
+      cell.title = "도매처 배송비가 없습니다.";
+      return;
+    }
+    const rounded = Math.round(ship);
+    cell.textContent = rounded.toLocaleString("ko-KR");
+    cell.title = "도매처 배송비 " + rounded.toLocaleString("ko-KR") + "원";
+    const oldShip = shipFromMarginTitle(marginCell.title);
+    const priceMatch = String(marginCell.title || "").match(/판매가\s+([\d,]+(?:\.\d+)?)/);
+    const price = priceMatch ? Number(priceMatch[1].replace(/,/g, "")) : NaN;
+    const current = Number(String(marginCell.textContent || "").replace("%", "").replace(/,/g, ""));
+    if (oldShip == null || !(price > 0) || !Number.isFinite(current)) return;
+    const next = marginAdjustedForShip(current, price, oldShip, ship);
+    if (!Number.isFinite(next)) return;
+    marginCell.textContent = next.toFixed(2) + "%";
+    marginCell.classList.toggle("margin-neg", next < 0);
+    marginCell.title = String(marginCell.title || "").replace(/(배송비|택배비)\s+[\d,]+(?:\.\d+)?/, "$1 " + String(rounded));
+  }
+  function itemForRow(row, index) {
+    const list = typeof visibleProducts === "function" ? visibleProducts() : [];
+    if (list[index]) return list[index];
+    if (typeof products === "undefined" || !row) return null;
+    return products.find((item) => item && String(item.id) === String(row.dataset.id)) || null;
+  }
+  function paintShipRows() {
+    ensureShipHeader();
+    const body = document.getElementById("productTable");
+    if (!body) return;
+    [...body.querySelectorAll("tr")].forEach((row, index) => paintShipRow(row, itemForRow(row, index)));
+  }
+  function listenShipEdits() {
+    const body = document.getElementById("productTable");
+    if (!body || body.dataset.shipListen === "1") return;
+    body.dataset.shipListen = "1";
+    const onEdit = (event) => {
+      const field = event.target && event.target.dataset ? event.target.dataset.field : "";
+      if (field !== "price" && field !== "cost") return;
+      setTimeout(paintShipRows, 0);
+    };
+    body.addEventListener("input", onEdit);
+    body.addEventListener("change", onEdit);
+  }
+  function hookShip() {
+    listenShipEdits();
+    if (typeof renderProductSheet === "function" && !renderProductSheet.shipCol) {
+      const inner = renderProductSheet;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        paintShipRows();
+        return result;
+      }
+      wrapped.shipCol = true;
+      wrapped.marginCol = inner.marginCol;
+      renderProductSheet = wrapped;
+    }
+    paintShipRows();
+  }
+  function retuneZoom(barId, wheelNode) {
+    const bar = document.getElementById(barId);
+    if (!bar || bar.dataset.step5 === "1") return;
+    const range = bar.querySelector("input[type='range']");
+    if (!range) return;
+    bar.dataset.step5 = "1";
+    range.step = "5";
+    const snap = (value, delta) => zoomByStep(value, Number(range.min), Number(range.max), 5, delta);
+    bar.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-zoom]");
+      if (!button || !bar.contains(button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      range.value = String(snap(range.value, Number(button.dataset.zoom)));
+      range.dispatchEvent(new Event("input", { bubbles: true }));
+    }, true);
+    if (wheelNode && wheelNode.dataset.zoomStep5 !== "1") {
+      wheelNode.dataset.zoomStep5 = "1";
+      wheelNode.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        range.value = String(snap(range.value, event.deltaY > 0 ? -1 : 1));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { capture: true, passive: false });
+    }
+  }
+  function retuneZoomBars() {
+    retuneZoom("imageZoomBar", document.getElementById("imageDrop"));
+    retuneZoom("detailZoomBar", document.getElementById("detailVisual"));
+  }
+  function ensureViewer() {
+    let dialog = document.getElementById("listImageZoom");
+    if (dialog) return dialog;
+    dialog = document.createElement("dialog");
+    dialog.id = "listImageZoom";
+    dialog.innerHTML = '<form method="dialog"><header><h2>목록이미지</h2><button type="button" id="listImageZoomClose">닫기</button></header><div class="work-zoom" id="listImageZoomBar"><span>크기</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b></div><div id="listImageZoomFrame"><img id="listImageZoomImg" alt=""></div><div class="dialog-actions"><button type="button" id="listImageZoomPage" hidden>상품 페이지</button></div></form>';
+    document.body.appendChild(dialog);
+    const range = dialog.querySelector("input[type='range']");
+    const label = dialog.querySelector("[data-zoom-label]");
+    const img = dialog.querySelector("#listImageZoomImg");
+    const paint = (value) => {
+      const zoom = zoomByStep(value, 25, 200, 5, 0);
+      const size = listImagePixels(zoom);
+      range.value = String(zoom);
+      label.textContent = zoom + "%";
+      img.style.width = size + "px";
+      img.style.height = size + "px";
+    };
+    range.addEventListener("input", () => paint(range.value));
+    dialog.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", () => paint(zoomByStep(range.value, 25, 200, 5, Number(button.dataset.zoom))));
+    });
+    dialog.querySelector("#listImageZoomClose").addEventListener("click", () => dialog.close());
+    dialog.querySelector("#listImageZoomPage").addEventListener("click", () => {
+      const url = dialog.dataset.pageUrl || "";
+      if (!url || typeof openSupplierProductUrl !== "function") return;
+      const supplier = dialog.dataset.supplierId || "";
+      openSupplierProductUrl(url, supplier, "상품 주소가 없습니다.");
+    });
+    dialog._paintZoom = paint;
+    return dialog;
+  }
+  function openListImage(src, alt, url, supplierId) {
+    if (!src) return;
+    const dialog = ensureViewer();
+    const img = dialog.querySelector("#listImageZoomImg");
+    img.src = src;
+    img.alt = alt || "목록이미지";
+    dialog.dataset.pageUrl = url || "";
+    dialog.dataset.supplierId = supplierId || "";
+    const page = dialog.querySelector("#listImageZoomPage");
+    if (page) page.hidden = !url;
+    dialog._paintZoom(100);
+    if (!dialog.open) dialog.showModal();
+  }
+  function supplierForListImage() {
+    if (typeof selectedCollectSupplierId !== "undefined" && selectedCollectSupplierId) return selectedCollectSupplierId;
+    if (typeof selectedWholesalerId === "function") return selectedWholesalerId() || "";
+    return "";
+  }
+  function listImageFromClick(target) {
+    const img = target && target.closest ? target.closest("img") : null;
+    if (!img || !img.getAttribute("src")) return null;
+    if (img.id === "listImageZoomImg") return null;
+    if (img.id === "previewImage") return img;
+    if (img.closest(".ownerclan-product")) return img;
+    if (img.closest("#productTable") || img.closest("#productGrid")) return img;
+    return null;
+  }
+  document.addEventListener("click", (event) => {
+    const img = listImageFromClick(event.target);
+    if (!img) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const link = img.closest("a");
+    const url = link ? link.getAttribute("href") || "" : "";
+    openListImage(img.src, img.alt, url, supplierForListImage());
+  }, true);
+  function hookZoom() {
+    retuneZoomBars();
+    hookShip();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hookZoom);
+  else hookZoom();
+  setTimeout(hookZoom, 0);
+  setTimeout(hookZoom, 400);
+})();
+"""
+LIST_ZOOM_SHIP_CSS = r"""
+/* list-zoom-ship1 */
+#previewImage { cursor: zoom-in; }
+.ownerclan-product img { cursor: zoom-in; }
+#productGrid img { cursor: zoom-in; }
+#listImageZoom {
+  width: auto;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+}
+#listImageZoom form { max-height: calc(100vh - 48px); overflow: auto; }
+#listImageZoomImg {
+  width: 500px;
+  height: 500px;
+  object-fit: contain;
+  display: block;
+  background: var(--soft);
+}
+#productGrid td[data-ship="1"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-right: 8px;
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

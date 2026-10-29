@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.58"
+SCREEN_VERSION = "2026.10.28.59"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 58))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 59))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4154,10 +4154,17 @@ def patch_help(text: str) -> str:
             1,
         )
     detail_fit_help = "상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다."
-    if detail_fit_help in text and "창 안에도 상세페이지추가글" not in text:
+    if detail_fit_help in text and "창 안에도 상세페이지추가글" not in text and "AI추가글" not in text:
         text = text.replace(
             detail_fit_help,
             detail_fit_help + " 창 안에도 상세페이지추가글이 있고, 창은 화면보다 30% 작습니다.",
+            1,
+        )
+    detail_intro_help = "창 안에도 상세페이지추가글이 있고, 창은 화면보다 30% 작습니다."
+    if detail_intro_help in text:
+        text = text.replace(
+            detail_intro_help,
+            "창 안의 AI추가글로 상세 위에 글을 넣고, 창은 화면보다 30% 작습니다.",
             1,
         )
     return text
@@ -5571,6 +5578,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + TAG_DICT_JS
     if "/* detail-fit1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_FIT_JS
+    if "/* detail-intro-style1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5637,6 +5646,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + TAG_DICT_CSS
     if "/* detail-fit1 */" not in text:
         text = text.rstrip() + "\n" + DETAIL_FIT_CSS
+    if "/* detail-intro-style1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_CSS
     return text
 
 
@@ -10718,6 +10729,55 @@ DETAIL_FIT_CSS = r"""
   height: 32px;
   padding: 0 12px;
   white-space: nowrap;
+}
+"""
+DETAIL_INTRO_STYLE_JS = r"""
+/* detail-intro-style1 */
+(function () {
+  function tidyDetailIntro() {
+    const menu = document.getElementById("detailIntroMenu");
+    if (menu) menu.remove();
+    const button = document.getElementById("detailIntroAi");
+    if (button && button.textContent !== "만드는 중...") button.textContent = "AI추가글";
+    const url = document.getElementById("detailImageUrl");
+    if (url) url.placeholder = "이미지 URL";
+  }
+  if (typeof fillDetailIntroInEditor === "function" && !fillDetailIntroInEditor.detailIntroStyleWrapped) {
+    const fillDetailIntroBeforeStyle = fillDetailIntroInEditor;
+    fillDetailIntroInEditor = async function () {
+      const button = document.getElementById("detailIntroAi");
+      if (button) button.textContent = "AI추가글";
+      try {
+        return await fillDetailIntroBeforeStyle.apply(this, arguments);
+      } finally {
+        if (button) button.textContent = "AI추가글";
+      }
+    };
+    fillDetailIntroInEditor.detailIntroStyleWrapped = true;
+  }
+  tidyDetailIntro();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tidyDetailIntro);
+  setTimeout(tidyDetailIntro, 0);
+  setTimeout(tidyDetailIntro, 50);
+})();
+"""
+DETAIL_INTRO_STYLE_CSS = r"""
+/* detail-intro-style1 */
+#detailIntroMenu { display: none !important; }
+#detailDialog #detailIntroAi {
+  background: #00c73c;
+  color: #fff;
+  border-color: #00a632;
+  font-weight: 700;
+  white-space: nowrap;
+}
+#detailDialog #detailIntroAi:disabled { opacity: 0.72; }
+#detailDialog .image-add-row { justify-content: flex-start; }
+#detailDialog #detailImageUrl {
+  flex: 0 1 240px;
+  width: 240px;
+  max-width: 46%;
+  min-width: 120px;
 }
 """
 NAVER_TAG2_SERVICE_PY = r'''

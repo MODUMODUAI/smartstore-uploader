@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.58")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.59")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -211,8 +211,25 @@ if (dialogZoomPercent("nope", 0) !== 100) throw new Error("bad");
         help_html = patch.patch_help(
             "<p>상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다.</p>"
         )
-        self.assertIn("창 안에도 상세페이지추가글", help_html)
+        self.assertIn("AI추가글", help_html)
         self.assertIn("30% 작습니다", help_html)
+        self.assertNotIn("창 안에도 상세페이지추가글", help_html)
+
+    def test_detail_intro_button_is_colored_and_url_is_short(self):
+        self.assertIn("AI추가글", patch.DETAIL_INTRO_STYLE_JS)
+        self.assertIn('menu.remove()', patch.DETAIL_INTRO_STYLE_JS)
+        self.assertIn("#00c73c", patch.DETAIL_INTRO_STYLE_CSS)
+        self.assertIn("width: 240px", patch.DETAIL_INTRO_STYLE_CSS)
+        self.assertIn("display: none", patch.DETAIL_INTRO_STYLE_CSS)
+        full = Path("/tmp/detail-intro-style-full.js")
+        full.write_text(patch.DETAIL_INTRO_STYLE_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openDetailEditor(){ return 1; }\n")
+        self.assertIn("/* detail-intro-style1 */", scripted)
+        self.assertGreater(scripted.rindex("/* detail-intro-style1 */"), scripted.rindex("/* detail-fit1 */"))
+        styled = patch.patch_css("/* detail-fit1 */\n")
+        self.assertIn("/* detail-intro-style1 */", styled)
+        self.assertGreater(styled.rindex("/* detail-intro-style1 */"), styled.rindex("/* detail-fit1 */"))
 
 
 if __name__ == "__main__":

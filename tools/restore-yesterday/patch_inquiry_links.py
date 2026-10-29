@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.54"
+SCREEN_VERSION = "2026.10.28.55"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 54))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 55))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4133,6 +4133,13 @@ def patch_help(text: str) -> str:
             list_image_help + " 미리보기나 목록 그림을 누르면 500×500으로 커지고, 크기는 5%씩 조절합니다. 마진율 옆 배송비는 도매처 배송비이고, 마진율은 그 배송비를 빼서 계산합니다.",
             1,
         )
+    tag_help = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
+    if tag_help in text and "등록금지키워드에도 올라갑니다" not in text:
+        text = text.replace(
+            tag_help,
+            tag_help + " 검색에 적용되는 태그확인을 누르면 적용되지 않는 태그는 지워집니다. 다른 상품의 브랜드도 태그에 넣지 않고, 그 브랜드는 등록금지키워드에도 올라갑니다.",
+            1,
+        )
     return text
 
 
@@ -5536,6 +5543,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + MENU_SAVE_CLOSE2_JS
     if "/* list-zoom-ship1 */" not in text:
         text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_JS
+    if "/* naver-tag2 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG2_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -6592,6 +6601,8 @@ def patch_murray_sources(root: Path) -> bool:
     if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE4_CATALOG_PY, GODO_IMAGE4_CATALOG_NEEDED, GODO_IMAGE4_MARKER):
         changed = True
     if _append_marked_source(service, NAVER_TAG_SERVICE_PY, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG2_SERVICE_PY, NAVER_TAG2_NEEDED, NAVER_TAG2_MARKER):
         changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
@@ -10053,6 +10064,417 @@ if not globals().get("_NAVER_TAG_NO_INSTALL"):
     _naver_tag_install()
 '''
 NAVER_TAG_SERVICE_NEEDED = ("def collect_product",)
+NAVER_TAG2_MARKER = "# naver-tag2"
+NAVER_TAG2_NEEDED = ("def _naver_search_product_tags", "def _tags_from_text", "def _naver_dictionary")
+NAVER_TAG2_JS = r"""
+/* naver-tag2 */
+/* tag2-pure-start */
+function naverTagNorm(tag) {
+  return String(tag || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+}
+function naverTagJunk(tag) {
+  const norm = naverTagNorm(tag);
+  if (norm.length < 2) return true;
+  if (norm.indexOf("페이지") >= 0) return true;
+  if (norm === "검색태그" || norm === "더보기" || norm === "전체상품" || norm === "광고" || norm === "스폰서") return true;
+  if (/^\d+개$/.test(norm)) return true;
+  return false;
+}
+function naverTagBrandHit(tag, brands) {
+  const norm = naverTagNorm(tag);
+  const list = Array.isArray(brands) ? brands : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const token = naverTagNorm(list[index]);
+    if (token.length < 2) continue;
+    if (norm === token || norm.indexOf(token) === 0) return token;
+  }
+  return "";
+}
+function naverTagForbidHit(tag, words) {
+  const text = String(tag || "");
+  const list = Array.isArray(words) ? words : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const word = String(list[index] || "").trim();
+    if (word.length >= 2 && text.indexOf(word) >= 0) return word;
+  }
+  return "";
+}
+function naverTagKeep(tag, brands, words, categories) {
+  if (naverTagJunk(tag)) return false;
+  if (naverTagBrandHit(tag, brands)) return false;
+  if (naverTagForbidHit(tag, words)) return false;
+  const norm = naverTagNorm(tag);
+  const cats = Array.isArray(categories) ? categories : [];
+  for (let index = 0; index < cats.length; index += 1) {
+    const token = naverTagNorm(cats[index]);
+    if (token.length >= 2 && (norm === token || norm.indexOf(token) === 0)) return false;
+  }
+  return norm.length >= 2;
+}
+function naverTagsToDrop(tags, brands, words, blockTerms) {
+  const kept = [];
+  const dropped = [];
+  const brandAdds = [];
+  const list = Array.isArray(tags) ? tags : [];
+  list.forEach((tag) => {
+    const brand = naverTagBrandHit(tag, brands);
+    const forbid = naverTagForbidHit(tag, words);
+    const term = (blockTerms || []).find((item) => item && item.token && (item.token === tag || String(tag).indexOf(item.token) >= 0));
+    if (naverTagJunk(tag) || brand || forbid || term) {
+      dropped.push(tag);
+      if (brand) brandAdds.push(brand);
+      if (term && term.reason === "브랜드명") brandAdds.push(term.token);
+      return;
+    }
+    kept.push(tag);
+  });
+  return { kept: kept, dropped: dropped, brands: brandAdds };
+}
+/* tag2-pure-end */
+(function () {
+  const naverBrandCache = [];
+  function rememberNaverBrands(brands) {
+    (brands || []).forEach((brand) => {
+      const token = naverTagNorm(brand);
+      if (token.length >= 2 && naverBrandCache.indexOf(token) < 0) naverBrandCache.push(token);
+    });
+  }
+  function categoryTokens() {
+    const found = [];
+    const push = (text) => {
+      String(text || "").split(/[\s>/]+/).forEach((part) => {
+        const token = naverTagNorm(part);
+        if (token.length >= 2 && found.indexOf(token) < 0) found.push(token);
+      });
+    };
+    if (typeof naverTagQuery === "function") push(naverTagQuery());
+    if (typeof current !== "undefined" && current) {
+      push(current.category_name || "");
+      push(current.source_category || "");
+    }
+    return found;
+  }
+  function dropUnusableDraftTags() {
+    if (typeof draftTags === "undefined" || !Array.isArray(draftTags)) return { kept: [], dropped: [], brands: [] };
+    const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+    const terms = typeof tagBlockTerms === "function" ? tagBlockTerms() : [];
+    const result = naverTagsToDrop(draftTags, naverBrandCache.concat(words), words, terms);
+    draftTags = result.kept;
+    return result;
+  }
+  let brandSaveTimer = 0;
+  let forbidLoaded = false;
+  function queueBrandKeywords(words) {
+    rememberNaverBrands(words);
+    if (typeof api !== "function" || typeof uniqueNameKeywords !== "function") return;
+    clearTimeout(brandSaveTimer);
+    brandSaveTimer = setTimeout(async () => {
+      try {
+        let currentWords = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        if (!forbidLoaded) {
+          const data = await api("/api/name-keywords", { method: "GET", quiet: true });
+          if (typeof rememberForbidWords === "function") rememberForbidWords(data);
+          currentWords = typeof nameForbidWords === "function" ? nameForbidWords() : currentWords;
+          forbidLoaded = true;
+        }
+        const merged = uniqueNameKeywords(currentWords.concat(naverBrandCache));
+        if (merged.join("\n") === uniqueNameKeywords(currentWords).join("\n")) return;
+        await api("/api/name-keywords", {
+          method: "PUT",
+          body: JSON.stringify({ keywords: merged }),
+          quiet: true,
+        });
+      } catch (error) {}
+    }, 200);
+  }
+  if (typeof api === "function" && !api.naverTag2Wrapped) {
+    const apiBeforeTags = api;
+    api = async function (path, options) {
+      const data = await apiBeforeTags.apply(this, arguments);
+      const url = String(path || "");
+      if (url.indexOf("/api/tags/naver-search") >= 0 && data && typeof data === "object") {
+        const brands = Array.isArray(data.brands) ? data.brands : [];
+        rememberNaverBrands(brands);
+        const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        if (Array.isArray(data.tags)) {
+          data.tags = data.tags.filter((tag) => naverTagKeep(tag, naverBrandCache, words, categoryTokens()));
+        }
+        queueBrandKeywords(brands);
+        if (typeof draftTags !== "undefined" && Array.isArray(draftTags)) {
+          const removed = dropUnusableDraftTags();
+          if (removed.dropped.length && typeof renderTagChips === "function") renderTagChips();
+        }
+      }
+      if (url.indexOf("/api/tags/naver-dictionary") >= 0 && data && typeof data === "object" && Array.isArray(data.tags)) {
+        const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        data.tags = data.tags.filter((item) => {
+          const text = typeof item === "string" ? item : (item && (item.text || item.tagName || item.name)) || "";
+          return naverTagKeep(text, naverBrandCache, words, categoryTokens());
+        });
+      }
+      return data;
+    };
+    api.naverTag2Wrapped = true;
+    api.menuSaveClose2Wrapped = apiBeforeTags.menuSaveClose2Wrapped;
+    api.nameForbidWrapped = apiBeforeTags.nameForbidWrapped;
+  }
+  if (typeof addDraftTag === "function" && !addDraftTag.naverTag2) {
+    const addDraftTagBefore = addDraftTag;
+    addDraftTag = function (raw) {
+      const parts = String(raw || "").split(/[,#\s]+/).map((part) => part.trim()).filter(Boolean);
+      const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+      const blocked = parts.filter((part) => !naverTagKeep(part, naverBrandCache, words, categoryTokens()));
+      const allowed = parts.filter((part) => naverTagKeep(part, naverBrandCache, words, categoryTokens()));
+      if (blocked.length && typeof toast === "function") toast("브랜드나 검색에 적용되지 않는 태그는 넣지 않습니다.", true);
+      if (!allowed.length) {
+        const input = document.getElementById("tagInput");
+        if (input && blocked.length) input.value = "";
+        return;
+      }
+      return addDraftTagBefore.call(this, allowed.join(" "));
+    };
+    addDraftTag.naverTag2 = true;
+  }
+  if (typeof showSearchTagCheck === "function" && !showSearchTagCheck.naverTag2) {
+    const showSearchTagCheckBefore = showSearchTagCheck;
+    showSearchTagCheck = function () {
+      const removed = dropUnusableDraftTags();
+      if (removed.brands.length) queueBrandKeywords(removed.brands);
+      if (typeof renderTagChips === "function") renderTagChips();
+      const result = showSearchTagCheckBefore.apply(this, arguments);
+      if (removed.dropped.length && typeof toast === "function") {
+        toast("검색에 적용되지 않는 태그 " + removed.dropped.length + "개를 지웠습니다.");
+      }
+      return result;
+    };
+    showSearchTagCheck.naverTag2 = true;
+  }
+})();
+"""
+NAVER_TAG2_SERVICE_PY = r'''
+# naver-tag2
+# Search tags drop page chrome and brand names. Brand names found on shopping
+# pages 1 to 3 are returned so the screen can store them with the forbidden words.
+import threading as _naver_tag2_threading
+
+_naver_tag2_local = _naver_tag2_threading.local()
+_naver_known_brands = set()
+_naver_tag2_found = {}
+_BRAND_FIELD_KEYS = ("brand", "brandName", "brandNm", "maker", "makerName", "manufacturer")
+
+
+def _naver_norm_tag(value):
+    text = _naver_tag_re.sub(r"[^0-9A-Za-z가-힣]", "", str(value or ""))
+    return text[:10]
+
+
+def _naver_tag2_brand_text(value):
+    if isinstance(value, dict):
+        return value.get("name") or value.get("text") or value.get("brandName") or ""
+    return value
+
+
+def _naver_junk_tag(tag):
+    if not tag or len(tag) < 2:
+        return True
+    if "페이지" in tag:
+        return True
+    if tag in {"검색태그", "더보기", "전체상품", "광고", "스폰서"}:
+        return True
+    if tag in _NAVER_AUTO_TAGS:
+        return True
+    if _naver_tag_re.fullmatch(r"\d+개", tag):
+        return True
+    return False
+
+
+def _naver_tag2_walk(node, seen):
+    brands = _naver_tag2_local.brands
+    counts = _naver_tag2_local.counts
+    if isinstance(node, dict):
+        marker = id(node)
+        if marker in seen:
+            return
+        seen.add(marker)
+        productish = any(key in node for key in ("manuTag", "sellerTags", "productTitle", "productName", "mallProductId"))
+        if productish:
+            for key in _BRAND_FIELD_KEYS:
+                token = _naver_norm_tag(_naver_tag2_brand_text(node.get(key)))
+                if len(token) >= 2:
+                    brands.add(token)
+            manu = []
+            for key in ("manuTag", "manualTag", "sellerTag", "searchTag"):
+                if node.get(key):
+                    manu.extend(_naver_split_tags(node.get(key)))
+            for key in ("sellerTags", "tags", "tagList", "manuTags"):
+                value = node.get(key)
+                if isinstance(value, str):
+                    manu.extend(_naver_split_tags(value))
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            manu.append(item)
+                        elif isinstance(item, dict):
+                            manu.append(str(item.get("text") or item.get("tag") or item.get("name") or ""))
+            norms = []
+            for tag in manu:
+                norm = _naver_norm_tag(tag)
+                if norm and norm not in norms:
+                    norms.append(norm)
+            for norm in norms:
+                counts[norm] = counts.get(norm, 0) + 1
+            name = str(node.get("productName") or node.get("productTitle") or "")
+            pieces = name.split()
+            first = _naver_norm_tag(pieces[0] if pieces else "")
+            if len(first) >= 2 and first in norms:
+                brands.add(first)
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _naver_tag2_walk(value, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _naver_tag2_walk(item, seen)
+
+
+def _naver_tag2_note(text):
+    if getattr(_naver_tag2_local, "brands", None) is None or getattr(_naver_tag2_local, "counts", None) is None:
+        return
+    raw = str(text or "").lstrip()
+    if not raw.startswith("{") and not raw.startswith("["):
+        return
+    try:
+        data = _naver_tag_json.loads(raw)
+    except Exception:
+        return
+    _naver_tag2_walk(data, set())
+
+
+def _naver_filter_search_tags(tags, query, brands, counts):
+    blocked = set()
+    for brand in brands or []:
+        token = _naver_norm_tag(brand)
+        if len(token) >= 2:
+            blocked.add(token)
+    for part in _naver_tag_re.split(r"[\s>/]+", str(query or "")):
+        token = _naver_norm_tag(part)
+        if len(token) >= 2:
+            blocked.add(token)
+    ranked = []
+    seen = set()
+    for tag in tags or []:
+        norm = _naver_norm_tag(tag)
+        if not norm or norm in seen or _naver_junk_tag(norm):
+            continue
+        if any(norm == brand or norm.startswith(brand) for brand in blocked):
+            continue
+        seen.add(norm)
+        ranked.append(norm)
+    ranked.sort(key=lambda item: -int((counts or {}).get(item, 0)))
+    return ranked[:40]
+
+
+_tags_from_text_before_tag2 = _tags_from_text
+
+
+def _tags_from_text(text):
+    found = _tags_from_text_before_tag2(text)
+    _naver_tag2_note(text)
+    return found
+
+
+_naver_search_product_tags_before_tag2 = _naver_search_product_tags
+
+
+def _naver_search_product_tags(query):
+    _naver_tag2_local.brands = set()
+    _naver_tag2_local.counts = {}
+    tags = _naver_search_product_tags_before_tag2(query)
+    brands = set(_naver_tag2_local.brands)
+    counts = dict(_naver_tag2_local.counts)
+    _naver_known_brands.update(brands)
+    filtered = _naver_filter_search_tags(tags, query, brands, counts)
+    _naver_tag2_found[str(query)] = {"brands": sorted(brands), "tags": filtered}
+    return filtered
+
+
+_naver_dictionary_before_tag2 = _naver_dictionary
+
+
+def _naver_dictionary(keyword):
+    rows = _naver_dictionary_before_tag2(keyword)
+    brands = set(_naver_known_brands)
+    kept = []
+    for row in rows or []:
+        text = row.get("text") if isinstance(row, dict) else str(row or "")
+        if _naver_filter_search_tags([text], keyword, brands, {}):
+            kept.append(row)
+    return kept
+
+
+async def _naver_search_route2(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    found = _naver_tag2_found.get(query) or {}
+    return _naver_json({"query": query, "pages": [1, 2, 3], "tags": tags, "brands": found.get("brands") or []})
+
+
+async def _naver_dictionary_route2(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_dictionary(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags, "brands": sorted(_naver_known_brands)})
+
+
+def _naver_tag2_install():
+    if globals().get("_naver_tag2_installed"):
+        return
+    globals()["_naver_tag2_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-dictionary", _naver_dictionary_route2, methods=["GET"]))
+        routes.insert(0, Route("/api/tags/naver-search", _naver_search_route2, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag2", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG2_NO_INSTALL"):
+    _naver_tag2_install()
+'''
 
 
 def frozen_fix_plan() -> dict:
@@ -10084,6 +10506,7 @@ def frozen_fix_plan() -> dict:
             (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
             (GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED, GODO_IMAGE2_SERVICE_PY),
             (NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_SERVICE_PY),
+            (NAVER_TAG2_MARKER, NAVER_TAG2_NEEDED, NAVER_TAG2_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),

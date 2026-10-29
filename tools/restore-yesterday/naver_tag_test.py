@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.69")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.70")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -421,6 +421,8 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("배송비는 칸에 직접", help_html)
         self.assertIn("태그 저장은 네이버 초록색", help_html)
         self.assertIn("옵션 저장은 목록의 모든 줄을 저장합니다", help_html)
+        self.assertIn("이미지 삭제는 목록 오른쪽에 보입니다", help_html)
+        self.assertIn("배송권역과 제주추가", help_html)
 
     def test_option_combo_read_uses_every_row(self):
         source = """
@@ -451,6 +453,23 @@ function selectedComboRows() {
         self.assertIn("/* option-combo-read1 */", patch.patch_answer(source))
         path = Path("/tmp/option-combo-read-test.js")
         path.write_text(patched, encoding="utf-8")
+        subprocess.run(["node", "--check", str(path)], check=True)
+
+    def test_image_delete_stays_visible_and_delivery_area_unlocks(self):
+        self.assertIn("/* first-screen1 */", patch.FIRST_SCREEN_JS)
+        self.assertIn("/* first-screen1 */", patch.FIRST_SCREEN_CSS)
+        self.assertNotIn("100vw", patch.FIRST_SCREEN_CSS)
+        self.assertIn("image-row-delete", patch.FIRST_SCREEN_CSS)
+        self.assertIn("area2_extra_fee", patch.FIRST_SCREEN_JS)
+        self.assertIn("deliveryAreaType", patch.FIRST_SCREEN_JS)
+        styled = patch.patch_css("/* naver-option-ship1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* first-screen1 */", styled)
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\nfunction syncDeliveryFields(){ return 1; }\n")
+        self.assertIn("/* first-screen1 */", scripted)
+        self.assertGreater(scripted.rindex("/* first-screen1 */"), scripted.rindex("/* naver-option-ship1 */"))
+        path = Path("/tmp/first-screen.js")
+        path.write_text(patch.FIRST_SCREEN_JS, encoding="utf-8")
         subprocess.run(["node", "--check", str(path)], check=True)
 
 

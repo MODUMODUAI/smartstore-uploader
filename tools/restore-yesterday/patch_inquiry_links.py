@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.69"
+SCREEN_VERSION = "2026.10.28.70"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 69))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 70))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4181,6 +4181,13 @@ def patch_help(text: str) -> str:
             option_read_help + " 옵션 저장은 목록의 모든 줄을 저장합니다.",
             1,
         )
+    first_screen_help = "옵션 저장은 목록의 모든 줄을 저장합니다."
+    if first_screen_help in text and "배송권역과 제주추가" not in text:
+        text = text.replace(
+            first_screen_help,
+            first_screen_help + " 이미지 삭제는 목록 오른쪽에 보입니다. 배송권역과 제주추가, 도서산간추가는 바꿀 수 있습니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5678,6 +5685,8 @@ def patch_answer(text: str) -> str:
     if "/* naver-option-ship1 */" not in text:
         text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_JS
     text = patch_option_combo_read(text)
+    if "/* first-screen1 */" not in text:
+        text = text.rstrip() + "\n" + FIRST_SCREEN_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5768,6 +5777,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_CSS
     if "/* naver-option-ship1 */" not in text:
         text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_CSS
+    if "/* first-screen1 */" not in text:
+        text = text.rstrip() + "\n" + FIRST_SCREEN_CSS
     return text
 
 
@@ -13377,6 +13388,92 @@ NAVER_OPTION_SHIP_CSS = r"""
   text-align: right;
   box-sizing: border-box;
 }
+"""
+FIRST_SCREEN_JS = r"""
+/* first-screen1 */
+(function () {
+  function showImageDeletes() {
+    const table = document.getElementById("imageUrlTable");
+    if (!table) return;
+    const head = table.parentElement && table.parentElement.querySelector("thead tr");
+    if (head && head.lastElementChild) head.lastElementChild.classList.add("image-row-delete");
+    table.querySelectorAll(".remove-image").forEach((button) => {
+      const cell = button.closest("td");
+      if (cell) cell.classList.add("image-row-delete");
+    });
+  }
+  function unlockDeliveryArea() {
+    const areaType = document.getElementById("deliveryAreaType");
+    const area2 = document.querySelector('#deliveryForm [name="area2_extra_fee"]');
+    const area3 = document.querySelector('#deliveryForm [name="area3_extra_fee"]');
+    const hint = document.getElementById("deliveryAreaFeeHint");
+    if (areaType) areaType.disabled = false;
+    if (area2) area2.disabled = false;
+    if (area3) area3.disabled = false;
+    if (hint) hint.hidden = true;
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.firstScreen) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      showImageDeletes();
+      return result;
+    };
+    wrapped.firstScreen = true;
+    if (renderBefore.naverOptionShip) wrapped.naverOptionShip = true;
+    if (renderBefore.imageRoleZoom) wrapped.imageRoleZoom = true;
+    if (renderBefore.zoomLive) wrapped.zoomLive = true;
+    renderImageEditor = wrapped;
+  }
+  if (typeof syncDeliveryFields === "function" && !syncDeliveryFields.firstScreen) {
+    const syncBefore = syncDeliveryFields;
+    const wrapped = function () {
+      const result = syncBefore.apply(this, arguments);
+      unlockDeliveryArea();
+      return result;
+    };
+    wrapped.firstScreen = true;
+    syncDeliveryFields = wrapped;
+  }
+  const table = document.getElementById("imageUrlTable");
+  if (table && table.dataset.firstScreen !== "1") {
+    table.dataset.firstScreen = "1";
+    new MutationObserver(() => showImageDeletes()).observe(table, { childList: true });
+  }
+  showImageDeletes();
+  unlockDeliveryArea();
+})();
+"""
+FIRST_SCREEN_CSS = r"""
+/* first-screen1 */
+#imageDialog .option-list-wrap { overflow-x: hidden; overflow-y: auto; }
+#imageDialog #imageUrlTable { table-layout: fixed; width: 100%; }
+#imageDialog #imageUrlTable th:nth-child(1),
+#imageDialog #imageUrlTable td:nth-child(1) { width: 56px; white-space: nowrap; }
+#imageDialog #imageUrlTable td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#imageDialog #imageUrlTable .image-row-delete {
+  width: 72px;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--surface, #222);
+  text-align: center;
+}
+#imageDialog #imageUrlTable .remove-image,
+#imageDialog .image-slot-delete {
+  display: inline-block;
+  min-width: 48px;
+  background: #fff !important;
+  color: #111 !important;
+  border: 1px solid #111 !important;
+  font-weight: 700;
+}
+#imageDialog .image-slot img { position: relative; z-index: 0; }
+#imageDialog .image-slot-delete { z-index: 6; box-shadow: 0 0 0 2px #111; }
 """
 
 

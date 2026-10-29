@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.68")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.69")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -420,6 +420,38 @@ if (shipAmountFromText("-1") !== null) throw new Error("neg");
         self.assertIn("이미지 삭제는 첫 화면", help_html)
         self.assertIn("배송비는 칸에 직접", help_html)
         self.assertIn("태그 저장은 네이버 초록색", help_html)
+        self.assertIn("옵션 저장은 목록의 모든 줄을 저장합니다", help_html)
+
+    def test_option_combo_read_uses_every_row(self):
+        source = """
+function $(selector) { return document.querySelector(selector); }
+function readOptionCombos() {
+  return [...$("#optionComboTable tr")].map((row) => {
+    const sign = row.querySelector("[data-combo-sign]").value;
+    const amount = Math.abs(Number(row.querySelector("[data-combo-price]").value || 0));
+    return {
+      group: row.dataset.group || "",
+      values: JSON.parse(row.dataset.values || "[]"),
+      price: sign === "-" ? -amount : amount,
+      stock: Number(row.querySelector("[data-combo-stock]").value || 0),
+      status: row.querySelector("[data-combo-status]").value,
+      code: row.querySelector("[data-combo-code]").value.trim(),
+      usable: row.querySelector("[data-combo-usable]").value !== "false",
+    };
+  }).filter((item) => item.values.length);
+}
+function selectedComboRows() {
+  return [...$("#optionComboTable tr")].filter((row) => row.querySelector("[data-combo-check]")?.checked);
+}
+"""
+        patched = patch.patch_option_combo_read(source)
+        self.assertNotIn('$("#optionComboTable tr")', patched)
+        self.assertEqual(patched.count("/* option-combo-read1 */"), 2)
+        self.assertIn('document.querySelectorAll("#optionComboTable tr")', patched)
+        self.assertIn("/* option-combo-read1 */", patch.patch_answer(source))
+        path = Path("/tmp/option-combo-read-test.js")
+        path.write_text(patched, encoding="utf-8")
+        subprocess.run(["node", "--check", str(path)], check=True)
 
 
 if __name__ == "__main__":

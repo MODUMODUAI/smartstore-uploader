@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.68"
+SCREEN_VERSION = "2026.10.28.69"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 68))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 69))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4174,6 +4174,13 @@ def patch_help(text: str) -> str:
             image_delete_help + " 이미지 삭제는 첫 화면 그림 위에 있습니다. 첫 사진이 대표이미지입니다. 배송비는 칸에 직접 넣을 수 있습니다. 옵션은 목록을 만들어 저장하고, 태그 저장은 네이버 초록색입니다.",
             1,
         )
+    option_read_help = "태그 저장은 네이버 초록색입니다."
+    if option_read_help in text and "목록의 모든 줄" not in text:
+        text = text.replace(
+            option_read_help,
+            option_read_help + " 옵션 저장은 목록의 모든 줄을 저장합니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5556,6 +5563,14 @@ def patch_seller_login_port(text: str) -> str:
     return text
 
 
+def patch_option_combo_read(text: str) -> str:
+    old = 'return [...$("#optionComboTable tr")]'
+    new = 'return [...document.querySelectorAll("#optionComboTable tr")] /* option-combo-read1 */'
+    if old in text:
+        text = text.replace(old, new)
+    return text
+
+
 def patch_answer(text: str) -> str:
     if "/* inquiry-simple2 */" not in text:
         replaced = False
@@ -5662,6 +5677,7 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_JS
     if "/* naver-option-ship1 */" not in text:
         text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_JS
+    text = patch_option_combo_read(text)
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 

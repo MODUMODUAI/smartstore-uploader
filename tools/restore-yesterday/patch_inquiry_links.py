@@ -131,7 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.42"
+SCREEN_VERSION = "2026.10.28.75"
+# Longer tokens first is unnecessary: each token is a full version, and a
+# shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 75))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4108,6 +4111,157 @@ def patch_help(text: str) -> str:
         "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 목록을 본 뒤, 모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다.",
         stock_help,
     )
+    old_forbid = "등록금지키워드: 상품명에서 빼야 하는 말을 등록합니다."
+    new_forbid = "등록금지키워드: 상품명과 상품태그에서 빼야 하는 말을 등록합니다."
+    if old_forbid in text and new_forbid not in text:
+        text = text.replace(old_forbid, new_forbid, 1)
+    name_help = "경쟁강도 낮음 단어는 뺍니다. Claude 키가 있으면 상품명은 Claude로 만들고, 없으면 설정에서 고른 AI를 씁니다."
+    name_help_new = name_help + " 누르면 옆에 그 상품의 상세페이지가 함께 열립니다."
+    if name_help in text and "옆에 그 상품의 상세페이지" not in text:
+        text = text.replace(name_help, name_help_new, 1)
+    name_field_help = "상품명: 공급처 상품명 그대로입니다. 상품명바꾸기와 상품명AI로 바꾼 뒤에는 그 이름이 저장됩니다."
+    if name_field_help in text and "100자까지" not in text:
+        text = text.replace(
+            name_field_help,
+            name_field_help + " 스마트스토어 상품명은 100자까지이고, 칸 오른쪽에 글자수가 보입니다.",
+            1,
+        )
+    list_image_help = "목록의 그림을 누르면 아래 미리보기에 보입니다."
+    if list_image_help in text and "500×500" not in text:
+        text = text.replace(
+            list_image_help,
+            list_image_help + " 미리보기나 목록 그림을 누르면 500×500으로 커지고, 크기는 5%씩 조절합니다. 마진율 옆 배송비는 도매처 배송비이고, 마진율은 그 배송비를 빼서 계산합니다.",
+            1,
+        )
+    tag_help = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
+    if tag_help in text and "등록금지키워드에도 올라갑니다" not in text:
+        text = text.replace(
+            tag_help,
+            tag_help + " 검색에 적용되는 태그확인을 누르면 적용되지 않는 태그는 지워집니다. 다른 상품의 브랜드도 태그에 넣지 않고, 그 브랜드는 등록금지키워드에도 올라갑니다.",
+            1,
+        )
+    name_zoom_help = "누르면 옆에 그 상품의 상세페이지가 함께 열립니다."
+    if name_zoom_help in text and "상세페이지 크기는 5%씩" not in text:
+        text = text.replace(name_zoom_help, name_zoom_help + " 상세페이지 크기는 5%씩 조절합니다.", 1)
+    attr_help = "속성바꾸기, 속성AI: 카테고리에 맞는 속성을 넣습니다."
+    if attr_help in text and "속성 칸 크기는 5%씩" not in text and "크기 조절이 없습니다" not in text:
+        text = text.replace(attr_help, attr_help + " 속성 칸 크기는 5%씩 조절합니다.", 1)
+    if "속성 칸 크기는 5%씩 조절합니다." in text:
+        text = text.replace("속성 칸 크기는 5%씩 조절합니다.", "크기 조절은 없습니다.", 1)
+    image_zoom_help = "이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다."
+    if image_zoom_help in text and "오른쪽에서 5%씩" not in text and "그림 칸도 같이" not in text:
+        text = text.replace(image_zoom_help, image_zoom_help + " 크기 조절은 오른쪽에서 5%씩 움직입니다.", 1)
+    image_live_help = "크기 조절은 오른쪽에서 5%씩 움직입니다."
+    if image_live_help in text and "그림 칸도 같이" not in text:
+        text = text.replace(image_live_help, "크기 조절은 오른쪽에서 5%씩 움직이고, 그림 칸도 같이 커지거나 작아집니다.", 1)
+    image_narrow_help = "그림 칸도 같이 커지거나 작아집니다."
+    if image_narrow_help in text and "창 가로는 화면보다 10% 좁습니다" not in text:
+        text = text.replace(image_narrow_help, image_narrow_help + " 창 가로는 화면보다 10% 좁습니다.", 1)
+    prompt_help = "창 가로는 화면보다 10% 좁습니다."
+    if prompt_help in text and "프롬프트 칸은 30% 짧습니다" not in text:
+        text = text.replace(prompt_help, prompt_help + " AI 실행 앞의 프롬프트 칸은 30% 짧습니다. 저장 메뉴는 조금 왼쪽에 있습니다.", 1)
+    image_role_help = "저장 메뉴는 조금 왼쪽에 있습니다."
+    if image_role_help in text and "대표이미지 조절은 이미지 칸 위" not in text:
+        text = text.replace(
+            image_role_help,
+            image_role_help + " 오른쪽 닫기는 없고, 저장은 네이버 초록색입니다. 대표이미지 조절은 이미지 칸 위에 있고 5%씩 움직입니다. 오른쪽 조절은 상세페이지 크기이고 5%씩 움직입니다.",
+            1,
+        )
+    image_delete_help = "오른쪽 조절은 상세페이지 크기이고 5%씩 움직입니다."
+    if image_delete_help in text and "첫 사진이 대표이미지" not in text:
+        text = text.replace(
+            image_delete_help,
+            image_delete_help + " 이미지 삭제는 첫 화면 그림 위에 있습니다. 첫 사진이 대표이미지입니다. 배송비는 칸에 직접 넣을 수 있습니다. 옵션은 목록을 만들어 저장하고, 태그 저장은 네이버 초록색입니다.",
+            1,
+        )
+    option_read_help = "태그 저장은 네이버 초록색입니다."
+    if option_read_help in text and "목록의 모든 줄" not in text:
+        text = text.replace(
+            option_read_help,
+            option_read_help + " 옵션 저장은 목록의 모든 줄을 저장합니다.",
+            1,
+        )
+    first_screen_help = "옵션 저장은 목록의 모든 줄을 저장합니다."
+    if first_screen_help in text and "배송권역과 제주추가" not in text:
+        text = text.replace(
+            first_screen_help,
+            first_screen_help + " 이미지 삭제는 목록 오른쪽에 보입니다. 배송권역과 제주추가, 도서산간추가는 바꿀 수 있습니다.",
+            1,
+        )
+    detail_market_help = "배송권역과 제주추가, 도서산간추가는 바꿀 수 있습니다."
+    if detail_market_help in text and "주소록은 고른 마켓" not in text:
+        text = text.replace(
+            detail_market_help,
+            detail_market_help + " 상세페이지 크기는 5%씩 커집니다. 상세페이지 닫기는 하나입니다. 배송지 주소록은 고른 마켓에서 불러옵니다.",
+            1,
+        )
+    store_number_help = "배송지 주소록은 고른 마켓에서 불러옵니다."
+    if store_number_help in text and "스마트스토어번호는 판매자코드" not in text:
+        text = text.replace(
+            store_number_help,
+            store_number_help + " 스마트스토어번호는 판매자코드 앞에 있습니다. 이미 등록한 상품은 상품정보 업데이트할까요? 라고 묻고 그 번호로 업데이트합니다.",
+            1,
+        )
+    store_choice_help = "그 번호로 업데이트합니다."
+    if store_choice_help in text and "기본은 정보업데이트" not in text:
+        text = text.replace(
+            store_choice_help,
+            store_choice_help + " 이미 등록한 상품은 정보업데이트 또는 새상품으로 등록을 고릅니다. 기본은 정보업데이트입니다.",
+            1,
+        )
+    image_pick_help = "기본은 정보업데이트입니다."
+    if image_pick_help in text and "고른 칸이 초록으로" not in text:
+        text = text.replace(
+            image_pick_help,
+            image_pick_help + " 이미지바꾸기에서 그림이나 목록을 누르면 고른 칸이 초록으로 표시됩니다.",
+            1,
+        )
+    collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
+    if collected_help in text and "AI속성채우기" not in text:
+        text = text.replace(
+            collected_help,
+            "AI속성채우기는 상세페이지의 글과 이미지를 읽습니다. 닫기는 저장하지 않고 창을 닫습니다. 속성 내용 글씨는 20% 큽니다.",
+            1,
+        )
+    name_pane_help = "상세페이지 크기는 5%씩 조절합니다."
+    if name_pane_help in text and "그림을 키우거나 줄입니다" not in text:
+        text = text.replace(
+            name_pane_help,
+            name_pane_help + " 저장은 네이버 초록색입니다. 검색어는 왼쪽 아래에 있고, 상세페이지는 더 넓습니다. 글씨는 20% 큽니다. 크기 조절은 그림을 키우거나 줄입니다.",
+            1,
+        )
+    tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
+    if tag_page_anchor in text and "1·2·3페이지" not in text:
+        text = text.replace(
+            tag_page_anchor,
+            tag_page_anchor + " 검색 태그는 1·2·3페이지를 각각 가져오고, 상품 브랜드와 검색에서 본 브랜드는 뺍니다. 오른쪽에는 그 상품 이름의 네이버 검색어도 같이 나옵니다.",
+            1,
+        )
+    tag_dict_help = "직접 넣거나 AI 채우기로 만듭니다."
+    if tag_dict_help in text and "태그사전 후보" not in text:
+        text = text.replace(
+            tag_dict_help,
+            tag_dict_help + " 태그를 치면 네이버 태그사전 후보가 아래에 나오고, 고르면 들어갑니다.",
+            1,
+        )
+    detail_fit_help = "상세페이지 바꾸기: 고른 상품의 상세페이지 글과 이미지를 고칩니다. 이미지 URL이나 파일로 그림을 넣을 수 있습니다."
+    if detail_fit_help in text and "창 안에도 상세페이지추가글" not in text and "AI추가글" not in text:
+        text = text.replace(
+            detail_fit_help,
+            detail_fit_help + " 창 안에도 상세페이지추가글이 있고, 창은 화면보다 30% 작습니다.",
+            1,
+        )
+    detail_intro_help = "창 안에도 상세페이지추가글이 있고, 창은 화면보다 30% 작습니다."
+    if detail_intro_help in text:
+        text = text.replace(
+            detail_intro_help,
+            "창 안의 AI추가글로 상세 위에 글을 넣고, 창은 화면보다 30% 작습니다.",
+            1,
+        )
+    load_spin_anchor = "왼쪽 마켓선택에서 마스터상품과 마켓으로 보낸 상품을 나눠 봅니다."
+    load_spin_help = "첫 화면에서 상품과 마켓을 가져오는 동안 가운데에 작업 중 표시가 돕니다."
+    if load_spin_anchor in text and load_spin_help not in text:
+        text = text.replace(load_spin_anchor, load_spin_anchor + " " + load_spin_help, 1)
     return text
 
 
@@ -4595,11 +4749,88 @@ def patch_store_label(text: str) -> str:
     return pattern.sub(r"\1스토어명\2", text, count=1)
 
 
+def _replace_old_versions(text: str) -> str:
+    for old in _OLD_SCREEN_VERSIONS:
+        if old != SCREEN_VERSION:
+            text = text.replace(old, SCREEN_VERSION)
+    return text
+
+
+def _screen_build_script() -> str:
+    # seller-edition1 keeps a MutationObserver on #appVersion and writes its
+    # own constant until 11s. Cloning the node drops that observer. The late
+    # timers cover a cached app.js?v=open-login1 that still says an older
+    # version after this HTML has been loaded.
+    return (
+        "<script>\n"
+        "/* screen-build1 */\n"
+        "(function () {\n"
+        f'  const version = "{SCREEN_VERSION}";\n'
+        "  function show() {\n"
+        '    const label = document.getElementById("appVersion");\n'
+        "    if (label && label.dataset.screenBuild !== version) {\n"
+        "      const fresh = label.cloneNode(true);\n"
+        "      fresh.dataset.screenBuild = version;\n"
+        "      fresh.hidden = false;\n"
+        "      label.replaceWith(fresh);\n"
+        "      new MutationObserver(function () {\n"
+        '        if (fresh.textContent !== "v" + version) fresh.textContent = "v" + version;\n'
+        "      }).observe(fresh, { childList: true, characterData: true, subtree: true });\n"
+        "    }\n"
+        '    const current = document.getElementById("appVersion");\n'
+        "    if (current) {\n"
+        "      current.hidden = false;\n"
+        '      if (current.textContent !== "v" + version) current.textContent = "v" + version;\n'
+        '      current.title = "버전 " + version;\n'
+        "    }\n"
+        '    const seller = document.body && (document.body.classList.contains("edition-seller") || document.body.classList.contains("edition-test") || String(location.port || "") === "8788");\n'
+        '    const title = "모두모두AI " + (seller ? "셀러용" : "마스터") + " v" + version;\n'
+        "    if (document.title !== title) document.title = title;\n"
+        "  }\n"
+        "  show();\n"
+        "  setTimeout(show, 0);\n"
+        "  setTimeout(show, 12000);\n"
+        "  setTimeout(show, 16000);\n"
+        "  setTimeout(show, 20000);\n"
+        "})();\n"
+        "</script>\n"
+    )
+
+
+def _ensure_screen_build(text: str) -> str:
+    script = _screen_build_script()
+    pattern = re.compile(r"<script>\s*/\* screen-build1 \*/.*?</script>\s*", re.S)
+    if pattern.search(text):
+        return pattern.sub(script, text, count=1)
+    if "</body>" in text:
+        return text.replace("</body>", script + "</body>", 1)
+    return text + script
+
+
+def _set_version_label(text: str) -> str:
+    pattern = re.compile(r'(id="appVersion"[^>]*>)v[\d.]+')
+    return pattern.sub(rf"\1v{SCREEN_VERSION}", text, count=1)
+
+
 def patch_html(text: str) -> str:
     text = patch_store_label(text)
     text = patch_help(text)
-    text = bump_asset(text, "styles.css", "open-login1")
-    return bump_asset(text, "app.js", "open-login1")
+    text = patch_load_spin(text)
+    text = bump_asset(text, "styles.css", SCREEN_VERSION)
+    text = bump_asset(text, "app.js", SCREEN_VERSION)
+    text = _set_version_label(text)
+    text = _ensure_screen_build(text)
+    return _replace_old_versions(text)
+
+
+def patch_load_spin(text: str) -> str:
+    if "/* load-spin1 */" in text:
+        return text
+    needle = '<script src="/static/app.js'
+    pos = text.find(needle)
+    if pos < 0:
+        return text
+    return text[:pos] + LOAD_SPIN_HTML + text[pos:]
 
 
 COLLECT_URL_JS = r"""
@@ -5367,6 +5598,14 @@ def patch_seller_login_port(text: str) -> str:
     return text
 
 
+def patch_option_combo_read(text: str) -> str:
+    old = 'return [...$("#optionComboTable tr")]'
+    new = 'return [...document.querySelectorAll("#optionComboTable tr")] /* option-combo-read1 */'
+    if old in text:
+        text = text.replace(old, new)
+    return text
+
+
 def patch_answer(text: str) -> str:
     if "/* inquiry-simple2 */" not in text:
         replaced = False
@@ -5425,11 +5664,67 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + SERVER_FIX_CHECK_JS
     if "/* open-login1 */" not in text:
         text = text.rstrip() + "\n" + OPEN_LOGIN_JS
+    if "/* godo-image2 */" not in text:
+        text = text.rstrip() + "\n" + GODO_IMAGE2_JS
+    if "/* godo-image3 */" not in text:
+        text = text.rstrip() + "\n" + GODO_IMAGE3_JS
+    if "/* godo-image4 */" not in text:
+        text = text.rstrip() + "\n" + GODO_IMAGE4_JS
+    if "/* naver-tag1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG_JS
+    if "/* name-keyword-tags1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_FORBID_JS
+    if "/* name-count1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_COUNT_JS
+    if "/* name-layout1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_LAYOUT_JS
+    if "/* dialog-resize1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_RESIZE_JS
+    if "/* menu-save-close2 */" not in text:
+        text = text.rstrip() + "\n" + MENU_SAVE_CLOSE2_JS
+    if "/* list-zoom-ship1 */" not in text:
+        text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_JS
+    if "/* naver-tag2 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG2_JS
+    if "/* dialog-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_ZOOM_JS
+    if "/* tag-dict1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_DICT_JS
+    if "/* detail-fit1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_FIT_JS
+    if "/* detail-intro-style1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_JS
+    if "/* tag-page1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_PAGE_JS
+    if "/* image-zoom-right1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_JS
+    if "/* image-zoom-live1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_JS
+    if "/* product-keyword1 */" not in text:
+        text = text.rstrip() + "\n" + PRODUCT_KEYWORD_JS
+    if "/* prompt-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + PROMPT_NARROW_JS
+    if "/* name-pane-live1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_PANE_LIVE_JS
+    if "/* attribute-foot1 */" not in text:
+        text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_JS
+    if "/* image-role-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_JS
+    if "/* naver-option-ship1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_JS
+    text = patch_option_combo_read(text)
+    if "/* first-screen1 */" not in text:
+        text = text.rstrip() + "\n" + FIRST_SCREEN_JS
+    if "/* detail-market1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_MARKET_JS
+    if "/* store-number1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_NUMBER_JS
+    if "/* store-choice1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_CHOICE_JS
+    if "/* image-pick1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_JS
     text = text.replace("배포용", "셀러용")
-    for old in ("2026.10.28.10", "2026.10.28.11", "2026.10.28.12", "2026.10.28.13", "2026.10.28.14", "2026.10.28.15", "2026.10.28.16", "2026.10.28.17", "2026.10.28.18", "2026.10.28.19", "2026.10.28.20", "2026.10.28.21", "2026.10.28.22", "2026.10.28.23", "2026.10.28.24", "2026.10.28.25", "2026.10.28.26", "2026.10.28.27", "2026.10.28.28", "2026.10.28.29", "2026.10.28.30", "2026.10.28.31", "2026.10.28.32", "2026.10.28.33", "2026.10.28.34", "2026.10.28.35", "2026.10.28.36", "2026.10.28.37", "2026.10.28.38", "2026.10.28.39", "2026.10.28.40", "2026.10.28.41"):
-        if old != SCREEN_VERSION:
-            text = text.replace(old, SCREEN_VERSION)
-    return text
+    return _replace_old_versions(text)
 
 
 def patch_css(text: str) -> str:
@@ -5472,9 +5767,65 @@ def patch_css(text: str) -> str:
         extra += MASTER_LOGIN2_CSS
     if "/* master-login3 */" not in text:
         extra += MASTER_LOGIN3_CSS
-    if not extra:
-        return text
-    return text.rstrip() + "\n" + extra
+    if extra:
+        text = text.rstrip() + "\n" + extra
+    if "/* naver-tag1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_TAG_CSS
+    if "/* name-keyword-tags1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_FORBID_CSS
+    if "/* name-count1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_COUNT_CSS
+    if "/* name-layout1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_LAYOUT_CSS
+    if "/* dialog-resize1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_RESIZE_CSS
+    if "/* image-row5 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROW5_CSS
+    if "/* list-zoom-ship1 */" not in text:
+        text = text.rstrip() + "\n" + LIST_ZOOM_SHIP_CSS
+    if "/* dialog-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + DIALOG_ZOOM_CSS
+    if "/* tag-dict1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_DICT_CSS
+    if "/* detail-fit1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_FIT_CSS
+    if "/* detail-intro-style1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_INTRO_STYLE_CSS
+    if "/* load-spin1 */" not in text:
+        text = text.rstrip() + "\n" + LOAD_SPIN_CSS
+    if "/* tag-page1 */" not in text:
+        text = text.rstrip() + "\n" + TAG_PAGE_CSS
+    if "/* image-zoom-right1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_RIGHT_CSS
+    if "/* image-zoom-live1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_CSS
+    if "/* product-keyword1 */" not in text:
+        text = text.rstrip() + "\n" + PRODUCT_KEYWORD_CSS
+    if "/* image-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_NARROW_CSS
+    if "/* prompt-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + PROMPT_NARROW_CSS
+    if "/* name-pane-live1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_PANE_LIVE_CSS
+    if "/* attribute-foot1 */" not in text:
+        text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_CSS
+    if "/* image-role-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_CSS
+    if "/* naver-option-ship1 */" not in text:
+        text = text.rstrip() + "\n" + NAVER_OPTION_SHIP_CSS
+    if "/* first-screen1 */" not in text:
+        text = text.rstrip() + "\n" + FIRST_SCREEN_CSS
+    if "/* detail-market1 */" not in text:
+        text = text.rstrip() + "\n" + DETAIL_MARKET_CSS
+    if "/* store-number1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_NUMBER_CSS
+    if "/* store-choice1 */" not in text:
+        text = text.rstrip() + "\n" + STORE_CHOICE_CSS
+    if "/* image-pick1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_CSS
+    if "/* image-pick-fit1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_FIT_CSS
+    return text
 
 
 def write_screen_version(root: Path) -> bool:
@@ -6455,6 +6806,30 @@ def patch_murray_sources(root: Path) -> bool:
         changed = True
     if _append_marked_source(scraper, GODO_IMAGE1_SCRAPER_PY, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_MARKER):
         changed = True
+    if _append_marked_source(scraper, GODO_IMAGE2_SCRAPER_PY, GODO_IMAGE2_SCRAPER_NEEDED, GODO_IMAGE2_MARKER):
+        changed = True
+    if _append_marked_source(service, GODO_IMAGE2_SERVICE_PY, GODO_IMAGE2_SERVICE_NEEDED, GODO_IMAGE2_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE2_CATALOG_PY, GODO_IMAGE2_CATALOG_NEEDED, GODO_IMAGE2_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_IMAGE3_SCRAPER_PY, GODO_IMAGE3_SCRAPER_NEEDED, GODO_IMAGE3_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE3_CATALOG_PY, GODO_IMAGE3_CATALOG_NEEDED, GODO_IMAGE3_MARKER):
+        changed = True
+    if _append_marked_source(scraper, GODO_IMAGE4_SCRAPER_PY, GODO_IMAGE4_SCRAPER_NEEDED, GODO_IMAGE4_MARKER):
+        changed = True
+    if _append_marked_source(root / "app" / "shop_catalog.py", GODO_IMAGE4_CATALOG_PY, GODO_IMAGE4_CATALOG_NEEDED, GODO_IMAGE4_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG_SERVICE_PY, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG2_SERVICE_PY, NAVER_TAG2_NEEDED, NAVER_TAG2_MARKER):
+        changed = True
+    if _append_marked_source(service, TAG_DICT_SERVICE_PY, TAG_DICT_NEEDED, TAG_DICT_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_TAG3_SERVICE_PY, NAVER_TAG3_NEEDED, NAVER_TAG3_MARKER):
+        changed = True
+    if _append_marked_source(service, NAVER_KEYWORD_SERVICE_PY, NAVER_KEYWORD_NEEDED, NAVER_KEYWORD_MARKER):
+        changed = True
     if _append_marked_source(root / "app" / "chrome_app.py", TEXT_DECODE1_CHROME_PY, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_MARKER):
         changed = True
     try:
@@ -6706,6 +7081,1340 @@ def _godo_image_for(page_url, number):
     return _godo_known_images.get(number, "")
 """
 GODO_IMAGE1_CATALOG_NEEDED = ("def _godomall_products", "def _godomall_all", "def _base", GODO_SITE1_MARKER)
+GODO_IMAGE2_MARKER = "# godo-image2"
+GODO_IMAGE2_JS = r"""
+/* godo-image2 */
+function godoGoodsNumber(url) {
+  const match = String(url || "").match(/goodsNo=(\d+)/i);
+  return match ? match[1] : "";
+}
+function godoPhotoRank(url, number) {
+  const path = String(url || "").split("#")[0].split("?")[0];
+  const match = path.match(/\/goods\/(\d+)\/image\/(main|list|magnify|detail|add\d*)\//i);
+  if (!match || String(match[1]) !== String(number) || /\/thumb\//i.test(path)) return null;
+  const kind = match[2].toLowerCase();
+  if (kind === "main") return 0;
+  if (kind === "list") return 1;
+  if (kind === "magnify") return 2;
+  if (kind === "detail") return 3;
+  return 4;
+}
+function godoIsStrip(image) {
+  const width = Number(image?.width || 0);
+  const height = Number(image?.height || 0);
+  return width >= 100 && height >= width * 2;
+}
+function godoApplyRepresentative(product) {
+  const images = product?.images;
+  const number = godoGoodsNumber(product?.source_url);
+  if (!number || !Array.isArray(images) || !images.length) return false;
+  const photos = images.filter((image) => godoPhotoRank(image?.source_url, number) !== null);
+  photos.sort((a, b) => godoPhotoRank(a.source_url, number) - godoPhotoRank(b.source_url, number));
+  let best = photos[0] || null;
+  if (!best) {
+    const squares = images.filter((image) => image && !godoIsStrip(image) && Number(image.width || 0) >= 150 && Number(image.height || 0) >= 150);
+    const current = images.find((image) => image?.representative);
+    if (!squares.length || (current && !godoIsStrip(current))) return false;
+    best = squares[0];
+  }
+  let changed = false;
+  images.forEach((image) => {
+    if (!image || typeof image !== "object") return;
+    const rank = godoPhotoRank(image.source_url, number);
+    const wantRep = image === best;
+    let wantKind = image.kind;
+    if (rank !== null || wantRep) wantKind = "gallery";
+    else if (image.source_url || godoIsStrip(image)) wantKind = "detail";
+    if (!!image.representative !== wantRep) {
+      image.representative = wantRep;
+      changed = true;
+    }
+    if (wantKind && image.kind !== wantKind) {
+      image.kind = wantKind;
+      changed = true;
+    }
+  });
+  return changed;
+}
+if (typeof fillPreview === "function" && !fillPreview._godoImage2) {
+  const fillPreviewBeforeGodo = fillPreview;
+  const wrapped = function () {
+    const product = typeof current !== "undefined" ? current : null;
+    if (product && godoApplyRepresentative(product) && !wrapped._saving) {
+      const master = typeof isMasterProduct === "function" && isMasterProduct(product);
+      if (!master && typeof saveProduct === "function") {
+        wrapped._saving = true;
+        Promise.resolve(saveProduct(product, { images: product.images }, true)).catch(() => {}).finally(() => {
+          wrapped._saving = false;
+        });
+      }
+    }
+    return fillPreviewBeforeGodo();
+  };
+  wrapped._godoImage2 = true;
+  fillPreview = wrapped;
+}
+"""
+GODO_IMAGE2_SCRAPER_PY = r'''
+# godo-image2
+# The representative image is this goods number's own photo (main, then list,
+# magnify, detail). Long description images, including ones stored ahead of the
+# photos, stay detail images. Thumb files are not the representative.
+_GODO_PHOTO_RE = _godo_re.compile(r"/goods/(\d+)/image/(main|list|magnify|detail|add\d*)/", _godo_re.I)
+_GODO_PHOTO_RANK = {"main": 0, "list": 1, "magnify": 2, "detail": 3}
+_extract_product_before_godo_image2 = extract_product
+
+
+def _godo_clean_url(url):
+    text = str(url or "").strip().rstrip("\\")
+    if text.startswith("//"):
+        text = "https:" + text
+    if "\\" in text:
+        text = text.split("\\", 1)[0]
+    return text
+
+
+def _godo_image_url(item):
+    if isinstance(item, str):
+        return _godo_clean_url(item)
+    if isinstance(item, dict):
+        return _godo_clean_url(item.get("source_url") or item.get("url") or "")
+    return ""
+
+
+def _godo_photo_rank(url, number):
+    path = _godo_clean_url(url).split("#", 1)[0].split("?", 1)[0]
+    match = _GODO_PHOTO_RE.search(path)
+    if not match or match.group(1) != str(number or "") or "/thumb/" in path.lower():
+        return None
+    kind = match.group(2).lower()
+    if kind.startswith("add"):
+        return 4
+    return _GODO_PHOTO_RANK.get(kind, 5)
+
+
+def _godo_is_strip(image):
+    if not isinstance(image, dict):
+        return False
+    try:
+        width = int(image.get("width") or 0)
+        height = int(image.get("height") or 0)
+    except (TypeError, ValueError):
+        return False
+    return width >= 100 and height >= width * 2
+
+
+def _godo_skip_url(url):
+    text = _godo_clean_url(url).lower()
+    return any(part in text for part in (
+        "/data/skin/", "/img/btn/", "/img/banner/", "/img/etc/",
+        "pinterest.com", "facebook.com", "twitter.com", "googletagmanager",
+    ))
+
+
+def _godo_cached_photo(number):
+    try:
+        import app.shop_catalog as _godo_catalog
+
+        known = getattr(_godo_catalog, "_godo_known_images", {}) or {}
+        url = str(known.get(str(number)) or "")
+    except Exception:
+        return ""
+    if _godo_photo_rank(url, number) is None:
+        return ""
+    return _godo_clean_url(url)
+
+
+def _godo_ordered_photos(html, number, extra):
+    found = []
+    seen = set()
+
+    def add(url):
+        url = _godo_clean_url(url)
+        rank = _godo_photo_rank(url, number)
+        if rank is None or url in seen:
+            return
+        seen.add(url)
+        found.append((rank, url))
+
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>\\]+", html or "", _godo_re.I):
+        add(match.group(0))
+    for match in _godo_re.finditer(r"(?:src|data-src|data-original)\s*=\s*[\"']([^\"']+)", html or "", _godo_re.I):
+        add(match.group(1))
+    for url in extra or []:
+        add(url)
+    add(_godo_cached_photo(number))
+    found.sort(key=lambda item: item[0])
+    return [url for _, url in found]
+
+
+def godo_fix_saved_images(product):
+    if not isinstance(product, dict):
+        return False
+    number = _godo_goods_no(product.get("source_url"))
+    images = product.get("images")
+    if not number or not isinstance(images, list) or not images:
+        return False
+    photos = []
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        rank = _godo_photo_rank(_godo_image_url(image), number)
+        if rank is not None:
+            photos.append((rank, image))
+    photos.sort(key=lambda item: item[0])
+    best = photos[0][1] if photos else None
+    if best is None:
+        squares = []
+        for image in images:
+            if not isinstance(image, dict) or _godo_is_strip(image):
+                continue
+            try:
+                width = int(image.get("width") or 0)
+                height = int(image.get("height") or 0)
+            except (TypeError, ValueError):
+                continue
+            if width >= 150 and height >= 150:
+                squares.append(image)
+        current = next((image for image in images if isinstance(image, dict) and image.get("representative")), None)
+        if not squares or (current is not None and not _godo_is_strip(current)):
+            return False
+        best = squares[0]
+    changed = False
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        url = _godo_image_url(image)
+        rank = _godo_photo_rank(url, number)
+        want_rep = image is best
+        if rank is not None or want_rep:
+            want_kind = "gallery"
+        elif url or _godo_is_strip(image):
+            want_kind = "detail"
+        else:
+            want_kind = image.get("kind")
+        if bool(image.get("representative")) != want_rep:
+            image["representative"] = want_rep
+            changed = True
+        if want_kind and image.get("kind") != want_kind:
+            image["kind"] = want_kind
+            changed = True
+    return changed
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image2(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    html_text = html if isinstance(html, str) else ""
+    buckets = []
+    for key in ("detail_images", "gallery_images", "images"):
+        buckets.extend(data.get(key) or [])
+    extra = [_godo_image_url(item) for item in buckets]
+    photos = _godo_ordered_photos(html_text, number, extra)
+    if not photos:
+        return data
+    photo_set = set(photos)
+    description = []
+    for item in buckets:
+        url = _godo_image_url(item)
+        if not url or url in photo_set or url in description or _godo_skip_url(url):
+            continue
+        if _godo_photo_rank(url, number) is not None:
+            continue
+        path = url.split("?", 1)[0].lower()
+        if "/thumb/" in path and "/goods/" in path and "/image/" in path:
+            continue
+        description.append(url)
+    data["gallery_images"] = photos
+    data["detail_images"] = description
+    images = data.get("images") or []
+    has_photo = any(
+        isinstance(item, dict) and _godo_photo_rank(_godo_image_url(item), number) is not None
+        for item in images
+    )
+    if images and isinstance(images[0], dict) and has_photo:
+        holder = {"source_url": page_url, "images": [dict(item) if isinstance(item, dict) else item for item in images]}
+        godo_fix_saved_images(holder)
+        data["images"] = holder["images"]
+    else:
+        data["images"] = photos + description
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_IMAGE2_SCRAPER_NEEDED = ("def extract_product", "def _godo_goods_no", "_godo_re", GODO_IMAGE1_MARKER)
+GODO_IMAGE2_SERVICE_PY = r'''
+# godo-image2
+# Saved Godomall products can still have the long description image marked as
+# the representative. Point that flag at the goods photo, once at startup and
+# again whenever a product is collected.
+import threading as _godo_image_threading
+import time as _godo_image_time
+
+_collect_product_before_godo_image2 = collect_product
+
+
+def _godo_repair_saved_images():
+    import app.scraper as _godo_scraper
+
+    fixer = getattr(_godo_scraper, "godo_fix_saved_images", None)
+    if fixer is None:
+        return False
+    fixed = []
+    for product in list_full_products():
+        try:
+            if fixer(product):
+                fixed.append(product)
+        except Exception:
+            continue
+    if fixed:
+        save_products_batch(fixed)
+    return True
+
+
+def _godo_repair_images_later():
+    def run():
+        for _ in range(20):
+            try:
+                if _godo_repair_saved_images():
+                    return
+            except Exception:
+                pass
+            _godo_image_time.sleep(0.5)
+    _godo_image_threading.Thread(target=run, name="godo-image2", daemon=True).start()
+
+
+def collect_product(*args, **kwargs):
+    product = _collect_product_before_godo_image2(*args, **kwargs)
+    try:
+        import app.scraper as _godo_scraper
+
+        fixer = getattr(_godo_scraper, "godo_fix_saved_images", None)
+        if fixer and fixer(product):
+            save_product(product)
+    except Exception:
+        pass
+    return product
+
+
+_godo_repair_images_later()
+'''
+GODO_IMAGE2_SERVICE_NEEDED = ("def collect_product", "def save_product", "list_full_products", "save_products_batch", GODO_NAME2_MARKER)
+GODO_IMAGE2_CATALOG_PY = r'''
+# godo-image2
+# Remember only this goods number's own photo. A description image must not
+# become the list image later used as the representative.
+import re as _godo_image_re
+
+_GODO_LIST_PHOTO_RE = _godo_image_re.compile(r"/goods/(\d+)/image/(main|list|magnify|detail|add\d*)/", _godo_image_re.I)
+_godomall_products_before_image2 = _godomall_products
+
+
+def _godo_list_photo(url, number):
+    path = str(url or "").split("#", 1)[0].split("?", 1)[0]
+    match = _GODO_LIST_PHOTO_RE.search(path)
+    if not match or match.group(1) != str(number or "") or "/thumb/" in path.lower():
+        return False
+    return True
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image2(shop_url, category, *args, **kwargs)
+    for item in (data.get("items") if isinstance(data, dict) else None) or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        image = str(item.get("image") or "")
+        if number and _godo_list_photo(image, number):
+            _godo_known_images[number] = image
+        elif number and image:
+            _godo_known_images.pop(number, None)
+    return data
+'''
+GODO_IMAGE2_CATALOG_NEEDED = ("def _godomall_products", "_godo_known_images", GODO_IMAGE1_MARKER)
+GODO_IMAGE3_MARKER = "# godo-image3"
+GODO_IMAGE3_JS = r"""
+/* godo-image3 */
+function godoListRank(url, number) {
+  const path = String(url || "").split("#")[0].split("?")[0];
+  const match = path.match(/\/goods\/(\d+)\/image\/(main|list|magnify)\//i);
+  if (!match || String(match[1]) !== String(number) || /\/thumb\//i.test(path)) return null;
+  const kind = match[2].toLowerCase();
+  if (kind === "main") return 0;
+  if (kind === "list") return 1;
+  return 2;
+}
+function godoIsTall(image) {
+  const width = Number(image?.width || 0);
+  const height = Number(image?.height || 0);
+  return width >= 100 && height >= 700 && height >= width * 1.45;
+}
+function godoIsDescription(url) {
+  const text = String(url || "").toLowerCase();
+  return text.indexOf("esmplus.com") >= 0 || text.indexOf("/data/editor/") >= 0;
+}
+function godoApplyRepresentative(product) {
+  const images = product?.images;
+  const number = godoGoodsNumber(product?.source_url);
+  if (!number || !Array.isArray(images) || !images.length) return false;
+  const photos = images.filter((image) => godoListRank(image?.source_url, number) !== null);
+  photos.sort((a, b) => godoListRank(a.source_url, number) - godoListRank(b.source_url, number));
+  let best = photos[0] || null;
+  if (!best) {
+    const squares = images.filter((image) => image && !godoIsTall(image) && !godoIsDescription(image.source_url) && Number(image.width || 0) >= 150 && Number(image.height || 0) >= 150);
+    squares.sort((a, b) => Math.abs(Number(a.width) / Number(a.height) - 1) - Math.abs(Number(b.width) / Number(b.height) - 1));
+    const current = images.find((image) => image?.representative) || images[0];
+    const currentBad = current && (godoIsTall(current) || godoIsDescription(current.source_url) || /\/image\/detail\//i.test(String(current.source_url || "")));
+    if (!squares.length || !currentBad) return false;
+    best = squares[0];
+  }
+  let changed = false;
+  const index = images.indexOf(best);
+  if (index > 0) {
+    images.splice(index, 1);
+    images.unshift(best);
+    changed = true;
+  }
+  images.forEach((image) => {
+    if (!image || typeof image !== "object") return;
+    const rank = godoListRank(image.source_url, number);
+    const wantRep = image === best;
+    let wantKind = image.kind;
+    if (rank !== null || wantRep) wantKind = "gallery";
+    else if (image.source_url || godoIsTall(image) || godoIsDescription(image.source_url)) wantKind = "detail";
+    if (!!image.representative !== wantRep) {
+      image.representative = wantRep;
+      changed = true;
+    }
+    if (wantKind && image.kind !== wantKind) {
+      image.kind = wantKind;
+      changed = true;
+    }
+  });
+  return changed;
+}
+"""
+GODO_IMAGE3_SCRAPER_PY = r'''
+# godo-image3
+# The list image is the goods main photo, then the list photo, then magnify.
+# Detail-slot files and long description images stay detail images. A saved
+# list can still show the description when it is only moderately tall, so move
+# the real list photo to the front.
+_GODO3_LIST_RANK = {"main": 0, "list": 1, "magnify": 2}
+_extract_product_before_godo_image3 = extract_product
+_godo_fix_saved_images_before3 = godo_fix_saved_images
+
+
+def _godo3_list_rank(url, number):
+    rank = _godo_photo_rank(url, number)
+    if rank is None or rank > 2:
+        return None
+    return rank
+
+
+def _godo3_description(url):
+    text = _godo_clean_url(url).lower()
+    return "esmplus.com" in text or "/data/editor/" in text
+
+
+def _godo3_tall(image):
+    if not isinstance(image, dict):
+        return False
+    try:
+        width = int(image.get("width") or 0)
+        height = int(image.get("height") or 0)
+    except (TypeError, ValueError):
+        return False
+    return width >= 100 and height >= 700 and height >= width * 1.45
+
+
+def _godo3_split(html, number, extra):
+    listed = []
+    detail = []
+    seen = set()
+
+    def add(url):
+        url = _godo_clean_url(url)
+        if not url or url in seen or _godo_skip_url(url):
+            return
+        path = url.split("?", 1)[0].lower()
+        if "/thumb/" in path and "/goods/" in path and "/image/" in path:
+            return
+        seen.add(url)
+        rank = _godo3_list_rank(url, number)
+        if rank is not None:
+            listed.append((rank, url))
+        else:
+            detail.append(url)
+
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>\\]+", html or "", _godo_re.I):
+        add(match.group(0))
+    for match in _godo_re.finditer(r"(?:src|data-src|data-original)\s*=\s*[\"']([^\"']+)", html or "", _godo_re.I):
+        add(match.group(1))
+    for url in extra or []:
+        add(url)
+    listed.sort(key=lambda item: item[0])
+    list_urls = []
+    for _, url in listed:
+        if url not in list_urls:
+            list_urls.append(url)
+    return list_urls, detail
+
+
+def _godo3_cached_list(number, page_url):
+    try:
+        import app.shop_catalog as _godo_catalog
+    except Exception:
+        return ""
+    url = ""
+    getter = getattr(_godo_catalog, "_godo3_list_image", None)
+    if getter:
+        try:
+            url = getter(page_url, number) or ""
+        except Exception:
+            url = ""
+    if _godo3_list_rank(url, number) is None:
+        known = getattr(_godo_catalog, "_godo_known_images", {}) or {}
+        url = str(known.get(str(number)) or "")
+    if _godo3_list_rank(url, number) is None:
+        return ""
+    return _godo_clean_url(url)
+
+
+def _godo3_pull_list_photo(product, images, number):
+    if any(
+        isinstance(image, dict) and _godo3_list_rank(_godo_image_url(image), number) == 0
+        for image in images
+    ):
+        return
+    current = next((image for image in images if isinstance(image, dict) and image.get("representative")), None)
+    current_url = _godo_image_url(current) if current is not None else ""
+    if _godo3_list_rank(current_url, number) is not None:
+        return
+    cached = _godo3_cached_list(number, product.get("source_url") or "")
+    if not cached:
+        return
+    for image in images:
+        if isinstance(image, dict) and _godo_image_url(image) == cached:
+            return
+    images.insert(0, {
+        "source_url": cached,
+        "kind": "gallery",
+        "representative": False,
+        "included": True,
+    })
+
+
+def _godo3_same_images(before, images):
+    return before is not None and images == before
+
+
+def godo_fix_saved_images(product):
+    before = None
+    if isinstance(product, dict) and isinstance(product.get("images"), list):
+        before = [dict(image) if isinstance(image, dict) else image for image in product["images"]]
+    changed = bool(_godo_fix_saved_images_before3(product))
+    if not isinstance(product, dict):
+        return changed
+    number = _godo_goods_no(product.get("source_url"))
+    images = product.get("images")
+    if not number or not isinstance(images, list) or not images:
+        return False if _godo3_same_images(before, product.get("images")) else changed
+    _godo3_pull_list_photo(product, images, number)
+    ranked = []
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        rank = _godo3_list_rank(_godo_image_url(image), number)
+        if rank is not None:
+            ranked.append((rank, image))
+    ranked.sort(key=lambda item: item[0])
+    best = ranked[0][1] if ranked else None
+    if best is None:
+        squares = []
+        for image in images:
+            if not isinstance(image, dict) or _godo3_tall(image) or _godo3_description(_godo_image_url(image)):
+                continue
+            try:
+                width = int(image.get("width") or 0)
+                height = int(image.get("height") or 0)
+            except (TypeError, ValueError):
+                continue
+            if width >= 150 and height >= 150:
+                squares.append((abs((width / height) - 1), image))
+        squares.sort(key=lambda item: item[0])
+        current = next((image for image in images if isinstance(image, dict) and image.get("representative")), None)
+        current_url = _godo_image_url(current) if current is not None else ""
+        current_bad = current is not None and (
+            _godo3_tall(current) or _godo3_description(current_url) or _godo_photo_rank(current_url, number) == 3
+        )
+        if squares and current_bad:
+            best = squares[0][1]
+    if best is None:
+        return False if _godo3_same_images(before, product.get("images")) else changed
+    if images[0] is not best:
+        images.remove(best)
+        images.insert(0, best)
+        changed = True
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        url = _godo_image_url(image)
+        rank = _godo3_list_rank(url, number)
+        want_rep = image is best
+        if rank is not None or want_rep:
+            want_kind = "gallery"
+        elif url or _godo3_tall(image) or _godo3_description(url):
+            want_kind = "detail"
+        else:
+            want_kind = image.get("kind")
+        if bool(image.get("representative")) != want_rep:
+            image["representative"] = want_rep
+            changed = True
+        if want_kind and image.get("kind") != want_kind:
+            image["kind"] = want_kind
+            changed = True
+    if _godo3_same_images(before, product.get("images")):
+        return False
+    return changed
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image3(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    html_text = html if isinstance(html, str) else ""
+    extra = []
+    for key in ("detail_images", "gallery_images", "images"):
+        for item in data.get(key) or []:
+            extra.append(_godo_image_url(item))
+    list_urls, detail_urls = _godo3_split(html_text, number, extra)
+    if not any(_godo3_list_rank(url, number) == 0 for url in list_urls):
+        cached = _godo3_cached_list(number, page_url)
+        if cached and cached not in list_urls:
+            list_urls.insert(0, cached)
+    if not list_urls:
+        fallback = [url for url in detail_urls if _godo_photo_rank(url, number) is not None]
+        if fallback:
+            list_urls = [fallback[0]]
+            detail_urls = [url for url in detail_urls if url != fallback[0]]
+    if not list_urls:
+        return data
+    detail_urls = [url for url in detail_urls if url not in list_urls]
+    data["gallery_images"] = list_urls
+    data["detail_images"] = detail_urls
+    images = data.get("images") or []
+    if images and isinstance(images[0], dict):
+        by_url = {}
+        rest = []
+        for image in images:
+            url = _godo_image_url(image) if isinstance(image, dict) else ""
+            if isinstance(image, dict) and url and url not in by_url:
+                by_url[url] = image
+            else:
+                rest.append(image)
+        ordered = []
+        for url in list_urls + detail_urls:
+            image = by_url.pop(url, None)
+            if image is None:
+                image = {"source_url": url, "kind": "gallery" if url in list_urls else "detail", "representative": False}
+            ordered.append(image)
+        ordered.extend(by_url.values())
+        ordered.extend(item for item in rest if item not in ordered)
+        data["images"] = ordered
+        godo_fix_saved_images({"source_url": page_url, "images": data["images"]})
+    else:
+        data["images"] = list_urls + detail_urls
+    warnings = data.get("warnings")
+    if isinstance(warnings, list):
+        data["warnings"] = [text for text in warnings if "이미지를 찾지 못했습니다" not in str(text)]
+    return data
+'''
+GODO_IMAGE3_SCRAPER_NEEDED = ("def extract_product", "def godo_fix_saved_images", "def _godo_photo_rank", GODO_IMAGE2_MARKER)
+GODO_IMAGE3_CATALOG_PY = r'''
+# godo-image3
+# Some list rows keep the detail page or the detail-slot file as item.image.
+# The list page's own main/list photo is the list image.
+import re as _godo3_re
+
+_GODO3_ABS = _godo3_re.compile(
+    r"(?:https?:)?//[^\"'\s<>\\]+/goods/(\d+)/image/(main|list|magnify)/[^\"'\s<>\\]+",
+    _godo3_re.I,
+)
+_GODO3_RANK = {"main": 0, "list": 1, "magnify": 2}
+_godo3_main_cache = {}
+_godomall_products_before_image3 = _godomall_products
+
+
+def _godo3_rank(url, number):
+    path = str(url or "").split("#", 1)[0].split("?", 1)[0]
+    match = _GODO3_ABS.search(path if "://" in path or path.startswith("//") else "//" + path)
+    if match is None:
+        match = _godo3_re.search(r"/goods/(\d+)/image/(main|list|magnify)/", path, _godo3_re.I)
+        if match is None or match.group(1) != str(number or "") or "/thumb/" in path.lower():
+            return None
+        return _GODO3_RANK.get(match.group(2).lower())
+    if match.group(1) != str(number or "") or "/thumb/" in path.lower():
+        return None
+    return _GODO3_RANK.get(match.group(2).lower())
+
+
+def _godo3_description(url):
+    text = str(url or "").lower()
+    return "esmplus.com" in text or "/data/editor/" in text
+
+
+def _godo3_mains_from_html(html, base=""):
+    found = {}
+
+    def consider(url, number, kind):
+        url = str(url or "").strip()
+        if not url or "/thumb/" in url.lower():
+            return
+        if url.startswith("//"):
+            url = "https:" + url
+        elif url.startswith("/") and base:
+            url = str(base).rstrip("/") + url
+        elif not url.startswith("http"):
+            return
+        rank = _GODO3_RANK.get(str(kind or "").lower(), 9)
+        prev = found.get(number)
+        if prev is None or rank < prev[0]:
+            found[number] = (rank, url)
+
+    for match in _GODO3_ABS.finditer(html or ""):
+        consider(match.group(0), match.group(1), match.group(2))
+    for match in _godo3_re.finditer(
+        r"[\"']([^\"']*?/goods/(\d+)/image/(main|list|magnify)/[^\"']+)",
+        html or "",
+        _godo3_re.I,
+    ):
+        consider(match.group(1), match.group(2), match.group(3))
+    return {number: url for number, (_, url) in found.items()}
+
+
+def _godo3_fetch_mains(shop_url, category):
+    key = (str(shop_url or ""), str(category or ""))
+    if key in _godo3_main_cache:
+        return _godo3_main_cache[key]
+    base = _base(shop_url)
+    cate = str(category or "").strip()
+    if cate in {"", "all", "etc"}:
+        cate = ""
+    found = {}
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            for page in range(1, 9):
+                params = {"page": page}
+                if cate:
+                    params["cateCd"] = cate
+                response = client.get(f"{base}/goods/goods_list.php", params=params)
+                if response.status_code >= 400:
+                    break
+                html = response.text or ""
+                before = len(found)
+                found.update(_godo3_mains_from_html(html, base))
+                if "goodsNo=" not in html or len(found) == before:
+                    break
+    except Exception:
+        found = found or {}
+    _godo3_main_cache[key] = found
+    return found
+
+
+def _godo3_mains_for(shop_url, category, items):
+    wanted = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if number and _godo3_rank(item.get("image"), number) != 0:
+            wanted.add(number)
+    if not wanted:
+        return {}
+    cates = []
+    chosen = str(category or "").strip()
+    if chosen and chosen not in {"all", "etc"}:
+        cates = [chosen]
+    getter = globals().get("_godo_all_cates")
+    if getter and (not cates or len(wanted) > 0):
+        try:
+            more = list(getter(shop_url) or [])
+        except Exception:
+            more = []
+        for cate in more:
+            if cate not in cates:
+                cates.append(cate)
+            if len(cates) >= 12:
+                break
+    if not cates:
+        cates = [chosen]
+    found = {}
+    for cate in cates:
+        if not wanted:
+            break
+        for number, url in _godo3_fetch_mains(shop_url, cate).items():
+            found.setdefault(number, url)
+            wanted.discard(number)
+    return found
+
+
+def _godo3_apply_items(items, mains):
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if not number:
+            continue
+        image = str(item.get("image") or "")
+        better = str((mains or {}).get(number) or "")
+        rank = _godo3_rank(image, number)
+        better_rank = _godo3_rank(better, number)
+        if better and better_rank is not None and (rank is None or better_rank < rank):
+            item["image"] = better
+            image = better
+            rank = better_rank
+        if rank is not None:
+            _godo_known_images[number] = image
+        elif _godo3_description(image):
+            _godo_known_images.pop(number, None)
+            item["image"] = ""
+
+
+def _godo3_list_image(page_url, number):
+    number = str(number or "")
+    known = str(_godo_known_images.get(number) or "")
+    if _godo3_rank(known, number) == 0:
+        return known
+    found = _godo3_mains_for(page_url, "", [{"product_no": number, "image": known}])
+    url = str(found.get(number) or "")
+    if _godo3_rank(url, number) is None:
+        url = known if _godo3_rank(known, number) is not None else ""
+    if url:
+        _godo_known_images[number] = url
+    return url
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image3(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list) or not items:
+        return data
+    mains = {}
+    if any(isinstance(item, dict) and _godo3_rank(item.get("image"), item.get("product_no")) != 0 for item in items):
+        try:
+            mains = _godo3_mains_for(shop_url, category, items)
+        except Exception:
+            mains = {}
+    _godo3_apply_items(items, mains)
+    return data
+'''
+GODO_IMAGE3_CATALOG_NEEDED = ("def _godomall_products", "_godo_known_images", "def _base", "httpx", GODO_IMAGE2_MARKER)
+GODO_IMAGE4_MARKER = "# godo-image4"
+GODO_IMAGE4_JS = r"""
+/* godo-image4 */
+function godoListRank(url, number) {
+  const path = String(url || "").split("#")[0].split("?")[0];
+  const match = path.match(/\/goods\/(\d+)\/image\/(main|list)\//i);
+  if (!match || String(match[1]) !== String(number) || /\/thumb\//i.test(path)) return null;
+  return match[2].toLowerCase() === "main" ? 0 : 1;
+}
+function godoApplyRepresentative(product) {
+  const images = product?.images;
+  const number = godoGoodsNumber(product?.source_url);
+  if (!number || !Array.isArray(images) || !images.length) return false;
+  const photos = images.filter((image) => image && godoListRank(image.source_url, number) !== null);
+  photos.sort((a, b) => godoListRank(a.source_url, number) - godoListRank(b.source_url, number));
+  const best = photos[0] || null;
+  if (!best) return false;
+  let changed = false;
+  const index = images.indexOf(best);
+  if (index > 0) {
+    images.splice(index, 1);
+    images.unshift(best);
+    changed = true;
+  }
+  images.forEach((image) => {
+    if (!image || typeof image !== "object") return;
+    const rank = godoListRank(image.source_url, number);
+    const detailPage = /\/image\/(?:detail|magnify|add\d*)\//i.test(String(image.source_url || "")) || godoIsDescription(image.source_url);
+    const wantRep = image === best;
+    let wantKind = image.kind;
+    if (rank !== null) wantKind = "gallery";
+    else if (image.source_url || godoIsTall(image) || detailPage) wantKind = "detail";
+    if (!!image.representative !== wantRep) {
+      image.representative = wantRep;
+      changed = true;
+    }
+    if (wantKind && image.kind !== wantKind) {
+      image.kind = wantKind;
+      changed = true;
+    }
+  });
+  return changed;
+}
+"""
+GODO_IMAGE4_SCRAPER_PY = r'''
+# godo-image4
+# The list image is only the list page's /image/main/ photo, then /image/list/.
+# Magnify, the detail slot, add images, and the long description are detail
+# images. A saved representative that is already the detail-page zoom still
+# needs the list-page main pulled in front of it.
+_extract_product_before_godo_image4 = extract_product
+_godo_fix_saved_images_before4 = godo_fix_saved_images
+
+
+def _godo4_list_rank(url, number):
+    rank = _godo_photo_rank(url, number)
+    if rank is None or rank > 1:
+        return None
+    return rank
+
+
+def _godo4_title(html):
+    text = html if isinstance(html, str) else ""
+    for pattern in (
+        r"<meta[^>]+property=[\"']og:title[\"'][^>]+content=[\"']([^\"']+)",
+        r"<meta[^>]+content=[\"']([^\"']+)[\"'][^>]+property=[\"']og:title[\"']",
+        r"<title>([^<]+)</title>",
+    ):
+        match = _godo_re.search(pattern, text, _godo_re.I)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def _godo4_lookup(page_url, number, name):
+    try:
+        import app.shop_catalog as _godo_catalog
+    except Exception:
+        return ""
+    getter = getattr(_godo_catalog, "_godo4_list_image", None)
+    if not getter:
+        return ""
+    try:
+        url = getter(page_url, number, name) or ""
+    except TypeError:
+        try:
+            url = getter(page_url, number) or ""
+        except Exception:
+            return ""
+    except Exception:
+        return ""
+    url = _godo_clean_url(url)
+    if not url.startswith("http") or _godo4_list_rank(url, number) is None:
+        return ""
+    return url
+
+
+def _godo4_same(before, images):
+    return before is not None and images == before
+
+
+def godo_fix_saved_images(product):
+    before = None
+    if isinstance(product, dict) and isinstance(product.get("images"), list):
+        before = [dict(image) if isinstance(image, dict) else image for image in product["images"]]
+    changed = bool(_godo_fix_saved_images_before4(product))
+    if not isinstance(product, dict):
+        return changed
+    number = _godo_goods_no(product.get("source_url"))
+    images = product.get("images")
+    if not number or not isinstance(images, list) or not images:
+        return False if _godo4_same(before, product.get("images")) else changed
+    has_main = any(
+        isinstance(image, dict) and _godo4_list_rank(_godo_image_url(image), number) == 0
+        for image in images
+    )
+    if not has_main:
+        cached = _godo4_lookup(product.get("source_url") or "", number, product.get("name") or "")
+        if cached and not any(isinstance(image, dict) and _godo_image_url(image) == cached for image in images):
+            images.insert(0, {
+                "source_url": cached,
+                "kind": "gallery",
+                "representative": False,
+                "included": True,
+            })
+            changed = True
+    ranked = []
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        rank = _godo4_list_rank(_godo_image_url(image), number)
+        if rank is not None:
+            ranked.append((rank, image))
+    ranked.sort(key=lambda item: item[0])
+    best = ranked[0][1] if ranked else None
+    if best is None:
+        for image in images:
+            if isinstance(image, dict) and _godo_photo_rank(_godo_image_url(image), number) == 2:
+                best = image
+                break
+    if best is None:
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            if image.get("representative"):
+                image["representative"] = False
+                changed = True
+            if _godo_image_url(image) and image.get("kind") != "detail":
+                image["kind"] = "detail"
+                changed = True
+        if _godo4_same(before, product.get("images")):
+            return False
+        return changed
+    if images[0] is not best:
+        images.remove(best)
+        images.insert(0, best)
+        changed = True
+    for image in images:
+        if not isinstance(image, dict):
+            continue
+        url = _godo_image_url(image)
+        rank = _godo4_list_rank(url, number)
+        want_rep = image is best
+        if rank is not None or want_rep:
+            want_kind = "gallery"
+        elif url:
+            want_kind = "detail"
+        else:
+            want_kind = image.get("kind")
+        if bool(image.get("representative")) != want_rep:
+            image["representative"] = want_rep
+            changed = True
+        if want_kind and image.get("kind") != want_kind:
+            image["kind"] = want_kind
+            changed = True
+    if _godo4_same(before, product.get("images")):
+        return False
+    return changed
+
+
+def extract_product(html, page_url=""):
+    data = _extract_product_before_godo_image4(html, page_url)
+    number = _godo_goods_no(page_url)
+    if not isinstance(data, dict) or not number:
+        return data
+    html_text = html if isinstance(html, str) else ""
+    name = str(data.get("name") or "").strip() or _godo4_title(html_text)
+    urls = []
+
+    def add(url):
+        url = _godo_clean_url(url)
+        if url and url not in urls and not _godo_skip_url(url):
+            urls.append(url)
+
+    for key in ("gallery_images", "detail_images", "images"):
+        for item in data.get(key) or []:
+            add(_godo_image_url(item))
+    for match in _godo_re.finditer(r"(?:https?:)?//[^\s\"'<>\\]+", html_text, _godo_re.I):
+        add(match.group(0))
+    gallery = [url for url in urls if _godo4_list_rank(url, number) is not None]
+    if not any(_godo4_list_rank(url, number) == 0 for url in gallery):
+        found = _godo4_lookup(page_url, number, name)
+        if found:
+            gallery = [found] + [url for url in gallery if url != found]
+    gallery.sort(key=lambda url: _godo4_list_rank(url, number) or 0)
+    if not gallery:
+        magnify = [url for url in urls if _godo_photo_rank(url, number) == 2]
+        if magnify:
+            gallery = [magnify[0]]
+    detail = []
+    for url in urls:
+        if url in gallery:
+            continue
+        rank = _godo_photo_rank(url, number)
+        low = url.lower()
+        if rank is not None or "esmplus.com" in low or "/data/editor/" in low:
+            detail.append(url)
+    data["gallery_images"] = gallery
+    data["detail_images"] = detail
+    images = data.get("images") or []
+    by_url = {}
+    rest = []
+    if images and isinstance(images[0], dict):
+        for image in images:
+            url = _godo_image_url(image) if isinstance(image, dict) else ""
+            if isinstance(image, dict) and url and url not in by_url:
+                by_url[url] = image
+            else:
+                rest.append(image)
+    ordered = []
+    gallery_set = set(gallery)
+    for url in gallery + detail:
+        image = by_url.pop(url, None)
+        if image is None:
+            image = {
+                "source_url": url,
+                "kind": "gallery" if url in gallery_set else "detail",
+                "representative": False,
+                "included": True,
+            }
+        ordered.append(image)
+    ordered.extend(by_url.values())
+    ordered.extend(item for item in rest if item not in ordered)
+    if ordered:
+        data["images"] = ordered
+        godo_fix_saved_images({"source_url": page_url, "name": name, "images": data["images"]})
+    return data
+'''
+GODO_IMAGE4_SCRAPER_NEEDED = ("def extract_product", "def godo_fix_saved_images", "def _godo_photo_rank", "def _godo_goods_no", GODO_IMAGE3_MARKER)
+GODO_IMAGE4_CATALOG_PY = r'''
+# godo-image4
+# A list image is the list page's /image/main/ or /image/list/ file. Magnify and
+# the detail slot are the detail page, so they are replaced when the list page
+# has a main photo. Follow goods_list.php page= links (page index, not pageNum)
+# and keep an unfinished crawl out of the cache. A missed goods number is
+# looked up by name on goods_search.php, using the absolute CDN url.
+import re as _godo4_re
+from urllib.parse import urlparse as _godo4_urlparse
+
+_GODO4_ABS = _godo4_re.compile(
+    r"(?:https?:)?//[^\"'\s<>\\]+/goods/(\d+)/image/(main|list)/[^\"'\s<>\\]+",
+    _godo4_re.I,
+)
+_GODO4_RANK = {"main": 0, "list": 1}
+_godo4_main_cache = {}
+_godomall_products_before_image4 = _godomall_products
+
+
+def _godo4_host(url):
+    host = _godo4_urlparse(str(url or "")).netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _godo4_keep(url, base=""):
+    text = str(url or "").strip()
+    if text.startswith("//"):
+        text = "https:" + text
+    if not text.startswith("http") or "/thumb/" in text.lower():
+        return ""
+    if base and _godo4_host(text) == _godo4_host(base):
+        path = _godo4_urlparse(text).path.lower()
+        if "/goods/" in path and "/image/" in path:
+            return ""
+    return text
+
+
+def _godo4_rank(url, number):
+    path = str(url or "").split("#", 1)[0].split("?", 1)[0]
+    match = _godo4_re.search(r"/goods/(\d+)/image/(main|list)/", path, _godo4_re.I)
+    if match is None or match.group(1) != str(number or "") or "/thumb/" in path.lower():
+        return None
+    return _GODO4_RANK.get(match.group(2).lower())
+
+
+def _godo4_mains_from_html(html, base=""):
+    found = {}
+
+    def consider(url, number, kind):
+        url = _godo4_keep(url, base)
+        if not url:
+            return
+        rank = _GODO4_RANK.get(str(kind or "").lower())
+        if rank is None:
+            return
+        prev = found.get(number)
+        if prev is None or rank < prev[0] or (rank == prev[0] and url.startswith("https") and not str(prev[1]).startswith("https")):
+            found[number] = (rank, url)
+
+    for match in _GODO4_ABS.finditer(html or ""):
+        consider(match.group(0), match.group(1), match.group(2))
+    for match in _godo4_re.finditer(
+        r"[\"']([^\"']*?/goods/(\d+)/image/(main|list)/[^\"']+)",
+        html or "",
+        _godo4_re.I,
+    ):
+        consider(match.group(1), match.group(2), match.group(3))
+    return {number: url for number, (_, url) in found.items()}
+
+
+def _godo4_linked_pages(html):
+    text = (html or "").replace("&amp;", "&").replace("&#38;", "&")
+    pages = set()
+    for match in _godo4_re.finditer(r"goods_list\.php\?[^\"'\s>]*", text, _godo4_re.I):
+        found = _godo4_re.search(r"(?:^|[?&])page=(\d+)", match.group(0), _godo4_re.I)
+        if not found:
+            continue
+        try:
+            page = int(found.group(1))
+        except ValueError:
+            continue
+        if 1 <= page <= 20:
+            pages.add(page)
+    return pages
+
+
+def _godo4_fetch_mains(shop_url, category):
+    key = (str(shop_url or ""), str(category or ""))
+    if key in _godo4_main_cache:
+        return _godo4_main_cache[key]
+    base = _base(shop_url)
+    cate = str(category or "").strip()
+    if cate in {"", "all", "etc"}:
+        cate = ""
+    found = {}
+    seen = set()
+    pending = [1]
+    complete = True
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            while pending and len(seen) < 20:
+                page = pending.pop(0)
+                if page in seen or page < 1 or page > 20:
+                    continue
+                seen.add(page)
+                params = {"page": page}
+                if cate:
+                    params["cateCd"] = cate
+                response = client.get(f"{base}/goods/goods_list.php", params=params)
+                if getattr(response, "status_code", 200) >= 400:
+                    complete = False
+                    break
+                html = response.text or ""
+                added = _godo4_mains_from_html(html, base)
+                if "잘못된 접근" in html and not added:
+                    complete = False
+                    break
+                found.update(added)
+                for linked in sorted(_godo4_linked_pages(html)):
+                    if linked not in seen and linked not in pending:
+                        pending.append(linked)
+            if pending:
+                complete = False
+    except Exception:
+        complete = False
+    if complete:
+        _godo4_main_cache[key] = found
+    return found
+
+
+def _godo4_mains_for(shop_url, category, items):
+    wanted = set()
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if number and _godo4_rank(item.get("image"), number) is None:
+            wanted.add(number)
+    if not wanted:
+        return {}
+    cates = []
+    getter = globals().get("_godo_all_cates")
+    if getter:
+        try:
+            more = list(getter(shop_url) or [])
+        except Exception:
+            more = []
+        for cate in more:
+            if cate not in cates:
+                cates.append(cate)
+            if len(cates) >= 12:
+                break
+    chosen = str(category or "").strip()
+    if chosen and chosen not in {"all", "etc"} and chosen not in cates:
+        cates.append(chosen)
+    if not cates:
+        cates = [chosen]
+    found = {}
+    pending = set(wanted)
+    for cate in cates:
+        if not pending:
+            break
+        for number, url in _godo4_fetch_mains(shop_url, cate).items():
+            if number not in wanted:
+                continue
+            prev = found.get(number)
+            if prev is None or (_godo4_rank(url, number) or 9) < (_godo4_rank(prev, number) or 9):
+                found[number] = url
+            if _godo4_rank(found.get(number), number) == 0:
+                pending.discard(number)
+    return found
+
+
+def _godo4_search_main(shop_url, number, name):
+    name = str(name or "").strip()
+    number = str(number or "")
+    if not name or not number:
+        return ""
+    base = _base(shop_url)
+    try:
+        with httpx.Client(headers=PAGE_HEADERS, follow_redirects=True, timeout=30.0) as client:
+            response = client.get(f"{base}/goods/goods_search.php", params={"keyword": name})
+            if getattr(response, "status_code", 200) >= 400:
+                return ""
+            found = _godo4_mains_from_html(response.text or "", base)
+    except Exception:
+        return ""
+    return str(found.get(number) or "")
+
+
+def _godo4_apply_items(items, mains):
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if not number:
+            continue
+        image = str(item.get("image") or "")
+        better = str((mains or {}).get(number) or "")
+        rank = _godo4_rank(image, number)
+        better_rank = _godo4_rank(better, number)
+        if better and better_rank is not None and (rank is None or better_rank < rank):
+            item["image"] = better
+            image = better
+            rank = better_rank
+        if rank is not None:
+            _godo_known_images[number] = image
+
+
+def _godo4_list_image(page_url, number, name=""):
+    number = str(number or "")
+    known = str(_godo_known_images.get(number) or "")
+    if _godo4_rank(known, number) == 0 and _godo4_keep(known, _base(page_url)):
+        return known
+    found = _godo4_mains_for(page_url, "", [{"product_no": number, "image": "", "name": name}])
+    url = str(found.get(number) or "")
+    if _godo4_rank(url, number) is None:
+        url = _godo4_search_main(page_url, number, name)
+    if _godo4_rank(url, number) is None:
+        url = known if _godo4_rank(known, number) is not None and _godo4_keep(known, _base(page_url)) else ""
+    if url:
+        _godo_known_images[number] = url
+    return url
+
+
+def _godomall_products(shop_url, category=None, *args, **kwargs):
+    data = _godomall_products_before_image4(shop_url, category, *args, **kwargs)
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list) or not items:
+        return data
+    mains = {}
+    if any(isinstance(item, dict) and _godo4_rank(item.get("image"), item.get("product_no")) is None for item in items):
+        try:
+            mains = _godo4_mains_for(shop_url, category, items)
+        except Exception:
+            mains = {}
+    _godo4_apply_items(items, mains)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        number = str(item.get("product_no") or "")
+        if not number or _godo4_rank(item.get("image"), number) is not None:
+            continue
+        found = _godo4_search_main(shop_url, number, item.get("name") or "")
+        if _godo4_rank(found, number) is not None:
+            item["image"] = found
+            _godo_known_images[number] = found
+    return data
+'''
+GODO_IMAGE4_CATALOG_NEEDED = ("def _godomall_products", "_godo_known_images", "def _base", "httpx", GODO_IMAGE3_MARKER)
 TEXT_DECODE1_MARKER = "# subprocess-text1"
 TEXT_DECODE1_CHROME_PY = r"""
 # subprocess-text1
@@ -6856,15 +8565,23 @@ def write_fix_status(root: Path) -> bool:
             (catalog, GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED),
             (catalog, GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED),
             (catalog, GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE2_MARKER, GODO_IMAGE2_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE3_MARKER, GODO_IMAGE3_CATALOG_NEEDED),
+            (catalog, GODO_IMAGE4_MARKER, GODO_IMAGE4_CATALOG_NEEDED),
         ),
         "scraper.py": (
             (root / "app" / "scraper.py", GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED),
+            (root / "app" / "scraper.py", GODO_IMAGE2_MARKER, GODO_IMAGE2_SCRAPER_NEEDED),
+            (root / "app" / "scraper.py", GODO_IMAGE3_MARKER, GODO_IMAGE3_SCRAPER_NEEDED),
+            (root / "app" / "scraper.py", GODO_IMAGE4_MARKER, GODO_IMAGE4_SCRAPER_NEEDED),
         ),
         "service.py": (
             (service, GODO_NAME2_MARKER, GODO_NAME2_SERVICE_NEEDED),
             (service, GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED),
             (service, GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED),
             (service, GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED),
+            (service, GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED),
+            (service, NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED),
         ),
     }
     files = {}
@@ -6883,6 +8600,5649 @@ def write_fix_status(root: Path) -> bool:
 
 GODO_NAME2_CATALOG_NEEDED = ("def _godomall_products", "def _godo_cate_from_href", GODO_NAME_MARKER)
 GODO_NAME2_SERVICE_NEEDED = ("def import_wholesale_catalog", "list_full_products", "save_products_batch")
+NAVER_TAG_MARKER = "# naver-tag1"
+NAVER_TAG_JS = r"""
+/* naver-tag1 */
+let naverTagLoad = 0;
+
+function naverTagQuery() {
+  const named = typeof categoryLeafName === "function"
+    ? categoryLeafName(current?.category_name || current?.source_category || "")
+    : "";
+  if (named && named !== "카테고리") return named;
+  return String(current?.category_keyword || "").trim();
+}
+
+function ensureNaverTagPanel() {
+  const form = document.getElementById("tagForm");
+  if (!form || document.getElementById("naverSearchTags")) return;
+  const actions = form.querySelector(".dialog-actions");
+  const layout = document.createElement("div");
+  layout.className = "tag-layout";
+  const main = document.createElement("div");
+  main.className = "tag-main";
+  const header = form.querySelector("header");
+  [...form.children].forEach((child) => {
+    if (child === header || child === actions) return;
+    main.appendChild(child);
+  });
+  const aside = document.createElement("aside");
+  aside.className = "naver-search-tags";
+  aside.innerHTML = "<h3>검색 태그</h3><p id=\"naverSearchTagCount\" class=\"hint\"></p><p id=\"naverSearchTagPage\" class=\"hint\">1–3페이지</p><div id=\"naverSearchTags\" class=\"naver-search-tag-list\"></div>";
+  layout.append(main, aside);
+  if (actions) form.insertBefore(layout, actions);
+  else form.appendChild(layout);
+}
+
+function ensureNaverTagButton() {
+  if (document.getElementById("tagFillDictionary")) return;
+  const ai = document.getElementById("tagFillAi");
+  if (!ai || !ai.parentElement) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.id = "tagFillDictionary";
+  button.textContent = "태그넣기";
+  button.addEventListener("click", () => {
+    fillTagsFromDictionary().catch((error) => toast(error.message, true));
+  });
+  ai.parentElement.insertBefore(button, ai);
+}
+
+function renderNaverSearchTags(tags) {
+  const box = document.getElementById("naverSearchTags");
+  if (!box) return;
+  box.innerHTML = "";
+  (tags || []).forEach((tag) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = tag;
+    button.addEventListener("click", () => addDraftTag(tag));
+    box.appendChild(button);
+  });
+}
+
+async function loadNaverSearchTags() {
+  ensureNaverTagPanel();
+  const token = ++naverTagLoad;
+  const query = naverTagQuery();
+  const count = document.getElementById("naverSearchTagCount");
+  const page = document.getElementById("naverSearchTagPage");
+  if (page) page.textContent = "1–3페이지";
+  if (!query) {
+    if (count) count.textContent = "카테고리의 마지막 분류가 없습니다.";
+    renderNaverSearchTags([]);
+    return;
+  }
+  if (count) count.textContent = query + " 검색 태그를 가져오는 중입니다.";
+  renderNaverSearchTags([]);
+  try {
+    const data = await api("/api/tags/naver-search?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+    if (token !== naverTagLoad) return;
+    const tags = Array.isArray(data.tags) ? data.tags : [];
+    if (count) count.textContent = query + " 검색 태그 " + tags.length + "개";
+    renderNaverSearchTags(tags);
+  } catch (error) {
+    if (token !== naverTagLoad) return;
+    if (count) count.textContent = error.message || "검색 태그를 가져오지 못했습니다.";
+  }
+}
+
+async function fillTagsFromDictionary() {
+  if (!current) return toast("먼저 상품을 선택해 주세요.", true);
+  if (typeof masterEditBlocked === "function" && masterEditBlocked()) return;
+  const query = naverTagQuery();
+  if (!query) return toast("카테고리의 마지막 분류를 지정해 주세요.", true);
+  const button = document.getElementById("tagFillDictionary");
+  const previous = button ? button.textContent : "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "가져오는 중";
+  }
+  try {
+    const data = await api("/api/tags/naver-dictionary?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+    const tags = (Array.isArray(data.tags) ? data.tags : []).map((item) => {
+      if (typeof item === "string") return item.trim();
+      return String(item?.text || "").trim();
+    }).filter(Boolean);
+    if (!tags.length) return toast("네이버 태그사전에 태그가 없습니다.", true);
+    const seen = [];
+    tags.forEach((tag) => {
+      if (!seen.includes(tag)) seen.push(tag);
+    });
+    draftTags = seen.slice(0, 10);
+    renderTagChips();
+    toast("네이버 태그사전을 넣었습니다.");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = previous || "태그넣기";
+    }
+  }
+}
+
+function bootNaverTags() {
+  ensureNaverTagPanel();
+  ensureNaverTagButton();
+  if (typeof openTagEditor === "function" && !openTagEditor._naverTag1) {
+    const openTagEditorBefore = openTagEditor;
+    const wrapped = function () {
+      ensureNaverTagPanel();
+      ensureNaverTagButton();
+      const result = openTagEditorBefore.apply(this, arguments);
+      loadNaverSearchTags();
+      return result;
+    };
+    wrapped._naverTag1 = true;
+    openTagEditor = wrapped;
+  }
+}
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bootNaverTags);
+else bootNaverTags();
+"""
+NAVER_TAG_CSS = r"""
+/* naver-tag1 */
+#tagDialog { width: min(980px, calc(100vw - 24px)); }
+.tag-layout { display: flex; gap: 16px; align-items: stretch; }
+.tag-main { flex: 1 1 auto; min-width: 0; }
+.naver-search-tags {
+  flex: 0 0 280px;
+  width: 280px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 280px;
+  max-height: min(560px, calc(100vh - 160px));
+}
+.naver-search-tags h3 { margin: 0 0 4px; font-size: 14px; }
+.naver-search-tags .hint { margin: 0 0 4px; }
+.naver-search-tag-list {
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.naver-search-tag-list button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+@media (max-width: 800px) {
+  .tag-layout { flex-direction: column; }
+  .naver-search-tags { width: auto; flex-basis: auto; }
+}
+"""
+NAME_FORBID_JS = r"""
+/* name-keyword-tags1 */
+let nameForbidCache = [];
+
+/* forbid-pure-start */
+function stripForbiddenText(value, words) {
+  let text = String(value || "");
+  const source = Array.isArray(words) ? words : (typeof nameForbidWords === "function" ? nameForbidWords() : []);
+  const list = source
+    .map((word) => String(word || "").replace(/\s+/g, " ").trim())
+    .filter((word) => word.length >= 2);
+  list.sort((a, b) => b.length - a.length);
+  list.forEach((word) => {
+    if (text.indexOf(word) >= 0) text = text.split(word).join(" ");
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+function stripForbiddenTags(tags, words) {
+  const out = [];
+  const list = Array.isArray(tags) ? tags : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const stripped = stripForbiddenText(list[index], words);
+    const tag = typeof cleanTag === "function"
+      ? cleanTag(stripped)
+      : String(stripped || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+    if (tag && out.indexOf(tag) < 0) out.push(tag);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+/* forbid-pure-end */
+
+function nameForbidWords() {
+  return nameForbidCache.slice();
+}
+function scrubProductRecord(product) {
+  if (!product || typeof product !== "object" || !product.id) return product;
+  const words = nameForbidWords();
+  if (!words.length) return product;
+  if (typeof product.name === "string") product.name = stripForbiddenText(product.name, words);
+  if (Array.isArray(product.tags)) product.tags = stripForbiddenTags(product.tags, words);
+  return product;
+}
+function scrubForbidPayload(data) {
+  if (Array.isArray(data)) {
+    data.forEach(scrubProductRecord);
+    return data;
+  }
+  if (data && typeof data === "object") {
+    scrubProductRecord(data);
+    if (Array.isArray(data.items)) data.items.forEach(scrubProductRecord);
+    if (data.product) scrubProductRecord(data.product);
+  }
+  return data;
+}
+function rememberForbidWords(data) {
+  const raw = data && Array.isArray(data.keywords) ? data.keywords : [];
+  nameForbidCache = typeof uniqueNameKeywords === "function" ? uniqueNameKeywords(raw) : raw.slice();
+  return nameForbidCache;
+}
+function applyForbidToLoadedProducts() {
+  try {
+    if (typeof products !== "undefined" && Array.isArray(products)) products.forEach(scrubProductRecord);
+    if (typeof current !== "undefined" && current) scrubProductRecord(current);
+    if (typeof renderSheets === "function" && document.getElementById("productTable")) renderSheets();
+    if (typeof fillPreview === "function") fillPreview();
+  } catch (error) {}
+}
+if (typeof api === "function" && !api.nameForbidWrapped) {
+  const apiBeforeForbid = api;
+  api = async function (path, options) {
+    const data = await apiBeforeForbid(path, options);
+    const url = String(path || "");
+    if (url.indexOf("/api/name-keywords") >= 0) {
+      rememberForbidWords(data);
+      applyForbidToLoadedProducts();
+      return data;
+    }
+    if (url.indexOf("/name/suggest") >= 0 && data && typeof data === "object") {
+      const words = nameForbidWords();
+      if (typeof data.name === "string") data.name = stripForbiddenText(data.name, words);
+      if (Array.isArray(data.keywords)) {
+        data.keywords = data.keywords.filter((row) => {
+          const word = String((row && row.keyword) || "");
+          return word && stripForbiddenText(word, words) === word;
+        });
+      }
+      return data;
+    }
+    return scrubForbidPayload(data);
+  };
+  api.nameForbidWrapped = true;
+}
+if (typeof saveProduct === "function" && !saveProduct.nameForbidWrapped) {
+  const saveProductBeforeForbid = saveProduct;
+  saveProduct = async function (product, patch, quiet) {
+    const next = patch && typeof patch === "object" ? Object.assign({}, patch) : patch;
+    const words = nameForbidWords();
+    if (next && words.length) {
+      if (typeof next.name === "string") next.name = stripForbiddenText(next.name, words);
+      if (Array.isArray(next.tags)) next.tags = stripForbiddenTags(next.tags, words);
+    }
+    return saveProductBeforeForbid(product, next, quiet);
+  };
+  saveProduct.nameForbidWrapped = true;
+}
+if (typeof renderTagChips === "function" && !renderTagChips.nameForbidWrapped) {
+  const renderTagChipsBeforeForbid = renderTagChips;
+  renderTagChips = function () {
+    if (typeof draftTags !== "undefined" && Array.isArray(draftTags) && nameForbidWords().length) {
+      draftTags = stripForbiddenTags(draftTags, nameForbidWords());
+    }
+    return renderTagChipsBeforeForbid.apply(this, arguments);
+  };
+  renderTagChips.nameForbidWrapped = true;
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameDetailWrapped) {
+  const openNameEditorBeforeDetail = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeDetail.apply(this, arguments);
+    const dialog = document.getElementById("nameDialog");
+    if (!dialog || !dialog.open) return result;
+    const form = document.getElementById("nameForm");
+    let layout = document.getElementById("nameDetailLayout");
+    if (!layout && form && form.parentNode) {
+      layout = document.createElement("div");
+      layout.id = "nameDetailLayout";
+      layout.className = "name-detail-layout";
+      form.parentNode.insertBefore(layout, form);
+      layout.appendChild(form);
+      const pane = document.createElement("aside");
+      pane.id = "nameDetailPane";
+      pane.className = "name-detail-pane";
+      pane.innerHTML = '<h3>상세페이지</h3><div id="nameDetailView" class="detail-visual name-detail-view"></div>';
+      layout.appendChild(pane);
+      dialog.classList.add("name-with-detail");
+    }
+    const view = document.getElementById("nameDetailView");
+    if (view && typeof current !== "undefined" && current) {
+      const html = typeof prepareDetailHtml === "function" ? prepareDetailHtml(current.detail_html || "") : (current.detail_html || "");
+      view.innerHTML = html || '<p class="hint">상세페이지가 없습니다.</p>';
+      if (typeof bindDetailImages === "function") bindDetailImages(view);
+    }
+    return result;
+  };
+  openNameEditor.nameDetailWrapped = true;
+}
+if (typeof api === "function") {
+  api("/api/name-keywords", { method: "GET", quiet: true }).catch(() => {});
+}
+"""
+NAME_FORBID_CSS = r"""
+/* name-keyword-tags1 */
+#nameDialog.name-with-detail {
+  width: min(1180px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+}
+#nameDialog.name-with-detail .name-detail-layout {
+  display: flex;
+  align-items: stretch;
+  max-height: calc(100vh - 48px);
+}
+#nameDialog.name-with-detail #nameForm {
+  flex: 0 0 400px;
+  width: 400px;
+  max-width: 46vw;
+  overflow: auto;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line, #d6dbe3);
+  background: var(--page, #fff);
+}
+#nameDialog.name-with-detail .name-detail-pane h3 {
+  margin: 0;
+  padding: 14px 16px 8px;
+  font-size: 16px;
+}
+#nameDialog.name-with-detail .name-detail-view {
+  flex: 1 1 auto;
+  margin: 0 12px 12px;
+  min-height: 240px;
+  max-height: calc(100vh - 120px);
+}
+@media (max-width: 860px) {
+  #nameDialog.name-with-detail .name-detail-layout { flex-direction: column; }
+  #nameDialog.name-with-detail #nameForm { width: auto; max-width: none; flex-basis: auto; }
+  #nameDialog.name-with-detail .name-detail-pane { border-left: 0; border-top: 1px solid var(--line, #d6dbe3); }
+  #nameDialog.name-with-detail .name-detail-view { max-height: 42vh; }
+}
+"""
+NAME_COUNT_JS = r"""
+/* name-count1 */
+function nameCharCount(value) {
+  return Array.from(String(value || "")).length;
+}
+function paintNameCount(node, value) {
+  if (!node) return;
+  const count = nameCharCount(value);
+  node.textContent = count + "/100";
+  node.classList.toggle("over", count > 100);
+}
+function mountNameCharCount() {
+  const input = document.getElementById("nameInput");
+  if (!input || document.getElementById("nameCharCount")) return;
+  const count = document.createElement("span");
+  count.id = "nameCharCount";
+  count.className = "name-char-count";
+  const parent = input.parentNode;
+  if (parent) parent.classList.add("name-count-field");
+  input.insertAdjacentElement("afterend", count);
+  const refresh = () => paintNameCount(count, input.value);
+  input.addEventListener("input", refresh);
+  refresh();
+  window.refreshNameCharCount = refresh;
+}
+function attachNameCellCount(cell) {
+  if (!cell || cell.querySelector(".name-char-count")) return;
+  cell.classList.add("name-count-cell");
+  const count = document.createElement("span");
+  count.className = "name-char-count";
+  const read = () => {
+    const input = cell.querySelector("input");
+    if (input && !input.hidden) return input.value;
+    const view = cell.querySelector(".cell-view");
+    return view ? view.textContent : "";
+  };
+  const refresh = () => paintNameCount(count, read());
+  cell.appendChild(count);
+  const input = cell.querySelector("input");
+  if (input) {
+    input.addEventListener("input", refresh);
+    input.addEventListener("blur", refresh);
+  }
+  refresh();
+}
+function closeMenuDialog(id) {
+  const dialog = document.getElementById(id);
+  if (dialog && dialog.open) dialog.close();
+}
+function menuSaveClosesDialog(path, options) {
+  const method = String((options && options.method) || "GET").toUpperCase();
+  const url = String(path || "").split("?")[0];
+  if (method === "PUT" && url.indexOf("/api/benefit") >= 0) return "benefitDialog";
+  if (method === "PUT" && url.indexOf("/api/name-keywords") >= 0) return "nameKeywordDialog";
+  if (method === "POST" && /\/api\/delivery-templates$/.test(url)) return "deliveryDialog";
+  if (method === "PUT" && /\/api\/delivery-templates\/(?!import$)[^/]+$/.test(url)) return "deliveryDialog";
+  return "";
+}
+if (typeof inputCell === "function" && !inputCell.nameCountWrapped) {
+  const inputCellBeforeCount = inputCell;
+  inputCell = function (value, field, type, locked) {
+    const cell = inputCellBeforeCount.apply(this, arguments);
+    if (field === "name" && !locked && cell) attachNameCellCount(cell);
+    return cell;
+  };
+  inputCell.nameCountWrapped = true;
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameCountWrapped) {
+  const openNameEditorBeforeCount = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeCount.apply(this, arguments);
+    if (typeof window.refreshNameCharCount === "function") window.refreshNameCharCount();
+    return result;
+  };
+  openNameEditor.nameCountWrapped = true;
+}
+if (typeof api === "function" && !api.menuSaveCloseWrapped) {
+  const apiBeforeMenuSave = api;
+  api = async function (path, options) {
+    const data = await apiBeforeMenuSave.apply(this, arguments);
+    const dialogId = menuSaveClosesDialog(path, options);
+    if (dialogId) closeMenuDialog(dialogId);
+    if (String(path || "").indexOf("/name/suggest") >= 0 && typeof window.refreshNameCharCount === "function") {
+      setTimeout(window.refreshNameCharCount, 0);
+    }
+    return data;
+  };
+  api.menuSaveCloseWrapped = true;
+}
+mountNameCharCount();
+"""
+NAME_COUNT_CSS = r"""
+/* name-count1 */
+.name-char-count {
+  color: #1f9d55;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.name-char-count.over { color: #e11d48; }
+html[data-theme="dark"] .name-char-count { color: #3ddc84; }
+html[data-theme="dark"] .name-char-count.over { color: #fb7185; }
+.name-count-field { position: relative; }
+.name-count-field .name-char-count {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+}
+#nameInput { padding-right: 72px; padding-bottom: 22px; }
+td.name-count-cell { position: relative; }
+td.name-count-cell .name-char-count {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+td.name-count-cell .cell-view,
+td.name-count-cell input {
+  padding-right: 58px;
+  box-sizing: border-box;
+}
+"""
+NAME_LAYOUT_JS = r"""
+/* name-layout1 */
+function widenNameEditorColumn() {
+  const form = document.getElementById("nameForm");
+  const input = document.getElementById("nameInput");
+  const dialog = document.getElementById("nameDialog");
+  if (!form || !input || !dialog) return;
+  let node = input.parentElement;
+  let column = null;
+  while (node && node !== form && node !== dialog) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const style = window.getComputedStyle(parent);
+    const display = style.display || "";
+    const direction = style.flexDirection || "row";
+    const row = (display === "flex" || display === "inline-flex") && direction.indexOf("column") !== 0;
+    const grid = display === "grid" || display === "inline-grid";
+    if (row || grid) {
+      const siblings = Array.prototype.filter.call(parent.children, (el) => el !== node);
+      if (siblings.length) {
+        column = node;
+        break;
+      }
+    }
+    node = parent;
+  }
+  form.classList.toggle("name-has-keywords", !!column);
+  if (!column) return;
+  column.style.setProperty("flex", "1 0 360px", "important");
+  column.style.setProperty("min-width", "360px", "important");
+  column.style.setProperty("max-width", "520px", "important");
+  column.style.setProperty("width", "auto", "important");
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameLayoutWrapped) {
+  const openNameEditorBeforeLayout = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeLayout.apply(this, arguments);
+    widenNameEditorColumn();
+    setTimeout(widenNameEditorColumn, 0);
+    return result;
+  };
+  openNameEditor.nameLayoutWrapped = true;
+}
+"""
+NAME_LAYOUT_CSS = r"""
+/* name-layout1 */
+#nameDialog.name-with-detail {
+  width: min(1480px, calc(100vw - 24px));
+}
+#nameDialog.name-with-detail #nameForm {
+  flex: 1 0 420px;
+  width: auto;
+  min-width: 360px;
+  max-width: 520px;
+  overflow: auto;
+}
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm:has(aside) {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: min(760px, 100%);
+  max-width: none;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 420px;
+  min-width: 260px;
+}
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  flex-grow: 1 !important;
+  flex-shrink: 0 !important;
+  flex-basis: 360px !important;
+  min-width: 360px !important;
+  max-width: 520px;
+  width: auto !important;
+  box-sizing: border-box;
+}
+#nameDialog.name-with-detail #nameInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  writing-mode: horizontal-tb;
+  word-break: keep-all;
+  padding-right: 76px;
+  padding-bottom: 28px;
+}
+#nameDialog.name-with-detail .name-suggest-actions button {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+#nameDialog.name-with-detail .name-suggest-actions .hint {
+  white-space: normal;
+  word-break: keep-all;
+  line-height: 1.45;
+}
+@media (max-width: 980px) {
+  #nameDialog.name-with-detail .name-detail-layout { flex-direction: column; }
+  #nameDialog.name-with-detail #nameForm,
+  #nameDialog.name-with-detail #nameForm.name-has-keywords {
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    flex-basis: auto;
+  }
+  #nameDialog.name-with-detail .name-detail-pane {
+    min-width: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line, #d6dbe3);
+  }
+}
+"""
+DIALOG_RESIZE_JS = r"""
+/* dialog-resize1 */
+/* resize-pure-start */
+function dialogResizeBox(edge, startLeft, startWidth, dx, viewWidth, minWidth) {
+  const margin = 8;
+  const startRight = startLeft + startWidth;
+  let left = startLeft;
+  let right = startRight;
+  if (edge === "right") right = startRight + dx;
+  else left = startLeft + dx;
+  if (right - left < minWidth) {
+    if (edge === "left") left = right - minWidth;
+    else right = left + minWidth;
+  }
+  if (left < margin) {
+    left = margin;
+    if (right - left < minWidth) right = left + minWidth;
+  }
+  if (right > viewWidth - margin) {
+    right = viewWidth - margin;
+    if (right - left < minWidth) left = Math.max(margin, right - minWidth);
+  }
+  return { left: Math.round(left), width: Math.round(right - left) };
+}
+/* resize-pure-end */
+function pinDialogBox(dialog) {
+  const rect = dialog.getBoundingClientRect();
+  dialog.classList.add("dialog-moved");
+  dialog.style.margin = "0";
+  dialog.style.position = "fixed";
+  dialog.style.left = rect.left + "px";
+  dialog.style.top = rect.top + "px";
+  dialog.style.width = rect.width + "px";
+  dialog.style.maxWidth = "none";
+  return rect;
+}
+function relaxNameColumnWidth() {
+  const input = document.getElementById("nameInput");
+  const form = document.getElementById("nameForm");
+  if (!input || !form) return;
+  let node = input.parentElement;
+  while (node && node !== form) {
+    node.style.setProperty("max-width", "none", "important");
+    node = node.parentElement;
+  }
+}
+function trackDialogResize(event, onMove) {
+  event.preventDefault();
+  event.stopPropagation();
+  document.body.classList.add("col-resizing");
+  const move = (ev) => onMove(ev);
+  const stop = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    document.removeEventListener("pointercancel", stop);
+    document.body.classList.remove("col-resizing");
+  };
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+  document.addEventListener("pointercancel", stop);
+}
+function mountDialogEdgeResize(dialog) {
+  if (!dialog || dialog.dataset.edgeResize === "1") return;
+  dialog.dataset.edgeResize = "1";
+  ["left", "right"].forEach((edge) => {
+    const handle = document.createElement("div");
+    handle.className = "dialog-resize-handle dialog-resize-" + edge;
+    handle.title = "좌우로 끌어 창 너비를 조절합니다";
+    dialog.appendChild(handle);
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      const rect = pinDialogBox(dialog);
+      const startX = event.clientX;
+      trackDialogResize(event, (ev) => {
+        const box = dialogResizeBox(edge, rect.left, rect.width, ev.clientX - startX, window.innerWidth, 360);
+        dialog.style.left = box.left + "px";
+        dialog.style.width = box.width + "px";
+        dialog.style.maxWidth = "none";
+      });
+    });
+  });
+  dialog.addEventListener("close", () => {
+    dialog.style.maxWidth = "";
+    dialog.style.minWidth = "";
+  });
+}
+function mountDialogEdgeResizeAll() {
+  document.querySelectorAll("dialog").forEach(mountDialogEdgeResize);
+}
+function setPaneWidth(pane, width) {
+  pane.style.setProperty("flex", "0 0 " + width + "px", "important");
+  pane.style.setProperty("width", width + "px", "important");
+  pane.style.setProperty("max-width", "none", "important");
+  pane.style.setProperty("min-width", "0px", "important");
+}
+function mountSplitter(parent, pane, minPane, minRest) {
+  if (!parent || !pane || pane.dataset.splitterReady === "1") return;
+  pane.dataset.splitterReady = "1";
+  const handle = document.createElement("div");
+  handle.className = "dialog-pane-resizer";
+  handle.title = "좌우로 끌어 너비를 조절합니다";
+  parent.insertBefore(handle, pane);
+  handle.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    const previous = pane.previousElementSibling === handle ? handle.previousElementSibling : pane.previousElementSibling;
+    const target = previous && previous !== handle ? previous : pane;
+    const startWidth = target.getBoundingClientRect().width;
+    const startX = event.clientX;
+    trackDialogResize(event, (ev) => {
+      const parentWidth = parent.getBoundingClientRect().width || window.innerWidth;
+      const next = Math.round(startWidth + (ev.clientX - startX));
+      const width = Math.max(minPane, Math.min(parentWidth - minRest, next));
+      setPaneWidth(target, width);
+      relaxNameColumnWidth();
+    });
+  });
+}
+function mountNameSplitters() {
+  const layout = document.getElementById("nameDetailLayout");
+  const form = document.getElementById("nameForm");
+  const detail = document.getElementById("nameDetailPane");
+  if (layout && detail) mountSplitter(layout, detail, 360, 240);
+  const input = document.getElementById("nameInput");
+  if (!form || !input) return;
+  let node = input.parentElement;
+  while (node && node !== form) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const style = window.getComputedStyle(parent);
+    const row = (style.display === "flex" || style.display === "inline-flex") && String(style.flexDirection || "row").indexOf("column") !== 0;
+    if (row && node.nextElementSibling) {
+      mountSplitter(parent, node.nextElementSibling, 320, 220);
+      break;
+    }
+    node = parent;
+  }
+}
+if (typeof openNameEditor === "function" && !openNameEditor.dialogResizeWrapped) {
+  const openNameEditorBeforeResize = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeResize.apply(this, arguments);
+    relaxNameColumnWidth();
+    mountNameSplitters();
+    setTimeout(() => {
+      relaxNameColumnWidth();
+      mountNameSplitters();
+    }, 0);
+    return result;
+  };
+  openNameEditor.dialogResizeWrapped = true;
+}
+mountDialogEdgeResizeAll();
+try {
+  if (typeof HTMLDialogElement === "function" && HTMLDialogElement.prototype.showModal && !HTMLDialogElement.prototype.showModal.dialogResizeWrapped) {
+    const showModalBeforeResize = HTMLDialogElement.prototype.showModal;
+    HTMLDialogElement.prototype.showModal = function () {
+      mountDialogEdgeResize(this);
+      return showModalBeforeResize.apply(this, arguments);
+    };
+    HTMLDialogElement.prototype.showModal.dialogResizeWrapped = true;
+  }
+} catch (error) {}
+"""
+MENU_SAVE_CLOSE2_JS = r"""
+/* menu-save-close2 */
+/* save-close-pure-start */
+function menuSaveButtonCloses(label) {
+  const text = String(label || "").replace(/\s+/g, "");
+  if (text.indexOf("저장") < 0) return false;
+  if (text.indexOf("저장위치") >= 0) return false;
+  return true;
+}
+function menuSaveRequestCloses(path, method) {
+  const verb = String(method || "GET").toUpperCase();
+  if (verb !== "POST" && verb !== "PUT" && verb !== "PATCH") return false;
+  const url = String(path || "").split("?")[0];
+  if (/\/import$/.test(url) || url.indexOf("/import/") >= 0) return false;
+  if (url.indexOf("/name/suggest") >= 0) return false;
+  if (url.indexOf("/collect") >= 0) return false;
+  if (url.indexOf("/register") >= 0) return false;
+  if (/\/test$/.test(url)) return false;
+  if (url.indexOf("/copy") >= 0) return false;
+  if (url.indexOf("/delete") >= 0) return false;
+  return true;
+}
+/* save-close-pure-end */
+let menuSaveDialog = null;
+let menuSaveStamp = 0;
+let menuSaveStarted = false;
+function rememberMenuSaveDialog(button) {
+  if (!button || button.disabled) return;
+  if (!menuSaveButtonCloses(button.textContent || button.value || "")) return;
+  const dialog = button.closest ? button.closest("dialog") : null;
+  if (!dialog || !dialog.open) return;
+  menuSaveDialog = dialog;
+  menuSaveStamp = Date.now();
+  menuSaveStarted = false;
+  const stamp = menuSaveStamp;
+  setTimeout(() => {
+    if (menuSaveStamp === stamp && !menuSaveStarted) menuSaveDialog = null;
+  }, 0);
+}
+document.addEventListener("click", (event) => {
+  rememberMenuSaveDialog(event.target && event.target.closest ? event.target.closest("button, input[type='submit']") : null);
+}, true);
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!form || !form.closest) return;
+  const dialog = form.closest("dialog");
+  if (!dialog || !dialog.open) return;
+  const submitter = event.submitter;
+  if (submitter) {
+    rememberMenuSaveDialog(submitter);
+    return;
+  }
+  const buttons = form.querySelectorAll("button, input[type='submit']");
+  for (let index = 0; index < buttons.length; index += 1) {
+    if (menuSaveButtonCloses(buttons[index].textContent || buttons[index].value || "")) {
+      rememberMenuSaveDialog(buttons[index]);
+      break;
+    }
+  }
+}, true);
+if (typeof api === "function" && !api.menuSaveClose2Wrapped) {
+  const apiBeforeMenuSave2 = api;
+  api = async function (path, options) {
+    const dialog = menuSaveDialog;
+    const stamp = menuSaveStamp;
+    const closeThis = Boolean(dialog) && menuSaveStamp === stamp && menuSaveRequestCloses(path, options && options.method);
+    if (closeThis) menuSaveStarted = true;
+    try {
+      const data = await apiBeforeMenuSave2.apply(this, arguments);
+      if (closeThis && menuSaveStamp === stamp && dialog.open) {
+        menuSaveDialog = null;
+        menuSaveStarted = false;
+        dialog.close();
+      }
+      return data;
+    } catch (error) {
+      if (closeThis && menuSaveStamp === stamp) {
+        menuSaveDialog = null;
+        menuSaveStarted = false;
+      }
+      throw error;
+    }
+  };
+  api.menuSaveClose2Wrapped = true;
+}
+"""
+DIALOG_RESIZE_CSS = r"""
+/* dialog-resize1 */
+.dialog-resize-handle,
+.dialog-pane-resizer {
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 30;
+}
+.dialog-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+}
+.dialog-resize-left { left: 0; }
+.dialog-resize-right { right: 0; }
+.dialog-pane-resizer {
+  position: relative;
+  flex: 0 0 8px;
+  width: 8px;
+  align-self: stretch;
+  margin: 0;
+  background: transparent;
+}
+.dialog-resize-handle:hover,
+.dialog-pane-resizer:hover,
+body.col-resizing .dialog-resize-handle,
+body.col-resizing .dialog-pane-resizer { background: #0078d7; }
+#nameDialog.name-with-detail #nameForm,
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  max-width: none;
+}
+@media (max-width: 980px) {
+  #nameDialog .dialog-pane-resizer { display: none; }
+}
+"""
+IMAGE_ROW5_CSS = r"""
+/* image-row5 */
+#imageDialog #imageThumbs.image-thumbs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, calc(5 * var(--image-slot-size, 125px) + 4 * 8px));
+  max-width: 100%;
+  align-content: start;
+  align-items: start;
+}
+#imageDialog #imageThumbs .image-slot {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  flex: none;
+  flex-basis: auto;
+  min-width: 0;
+}
+"""
+LIST_ZOOM_SHIP_JS = r"""
+/* list-zoom-ship1 */
+/* zoom-ship-pure-start */
+function zoomByStep(value, min, max, step, delta) {
+  const base = Math.round((Number(value) - min) / step) * step + min;
+  const next = base + Number(delta || 0) * step;
+  return Math.min(max, Math.max(min, next));
+}
+function listImagePixels(percent) {
+  return Math.round(500 * zoomByStep(percent, 25, 200, 5, 0) / 100);
+}
+function wholesaleShipAmount(item) {
+  const seen = new Set();
+  const read = (node) => {
+    if (!node || typeof node !== "object" || seen.has(node)) return null;
+    seen.add(node);
+    const type = String(node.shipping_type || node.shipping_fee_type || "").trim().toUpperCase();
+    if (type === "F" || type === "FREE" || type === "무료") return 0;
+    if (type === "C" || type === "착불") return 0;
+    const keys = [
+      "wholesale_shipping_fee", "wholesale_shipping",
+      "supplier_shipping_fee", "supplier_shipping",
+      "origin_shipping_fee", "source_shipping_fee",
+      "shipping_fee", "parcel_fee", "courier_fee", "shipping",
+    ];
+    for (const key of keys) {
+      if (node[key] == null || node[key] === "") continue;
+      const amount = Number(String(node[key]).replace(/,/g, "").replace(/원/g, "").trim());
+      if (!Number.isFinite(amount) || amount < 0) continue;
+      return amount;
+    }
+    return null;
+  };
+  if (!item || typeof item !== "object") return null;
+  const direct = read(item);
+  if (direct != null) return direct;
+  for (const key of ["wholesale", "supplier", "source", "extra"]) {
+    const nested = read(item[key]);
+    if (nested != null) return nested;
+  }
+  return null;
+}
+function marginRateWithShip(price, cost, fee, ship) {
+  const sale = Number(price);
+  if (!(sale > 0)) return NaN;
+  return (sale - Number(fee || 0) - Number(cost || 0) - Number(ship || 0)) / sale * 100;
+}
+function marginAdjustedForShip(currentPercent, price, oldShip, ship) {
+  const current = Number(currentPercent);
+  const sale = Number(price);
+  if (!Number.isFinite(current) || !(sale > 0)) return current;
+  return current + (Number(oldShip) - Number(ship)) / sale * 100;
+}
+function shipFromMarginTitle(title) {
+  const match = String(title || "").match(/(?:배송비|택배비)\s+([\d,]+(?:\.\d+)?)/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) ? amount : null;
+}
+/* zoom-ship-pure-end */
+(function () {
+  function productTableEl() {
+    return document.getElementById("productGrid");
+  }
+  function shipForItem(item) {
+    const own = wholesaleShipAmount(item);
+    if (own != null) return own;
+    if (!item || !item.master_id || typeof products === "undefined" || !Array.isArray(products)) return null;
+    const master = products.find((row) => row && row.id === item.master_id);
+    return master ? wholesaleShipAmount(master) : null;
+  }
+  function ensureShipHeader() {
+    const table = productTableEl();
+    if (!table) return;
+    const marginTh = table.querySelector("thead th[data-margin-col='1']");
+    if (!marginTh || table.querySelector("thead th[data-ship-col='1']")) return;
+    const th = document.createElement("th");
+    th.dataset.shipCol = "1";
+    th.textContent = "배송비";
+    th.title = "도매처 배송비. 마진율은 판매가에서 공급가, 수수료, 이 배송비를 뺀 비율입니다.";
+    marginTh.after(th);
+    const marginCol = table.querySelector("col[data-col='margin']");
+    if (marginCol && !table.querySelector("col[data-col='wholesale-ship']")) {
+      const col = document.createElement("col");
+      col.dataset.col = "wholesale-ship";
+      col.style.width = "84px";
+      marginCol.after(col);
+    }
+  }
+  function paintShipRow(row, item) {
+    if (!row) return;
+    const marginCell = row.querySelector("td[data-margin='1']");
+    if (!marginCell) return;
+    let cell = marginCell.nextElementSibling;
+    if (!cell || cell.dataset.ship !== "1") {
+      cell = document.createElement("td");
+      cell.dataset.ship = "1";
+      marginCell.after(cell);
+    }
+    const ship = shipForItem(item);
+    if (ship == null) {
+      cell.textContent = "";
+      cell.title = "도매처 배송비가 없습니다.";
+      return;
+    }
+    const rounded = Math.round(ship);
+    cell.textContent = rounded.toLocaleString("ko-KR");
+    cell.title = "도매처 배송비 " + rounded.toLocaleString("ko-KR") + "원";
+    const oldShip = shipFromMarginTitle(marginCell.title);
+    const priceMatch = String(marginCell.title || "").match(/판매가\s+([\d,]+(?:\.\d+)?)/);
+    const price = priceMatch ? Number(priceMatch[1].replace(/,/g, "")) : NaN;
+    const current = Number(String(marginCell.textContent || "").replace("%", "").replace(/,/g, ""));
+    if (oldShip == null || !(price > 0) || !Number.isFinite(current)) return;
+    const next = marginAdjustedForShip(current, price, oldShip, ship);
+    if (!Number.isFinite(next)) return;
+    marginCell.textContent = next.toFixed(2) + "%";
+    marginCell.classList.toggle("margin-neg", next < 0);
+    marginCell.title = String(marginCell.title || "").replace(/(배송비|택배비)\s+[\d,]+(?:\.\d+)?/, "$1 " + String(rounded));
+  }
+  function itemForRow(row, index) {
+    const list = typeof visibleProducts === "function" ? visibleProducts() : [];
+    if (list[index]) return list[index];
+    if (typeof products === "undefined" || !row) return null;
+    return products.find((item) => item && String(item.id) === String(row.dataset.id)) || null;
+  }
+  function paintShipRows() {
+    ensureShipHeader();
+    const body = document.getElementById("productTable");
+    if (!body) return;
+    [...body.querySelectorAll("tr")].forEach((row, index) => paintShipRow(row, itemForRow(row, index)));
+  }
+  function listenShipEdits() {
+    const body = document.getElementById("productTable");
+    if (!body || body.dataset.shipListen === "1") return;
+    body.dataset.shipListen = "1";
+    const onEdit = (event) => {
+      const field = event.target && event.target.dataset ? event.target.dataset.field : "";
+      if (field !== "price" && field !== "cost") return;
+      setTimeout(paintShipRows, 0);
+    };
+    body.addEventListener("input", onEdit);
+    body.addEventListener("change", onEdit);
+  }
+  function hookShip() {
+    listenShipEdits();
+    if (typeof renderProductSheet === "function" && !renderProductSheet.shipCol) {
+      const inner = renderProductSheet;
+      function wrapped() {
+        const result = inner.apply(this, arguments);
+        paintShipRows();
+        return result;
+      }
+      wrapped.shipCol = true;
+      wrapped.marginCol = inner.marginCol;
+      renderProductSheet = wrapped;
+    }
+    paintShipRows();
+  }
+  function retuneZoom(barId, wheelNode) {
+    const bar = document.getElementById(barId);
+    if (!bar || bar.dataset.step5 === "1") return;
+    const range = bar.querySelector("input[type='range']");
+    if (!range) return;
+    bar.dataset.step5 = "1";
+    range.step = "5";
+    const snap = (value, delta) => zoomByStep(value, Number(range.min), Number(range.max), 5, delta);
+    bar.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-zoom]");
+      if (!button || !bar.contains(button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      range.value = String(snap(range.value, Number(button.dataset.zoom)));
+      range.dispatchEvent(new Event("input", { bubbles: true }));
+    }, true);
+    if (wheelNode && wheelNode.dataset.zoomStep5 !== "1") {
+      wheelNode.dataset.zoomStep5 = "1";
+      wheelNode.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        range.value = String(snap(range.value, event.deltaY > 0 ? -1 : 1));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { capture: true, passive: false });
+    }
+  }
+  function retuneZoomBars() {
+    retuneZoom("imageZoomBar", document.getElementById("imageDrop"));
+    retuneZoom("detailZoomBar", document.getElementById("detailVisual"));
+  }
+  function ensureViewer() {
+    let dialog = document.getElementById("listImageZoom");
+    if (dialog) return dialog;
+    dialog = document.createElement("dialog");
+    dialog.id = "listImageZoom";
+    dialog.innerHTML = '<form method="dialog"><header><h2>목록이미지</h2><button type="button" id="listImageZoomClose">닫기</button></header><div class="work-zoom" id="listImageZoomBar"><span>크기</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b></div><div id="listImageZoomFrame"><img id="listImageZoomImg" alt=""></div><div class="dialog-actions"><button type="button" id="listImageZoomPage" hidden>상품 페이지</button></div></form>';
+    document.body.appendChild(dialog);
+    const range = dialog.querySelector("input[type='range']");
+    const label = dialog.querySelector("[data-zoom-label]");
+    const img = dialog.querySelector("#listImageZoomImg");
+    const paint = (value) => {
+      const zoom = zoomByStep(value, 25, 200, 5, 0);
+      const size = listImagePixels(zoom);
+      range.value = String(zoom);
+      label.textContent = zoom + "%";
+      img.style.width = size + "px";
+      img.style.height = size + "px";
+    };
+    range.addEventListener("input", () => paint(range.value));
+    dialog.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", () => paint(zoomByStep(range.value, 25, 200, 5, Number(button.dataset.zoom))));
+    });
+    dialog.querySelector("#listImageZoomClose").addEventListener("click", () => dialog.close());
+    dialog.querySelector("#listImageZoomPage").addEventListener("click", () => {
+      const url = dialog.dataset.pageUrl || "";
+      if (!url || typeof openSupplierProductUrl !== "function") return;
+      const supplier = dialog.dataset.supplierId || "";
+      openSupplierProductUrl(url, supplier, "상품 주소가 없습니다.");
+    });
+    dialog._paintZoom = paint;
+    return dialog;
+  }
+  function openListImage(src, alt, url, supplierId) {
+    if (!src) return;
+    const dialog = ensureViewer();
+    const img = dialog.querySelector("#listImageZoomImg");
+    img.src = src;
+    img.alt = alt || "목록이미지";
+    dialog.dataset.pageUrl = url || "";
+    dialog.dataset.supplierId = supplierId || "";
+    const page = dialog.querySelector("#listImageZoomPage");
+    if (page) page.hidden = !url;
+    dialog._paintZoom(100);
+    if (!dialog.open) dialog.showModal();
+  }
+  function supplierForListImage() {
+    if (typeof selectedCollectSupplierId !== "undefined" && selectedCollectSupplierId) return selectedCollectSupplierId;
+    if (typeof selectedWholesalerId === "function") return selectedWholesalerId() || "";
+    return "";
+  }
+  function listImageFromClick(target) {
+    const img = target && target.closest ? target.closest("img") : null;
+    if (!img || !img.getAttribute("src")) return null;
+    if (img.id === "listImageZoomImg") return null;
+    if (img.id === "previewImage") return img;
+    if (img.closest(".ownerclan-product")) return img;
+    if (img.closest("#productTable") || img.closest("#productGrid")) return img;
+    return null;
+  }
+  document.addEventListener("click", (event) => {
+    const img = listImageFromClick(event.target);
+    if (!img) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const link = img.closest("a");
+    const url = link ? link.getAttribute("href") || "" : "";
+    openListImage(img.src, img.alt, url, supplierForListImage());
+  }, true);
+  function hookZoom() {
+    retuneZoomBars();
+    hookShip();
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", hookZoom);
+  else hookZoom();
+  setTimeout(hookZoom, 0);
+  setTimeout(hookZoom, 400);
+})();
+"""
+LIST_ZOOM_SHIP_CSS = r"""
+/* list-zoom-ship1 */
+#previewImage { cursor: zoom-in; }
+.ownerclan-product img { cursor: zoom-in; }
+#productGrid img { cursor: zoom-in; }
+#listImageZoom {
+  width: auto;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+}
+#listImageZoom form { max-height: calc(100vh - 48px); overflow: auto; }
+#listImageZoomImg {
+  width: 500px;
+  height: 500px;
+  object-fit: contain;
+  display: block;
+  background: var(--soft);
+}
+#productGrid td[data-ship="1"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-right: 8px;
+}
+"""
+NAVER_TAG_SERVICE_PY = r'''
+# naver-tag1
+# Tag fill uses Naver's tag dictionary as returned. The search-tag list is the
+# seller tags on Naver shopping results for the leaf category, pages 1 to 3.
+import base64 as _naver_tag_base64
+import json as _naver_tag_json
+import re as _naver_tag_re
+import time as _naver_tag_time
+
+try:
+    from starlette.requests import Request as _NaverRequest
+except Exception:
+    _NaverRequest = object
+
+_NAVER_AUTO_TAGS = {"오늘출발", "오늘발송", "오늘도착", "무료교환", "무료반품", "무료배송"}
+_naver_token_cache = {"token": "", "until": 0.0}
+
+
+def _naver_tag_token(value):
+    text = str(value or "").strip()
+    if text.startswith("#"):
+        text = text[1:].strip()
+    text = text.replace("\u200b", "")
+    if not text or text in _NAVER_AUTO_TAGS or len(text) > 30:
+        return ""
+    return text
+
+
+def _naver_split_tags(blob):
+    found = []
+    for part in _naver_tag_re.split(r"[,|/·]+", str(blob or "")):
+        token = _naver_tag_token(part)
+        if token:
+            found.append(token)
+    return found
+
+
+def _naver_tags_from_product(product):
+    found = []
+    if not isinstance(product, dict):
+        return found
+    for key in ("manuTag", "manualTag", "sellerTag", "searchTag"):
+        if product.get(key):
+            found.extend(_naver_split_tags(product.get(key)))
+    for key in ("sellerTags", "tags", "tagList", "manuTags"):
+        value = product.get(key)
+        if isinstance(value, str):
+            found.extend(_naver_split_tags(value))
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, str):
+                    token = _naver_tag_token(item)
+                elif isinstance(item, dict):
+                    token = _naver_tag_token(item.get("text") or item.get("tag") or item.get("name") or "")
+                else:
+                    token = ""
+                if token:
+                    found.append(token)
+    return found
+
+
+def _naver_walk_products(node, out, seen):
+    if isinstance(node, dict):
+        marker = id(node)
+        if marker in seen:
+            return
+        seen.add(marker)
+        if any(key in node for key in ("manuTag", "sellerTags", "productTitle", "productName", "mallProductId")):
+            out.extend(_naver_tags_from_product(node))
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _naver_walk_products(value, out, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _naver_walk_products(item, out, seen)
+
+
+def _naver_unique_tags(tags):
+    ordered = []
+    for tag in tags:
+        if tag and tag not in ordered:
+            ordered.append(tag)
+        if len(ordered) >= 300:
+            break
+    return ordered
+
+
+def _tags_from_text(text):
+    raw = str(text or "")
+    tags = []
+    stripped = raw.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            data = _naver_tag_json.loads(raw)
+        except Exception:
+            data = None
+        if data is not None:
+            _naver_walk_products(data, tags, set())
+    if not tags:
+        for match in _naver_tag_re.finditer(r'"manuTag"\s*:\s*"((?:\\.|[^"\\])*)"', raw):
+            try:
+                blob = _naver_tag_json.loads('"' + match.group(1) + '"')
+            except Exception:
+                blob = match.group(1)
+            tags.extend(_naver_split_tags(blob))
+    return _naver_unique_tags(tags)
+
+
+def _collect_search_tags(pages):
+    ordered = []
+    for text in pages or []:
+        for tag in _tags_from_text(text):
+            if tag not in ordered:
+                ordered.append(tag)
+            if len(ordered) >= 300:
+                return ordered
+    return ordered
+
+
+def _naver_http_get(url, params, headers):
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    if httpx is not None:
+        with httpx.Client(headers=headers, follow_redirects=True, timeout=20.0) as client:
+            response = client.get(url, params=params)
+            return response.status_code, response.text or ""
+    import urllib.parse
+    import urllib.request
+    full = url + "?" + urllib.parse.urlencode(params)
+    request = urllib.request.Request(full, headers=headers)
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.status, response.read().decode("utf-8", "replace")
+
+
+def _naver_http_post_form(url, form):
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    if httpx is not None:
+        with httpx.Client(timeout=20.0, follow_redirects=True) as client:
+            response = client.post(url, data=form)
+            return response.status_code, response.text or ""
+    import urllib.parse
+    import urllib.request
+    data = urllib.parse.urlencode(form).encode("utf-8")
+    request = urllib.request.Request(url, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        return response.status, response.read().decode("utf-8", "replace")
+
+
+def _naver_search_product_tags(query):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "Referer": "https://search.shopping.naver.com/search/all?query=" + str(query),
+    }
+    pages = []
+    failures = 0
+    for page in (1, 2, 3):
+        params = {
+            "sort": "rel",
+            "pagingIndex": str(page),
+            "pagingSize": "40",
+            "viewType": "list",
+            "productSet": "total",
+            "query": query,
+            "origQuery": query,
+            "adQuery": query,
+        }
+        try:
+            status, text = _naver_http_get("https://search.shopping.naver.com/api/search/all", params, headers)
+        except Exception:
+            status, text = 0, ""
+        if status >= 400 or not _tags_from_text(text):
+            try:
+                status, text = _naver_http_get(
+                    "https://search.shopping.naver.com/search/all",
+                    {"query": query, "pagingIndex": str(page), "pagingSize": "40"},
+                    headers,
+                )
+            except Exception:
+                status, text = 0, ""
+        if status >= 400 or not text:
+            failures += 1
+            continue
+        pages.append(text)
+    tags = _collect_search_tags(pages)
+    if not tags and failures:
+        raise RuntimeError("네이버 쇼핑 검색에서 태그를 가져오지 못했습니다.")
+    return tags
+
+
+def _dictionary_rows(payload):
+    rows = payload
+    if isinstance(payload, dict):
+        rows = []
+        for key in ("tags", "recommendTags", "contents", "data", "items"):
+            if isinstance(payload.get(key), list):
+                rows = payload[key]
+                break
+    out = []
+    seen = set()
+    if not isinstance(rows, list):
+        return out
+    for item in rows:
+        if isinstance(item, str):
+            text = item.strip()
+            code = None
+        elif isinstance(item, dict):
+            text = str(item.get("text") or item.get("tagName") or item.get("name") or "").strip()
+            code = item.get("code")
+            if code is None:
+                code = item.get("id")
+        else:
+            continue
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        out.append({"text": text, "code": code})
+    return out
+
+
+def _dictionary_from_app(keyword):
+    import sys
+    names = ("recommend_tags", "get_recommend_tags", "search_recommend_tags", "naver_recommend_tags")
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in names:
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                return fn(keyword)
+            except TypeError:
+                continue
+            except Exception:
+                return None
+    return None
+
+
+def _existing_commerce_token():
+    import sys
+    names = ("commerce_token", "naver_commerce_token", "get_commerce_token", "smartstore_token")
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in names:
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                token = fn()
+            except Exception:
+                continue
+            if isinstance(token, str) and len(token) > 20:
+                return token
+            if isinstance(token, dict):
+                value = token.get("access_token") or token.get("token")
+                if isinstance(value, str) and len(value) > 20:
+                    return value
+    return ""
+
+
+def _commerce_credentials():
+    import sys
+    chosen = None
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in ("list_markets", "load_markets", "get_markets", "read_markets"):
+            fn = getattr(module, name, None)
+            if not callable(fn):
+                continue
+            try:
+                data = fn()
+            except Exception:
+                continue
+            rows = data if isinstance(data, list) else []
+            if isinstance(data, dict):
+                items = data.get("items") or data.get("markets") or []
+                rows = items if isinstance(items, list) else []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                channel = str(row.get("channel") or row.get("channel_id") or "smartstore").lower()
+                if channel and "smart" not in channel and "naver" not in channel:
+                    continue
+                client_id = str(row.get("naver_client_id") or row.get("api_key") or row.get("client_id") or "").strip()
+                secret = str(row.get("naver_client_secret") or row.get("api_secret") or row.get("client_secret") or "").strip()
+                account = str(row.get("naver_account_id") or row.get("account_id") or "").strip()
+                if not client_id or not secret or "*" in secret:
+                    continue
+                chosen = (client_id, secret, account)
+                if row.get("is_default"):
+                    return chosen
+    return chosen
+
+
+def _commerce_access_token():
+    now = _naver_tag_time.time()
+    if _naver_token_cache["token"] and _naver_token_cache["until"] > now:
+        return _naver_token_cache["token"]
+    existing = _existing_commerce_token()
+    if existing:
+        _naver_token_cache["token"] = existing
+        _naver_token_cache["until"] = now + 60
+        return existing
+    creds = _commerce_credentials()
+    if not creds:
+        return ""
+    client_id, secret, account = creds
+    try:
+        import bcrypt
+    except Exception:
+        return ""
+    timestamp = str(int(_naver_tag_time.time() * 1000))
+    try:
+        hashed = bcrypt.hashpw((client_id + "_" + timestamp).encode("utf-8"), secret.encode("utf-8"))
+    except Exception:
+        return ""
+    sign = _naver_tag_base64.b64encode(hashed).decode("utf-8")
+    form = {
+        "client_id": client_id,
+        "timestamp": timestamp,
+        "client_secret_sign": sign,
+        "grant_type": "client_credentials",
+        "type": "SELF",
+    }
+    if account:
+        form["account_id"] = account
+    try:
+        status, text = _naver_http_post_form("https://api.commerce.naver.com/external/v1/oauth2/token", form)
+    except Exception:
+        return ""
+    if status >= 400:
+        return ""
+    try:
+        payload = _naver_tag_json.loads(text)
+    except Exception:
+        return ""
+    token = str(payload.get("access_token") or "")
+    if not token:
+        return ""
+    try:
+        expires = int(payload.get("expires_in") or 3600)
+    except (TypeError, ValueError):
+        expires = 3600
+    _naver_token_cache["token"] = token
+    _naver_token_cache["until"] = now + max(60, expires - 60)
+    return token
+
+
+def _naver_dictionary(keyword):
+    found = _dictionary_from_app(keyword)
+    if found is not None:
+        tags = _dictionary_rows(found)
+        if tags:
+            return tags
+    token = _commerce_access_token()
+    if not token:
+        raise RuntimeError("네이버 태그사전을 가져오려면 스마트스토어 연동이 필요합니다.")
+    headers = {"Authorization": "Bearer " + token, "Accept": "application/json"}
+    status, text = _naver_http_get(
+        "https://api.commerce.naver.com/external/v2/tags/recommend-tags",
+        {"keyword": keyword},
+        headers,
+    )
+    if status == 404:
+        status, text = _naver_http_get(
+            "https://api.commerce.naver.com/external/v1/tags/recommend-tags",
+            {"keyword": keyword},
+            headers,
+        )
+    if status >= 400:
+        raise RuntimeError("네이버 태그사전 조회에 실패했습니다.")
+    try:
+        payload = _naver_tag_json.loads(text)
+    except Exception as exc:
+        raise RuntimeError("네이버 태그사전 응답을 읽지 못했습니다.") from exc
+    return _dictionary_rows(payload)
+
+
+def _naver_json(payload, status=200):
+    from starlette.responses import JSONResponse
+    return JSONResponse(payload, status_code=status)
+
+
+async def _naver_search_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "pages": [1, 2, 3], "tags": tags})
+
+
+async def _naver_dictionary_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_dictionary(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags})
+
+
+def _find_api_app():
+    import sys
+    best = None
+    best_score = 0
+    for module in list(sys.modules.values()):
+        if module is None:
+            continue
+        for name in ("app", "api", "application"):
+            candidate = getattr(module, name, None)
+            routes = getattr(candidate, "routes", None)
+            if not routes:
+                continue
+            score = 0
+            for route in routes:
+                path = str(getattr(route, "path", "") or getattr(route, "rule", "") or "")
+                if "/api/products" in path:
+                    score += 5
+                elif "/api/" in path:
+                    score += 1
+            if score > best_score:
+                best = candidate
+                best_score = score
+    return best
+
+
+def _add_naver_tag_routes(app):
+    paths = {"/api/tags/naver-search": _naver_search_route, "/api/tags/naver-dictionary": _naver_dictionary_route}
+    existing = set()
+    for route in getattr(app, "routes", []):
+        existing.add(str(getattr(route, "path", "") or getattr(route, "rule", "") or ""))
+    for path, handler in paths.items():
+        if path in existing:
+            continue
+        if hasattr(app, "add_api_route"):
+            app.add_api_route(path, handler, methods=["GET"])
+        else:
+            from starlette.routing import Route
+            app.router.routes.append(Route(path, handler, methods=["GET"]))
+
+
+def _naver_tag_install():
+    if globals().get("_naver_tag_installed"):
+        return
+    globals()["_naver_tag_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        _add_naver_tag_routes(app)
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag1", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG_NO_INSTALL"):
+    _naver_tag_install()
+'''
+NAVER_TAG_SERVICE_NEEDED = ("def collect_product",)
+NAVER_TAG2_MARKER = "# naver-tag2"
+NAVER_TAG2_NEEDED = ("def _naver_search_product_tags", "def _tags_from_text", "def _naver_dictionary")
+NAVER_TAG2_JS = r"""
+/* naver-tag2 */
+/* tag2-pure-start */
+function naverTagNorm(tag) {
+  return String(tag || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+}
+function naverTagJunk(tag) {
+  const norm = naverTagNorm(tag);
+  if (norm.length < 2) return true;
+  if (norm.indexOf("페이지") >= 0) return true;
+  if (norm === "검색태그" || norm === "더보기" || norm === "전체상품" || norm === "광고" || norm === "스폰서") return true;
+  if (/^\d+개$/.test(norm)) return true;
+  return false;
+}
+function naverTagBrandHit(tag, brands) {
+  const norm = naverTagNorm(tag);
+  const list = Array.isArray(brands) ? brands : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const token = naverTagNorm(list[index]);
+    if (token.length < 2) continue;
+    if (norm === token || norm.indexOf(token) === 0) return token;
+  }
+  return "";
+}
+function naverTagForbidHit(tag, words) {
+  const text = String(tag || "");
+  const list = Array.isArray(words) ? words : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const word = String(list[index] || "").trim();
+    if (word.length >= 2 && text.indexOf(word) >= 0) return word;
+  }
+  return "";
+}
+function naverTagKeep(tag, brands, words, categories) {
+  if (naverTagJunk(tag)) return false;
+  if (naverTagBrandHit(tag, brands)) return false;
+  if (naverTagForbidHit(tag, words)) return false;
+  const norm = naverTagNorm(tag);
+  const cats = Array.isArray(categories) ? categories : [];
+  for (let index = 0; index < cats.length; index += 1) {
+    const token = naverTagNorm(cats[index]);
+    if (token.length >= 2 && (norm === token || norm.indexOf(token) === 0)) return false;
+  }
+  return norm.length >= 2;
+}
+function naverTagsToDrop(tags, brands, words, blockTerms) {
+  const kept = [];
+  const dropped = [];
+  const brandAdds = [];
+  const list = Array.isArray(tags) ? tags : [];
+  list.forEach((tag) => {
+    const brand = naverTagBrandHit(tag, brands);
+    const forbid = naverTagForbidHit(tag, words);
+    const term = (blockTerms || []).find((item) => item && item.token && (item.token === tag || String(tag).indexOf(item.token) >= 0));
+    if (naverTagJunk(tag) || brand || forbid || term) {
+      dropped.push(tag);
+      if (brand) brandAdds.push(brand);
+      if (term && term.reason === "브랜드명") brandAdds.push(term.token);
+      return;
+    }
+    kept.push(tag);
+  });
+  return { kept: kept, dropped: dropped, brands: brandAdds };
+}
+/* tag2-pure-end */
+(function () {
+  const naverBrandCache = [];
+  function rememberNaverBrands(brands) {
+    (brands || []).forEach((brand) => {
+      const token = naverTagNorm(brand);
+      if (token.length >= 2 && naverBrandCache.indexOf(token) < 0) naverBrandCache.push(token);
+    });
+  }
+  function categoryTokens() {
+    const found = [];
+    const push = (text) => {
+      String(text || "").split(/[\s>/]+/).forEach((part) => {
+        const token = naverTagNorm(part);
+        if (token.length >= 2 && found.indexOf(token) < 0) found.push(token);
+      });
+    };
+    if (typeof naverTagQuery === "function") push(naverTagQuery());
+    if (typeof current !== "undefined" && current) {
+      push(current.category_name || "");
+      push(current.source_category || "");
+    }
+    return found;
+  }
+  function dropUnusableDraftTags() {
+    if (typeof draftTags === "undefined" || !Array.isArray(draftTags)) return { kept: [], dropped: [], brands: [] };
+    const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+    const terms = typeof tagBlockTerms === "function" ? tagBlockTerms() : [];
+    const result = naverTagsToDrop(draftTags, naverBrandCache.concat(words), words, terms);
+    draftTags = result.kept;
+    return result;
+  }
+  let brandSaveTimer = 0;
+  let forbidLoaded = false;
+  function queueBrandKeywords(words) {
+    rememberNaverBrands(words);
+    if (typeof api !== "function" || typeof uniqueNameKeywords !== "function") return;
+    clearTimeout(brandSaveTimer);
+    brandSaveTimer = setTimeout(async () => {
+      try {
+        let currentWords = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        if (!forbidLoaded) {
+          const data = await api("/api/name-keywords", { method: "GET", quiet: true });
+          if (typeof rememberForbidWords === "function") rememberForbidWords(data);
+          currentWords = typeof nameForbidWords === "function" ? nameForbidWords() : currentWords;
+          forbidLoaded = true;
+        }
+        const merged = uniqueNameKeywords(currentWords.concat(naverBrandCache));
+        if (merged.join("\n") === uniqueNameKeywords(currentWords).join("\n")) return;
+        await api("/api/name-keywords", {
+          method: "PUT",
+          body: JSON.stringify({ keywords: merged }),
+          quiet: true,
+        });
+      } catch (error) {}
+    }, 200);
+  }
+  if (typeof api === "function" && !api.naverTag2Wrapped) {
+    const apiBeforeTags = api;
+    api = async function (path, options) {
+      const data = await apiBeforeTags.apply(this, arguments);
+      const url = String(path || "");
+      if (url.indexOf("/api/tags/naver-search") >= 0 && data && typeof data === "object") {
+        const brands = Array.isArray(data.brands) ? data.brands : [];
+        rememberNaverBrands(brands);
+        const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        if (Array.isArray(data.tags)) {
+          data.tags = data.tags.filter((tag) => naverTagKeep(tag, naverBrandCache, words, categoryTokens()));
+        }
+        queueBrandKeywords(brands);
+        if (typeof draftTags !== "undefined" && Array.isArray(draftTags)) {
+          const removed = dropUnusableDraftTags();
+          if (removed.dropped.length && typeof renderTagChips === "function") renderTagChips();
+        }
+      }
+      if (url.indexOf("/api/tags/naver-dictionary") >= 0 && data && typeof data === "object" && Array.isArray(data.tags)) {
+        const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+        data.tags = data.tags.filter((item) => {
+          const text = typeof item === "string" ? item : (item && (item.text || item.tagName || item.name)) || "";
+          return naverTagKeep(text, naverBrandCache, words, categoryTokens());
+        });
+      }
+      return data;
+    };
+    api.naverTag2Wrapped = true;
+    api.menuSaveClose2Wrapped = apiBeforeTags.menuSaveClose2Wrapped;
+    api.nameForbidWrapped = apiBeforeTags.nameForbidWrapped;
+  }
+  if (typeof addDraftTag === "function" && !addDraftTag.naverTag2) {
+    const addDraftTagBefore = addDraftTag;
+    addDraftTag = function (raw) {
+      const parts = String(raw || "").split(/[,#\s]+/).map((part) => part.trim()).filter(Boolean);
+      const words = typeof nameForbidWords === "function" ? nameForbidWords() : [];
+      const blocked = parts.filter((part) => !naverTagKeep(part, naverBrandCache, words, categoryTokens()));
+      const allowed = parts.filter((part) => naverTagKeep(part, naverBrandCache, words, categoryTokens()));
+      if (blocked.length && typeof toast === "function") toast("브랜드나 검색에 적용되지 않는 태그는 넣지 않습니다.", true);
+      if (!allowed.length) {
+        const input = document.getElementById("tagInput");
+        if (input && blocked.length) input.value = "";
+        return;
+      }
+      return addDraftTagBefore.call(this, allowed.join(" "));
+    };
+    addDraftTag.naverTag2 = true;
+  }
+  if (typeof showSearchTagCheck === "function" && !showSearchTagCheck.naverTag2) {
+    const showSearchTagCheckBefore = showSearchTagCheck;
+    showSearchTagCheck = function () {
+      const removed = dropUnusableDraftTags();
+      if (removed.brands.length) queueBrandKeywords(removed.brands);
+      if (typeof renderTagChips === "function") renderTagChips();
+      const result = showSearchTagCheckBefore.apply(this, arguments);
+      if (removed.dropped.length && typeof toast === "function") {
+        toast("검색에 적용되지 않는 태그 " + removed.dropped.length + "개를 지웠습니다.");
+      }
+      return result;
+    };
+    showSearchTagCheck.naverTag2 = true;
+  }
+})();
+"""
+DIALOG_ZOOM_JS = r"""
+/* dialog-zoom1 */
+(function () {
+  /* dialog-zoom-pure-start */
+  function dialogZoomPercent(value, delta) {
+    const step = 5;
+    const min = 25;
+    const max = 200;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = snapped + (Number(delta) || 0) * step;
+    return Math.min(max, Math.max(min, next));
+  }
+  /* dialog-zoom-pure-end */
+  const zoomState = { nameDetailZoom: 100, attributeZoom: 100 };
+  function paintZoom(bar, percent, body) {
+    const next = dialogZoomPercent(percent, 0);
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) range.value = String(next);
+    if (label) label.textContent = next + "%";
+    if (body) body.style.zoom = String(next / 100);
+    return next;
+  }
+  function ensureBar(id, before) {
+    let bar = document.getElementById(id);
+    if (bar) return bar;
+    if (!before || !before.parentNode) return null;
+    bar = document.createElement("div");
+    bar.id = id;
+    bar.className = "work-zoom dialog-zoom-bar";
+    bar.innerHTML = '<span>크기</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b>';
+    before.parentNode.insertBefore(bar, before);
+    return bar;
+  }
+  function zoomBody(host, bodyId) {
+    if (!host) return null;
+    const existing = host.querySelector(":scope > .dialog-zoom-body");
+    if (existing) return existing;
+    const body = document.createElement("div");
+    body.id = bodyId;
+    body.className = "dialog-zoom-body";
+    while (host.firstChild) body.appendChild(host.firstChild);
+    host.appendChild(body);
+    return body;
+  }
+  function bindBar(bar, key, scrollHost, bodyOf) {
+    if (!bar) return;
+    if (bar.dataset.dialogZoom === "1") {
+      paintZoom(bar, zoomState[key], bodyOf());
+      return;
+    }
+    bar.dataset.dialogZoom = "1";
+    const range = bar.querySelector("input[type='range']");
+    const apply = (value, delta) => {
+      zoomState[key] = dialogZoomPercent(value, delta);
+      paintZoom(bar, zoomState[key], bodyOf());
+    };
+    if (range) range.addEventListener("input", () => apply(range.value, 0));
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        apply(range ? range.value : zoomState[key], Number(button.dataset.zoom));
+      });
+    });
+    if (scrollHost && scrollHost.dataset.dialogZoomWheel !== "1") {
+      scrollHost.dataset.dialogZoomWheel = "1";
+      scrollHost.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        apply(zoomState[key], event.deltaY > 0 ? -1 : 1);
+      }, { passive: false });
+    }
+    apply(zoomState[key], 0);
+  }
+  function mountNameZoom() {
+    const view = document.getElementById("nameDetailView");
+    if (!view) return;
+    const bar = ensureBar("nameDetailZoomBar", view);
+    bindBar(bar, "nameDetailZoom", view, () => zoomBody(view, "nameDetailZoomBody"));
+  }
+  function mountAttributeZoom() {
+    const fields = document.getElementById("attributeFields");
+    if (!fields) return;
+    const bar = ensureBar("attributeZoomBar", fields);
+    bindBar(bar, "attributeZoom", fields, () => zoomBody(fields, "attributeZoomBody"));
+  }
+  if (typeof openNameEditor === "function" && !openNameEditor.dialogZoomWrapped) {
+    const openNameEditorBeforeZoom = openNameEditor;
+    openNameEditor = function () {
+      const result = openNameEditorBeforeZoom.apply(this, arguments);
+      mountNameZoom();
+      setTimeout(mountNameZoom, 0);
+      return result;
+    };
+    openNameEditor.dialogZoomWrapped = true;
+  }
+  if (typeof openAttributeEditor === "function" && !openAttributeEditor.dialogZoomWrapped) {
+    const openAttributeEditorBeforeZoom = openAttributeEditor;
+    openAttributeEditor = function () {
+      const result = openAttributeEditorBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      if (result && typeof result.then === "function") {
+        result.then(() => mountAttributeZoom(), () => mountAttributeZoom());
+      }
+      setTimeout(mountAttributeZoom, 0);
+      return result;
+    };
+    openAttributeEditor.dialogZoomWrapped = true;
+  }
+  if (typeof renderAttributeFields === "function" && !renderAttributeFields.dialogZoomWrapped) {
+    const renderAttributeFieldsBeforeZoom = renderAttributeFields;
+    renderAttributeFields = function () {
+      const result = renderAttributeFieldsBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      return result;
+    };
+    renderAttributeFields.dialogZoomWrapped = true;
+  }
+  if (typeof renderFallbackAttributes === "function" && !renderFallbackAttributes.dialogZoomWrapped) {
+    const renderFallbackAttributesBeforeZoom = renderFallbackAttributes;
+    renderFallbackAttributes = function () {
+      const result = renderFallbackAttributesBeforeZoom.apply(this, arguments);
+      mountAttributeZoom();
+      return result;
+    };
+    renderFallbackAttributes.dialogZoomWrapped = true;
+  }
+})();
+"""
+DIALOG_ZOOM_CSS = r"""
+/* dialog-zoom1 */
+#nameDetailZoomBar,
+#attributeZoomBar {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin: 0 12px 8px;
+}
+#attributeZoomBar { margin: 8px 16px 0; }
+#nameDetailZoomBar input[type="range"],
+#attributeZoomBar input[type="range"] {
+  width: 180px;
+  max-width: 100%;
+  flex: 0 1 180px;
+}
+#nameDetailView > .dialog-zoom-body,
+#attributeFields > .dialog-zoom-body {
+  transform-origin: top left;
+}
+"""
+TAG_DICT_JS = r"""
+/* tag-dict1 */
+/* tag-dict-pure-start */
+function tagDictQuery(value) {
+  return String(value || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+}
+function tagDictDirectLabel(query) {
+  const text = tagDictQuery(query);
+  return text ? "직접입력: " + text : "";
+}
+function tagDictParts(text, query) {
+  const raw = String(text || "");
+  const needle = tagDictQuery(query);
+  if (!needle) return [{ text: raw, hit: false }];
+  const index = raw.toLowerCase().indexOf(needle.toLowerCase());
+  if (index < 0) return [{ text: raw, hit: false }];
+  const parts = [];
+  if (index > 0) parts.push({ text: raw.slice(0, index), hit: false });
+  parts.push({ text: raw.slice(index, index + needle.length), hit: true });
+  if (index + needle.length < raw.length) parts.push({ text: raw.slice(index + needle.length), hit: false });
+  return parts;
+}
+function tagDictTexts(tags) {
+  const seen = [];
+  (tags || []).forEach((item) => {
+    const text = typeof item === "string" ? item.trim() : String((item && (item.text || item.tagName || item.name)) || "").trim();
+    if (text && seen.indexOf(text) < 0) seen.push(text);
+  });
+  return seen.slice(0, 8);
+}
+/* tag-dict-pure-end */
+(function () {
+  let tagDictToken = 0;
+  let tagDictTimer = 0;
+  let tagDictPicking = false;
+  let tagDictComposing = false;
+  function tagDictBox() {
+    const input = document.getElementById("tagInput");
+    if (!input) return null;
+    let box = document.getElementById("tagDictBox");
+    if (box) return box;
+    box = document.createElement("div");
+    box.id = "tagDictBox";
+    box.className = "tag-dict";
+    box.hidden = true;
+    input.insertAdjacentElement("afterend", box);
+    box.addEventListener("mousedown", (event) => event.preventDefault());
+    box.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-tag]");
+      if (!button || !box.contains(button)) return;
+      event.preventDefault();
+      chooseTagDict(button.dataset.tag || "");
+    });
+    return box;
+  }
+  function hideTagDict() {
+    const box = document.getElementById("tagDictBox");
+    if (!box) return;
+    box.hidden = true;
+    box.innerHTML = "";
+  }
+  function chooseTagDict(tag) {
+    tagDictPicking = true;
+    hideTagDict();
+    if (tag && typeof addDraftTag === "function") addDraftTag(tag);
+    setTimeout(() => { tagDictPicking = false; }, 0);
+  }
+  function paintTagDict(query, tags) {
+    const box = tagDictBox();
+    if (!box) return;
+    box.innerHTML = "";
+    const direct = tagDictDirectLabel(query);
+    if (direct) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tag-dict-direct";
+      button.dataset.tag = tagDictQuery(query);
+      button.textContent = direct;
+      box.appendChild(button);
+    }
+    tagDictTexts(tags).forEach((tag) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tag-dict-item";
+      button.dataset.tag = tag;
+      tagDictParts(tag, query).forEach((part) => {
+        const node = document.createElement(part.hit ? "mark" : "span");
+        node.textContent = part.text;
+        button.appendChild(node);
+      });
+      box.appendChild(button);
+    });
+    box.hidden = !box.children.length;
+  }
+  function moveTagDict(delta) {
+    const box = document.getElementById("tagDictBox");
+    if (!box || box.hidden) return;
+    const rows = [...box.querySelectorAll("[data-tag]")];
+    if (!rows.length) return;
+    const current = rows.findIndex((row) => row.classList.contains("active"));
+    const next = current < 0 ? (delta > 0 ? 0 : rows.length - 1) : (current + delta + rows.length) % rows.length;
+    rows.forEach((row) => row.classList.remove("active"));
+    rows[next].classList.add("active");
+  }
+  async function loadTagDict(query) {
+    const token = ++tagDictToken;
+    const category = typeof naverTagQuery === "function" ? naverTagQuery() : "";
+    let tags = [];
+    if (typeof api === "function") {
+      try {
+        const data = await api(
+          "/api/tags/naver-dictionary-suggest?q=" + encodeURIComponent(query) + "&category=" + encodeURIComponent(category),
+          { method: "GET", quiet: true }
+        );
+        tags = data && Array.isArray(data.tags) ? data.tags : [];
+      } catch (error) {
+        tags = [];
+      }
+    }
+    if (token !== tagDictToken) return;
+    const input = document.getElementById("tagInput");
+    if (!input || tagDictQuery(input.value) !== query) return;
+    paintTagDict(query, tags);
+  }
+  function scheduleTagDict() {
+    if (tagDictPicking || tagDictComposing) return;
+    const input = document.getElementById("tagInput");
+    const query = input ? tagDictQuery(input.value) : "";
+    clearTimeout(tagDictTimer);
+    if (!query) {
+      tagDictToken += 1;
+      hideTagDict();
+      return;
+    }
+    paintTagDict(query, []);
+    tagDictTimer = setTimeout(() => loadTagDict(query), 200);
+  }
+  function bindTagDict() {
+    const input = document.getElementById("tagInput");
+    if (!input || input.dataset.tagDict === "1") return;
+    input.dataset.tagDict = "1";
+    tagDictBox();
+    input.addEventListener("compositionstart", () => { tagDictComposing = true; });
+    input.addEventListener("compositionend", () => {
+      tagDictComposing = false;
+      scheduleTagDict();
+    });
+    input.addEventListener("input", () => {
+      if (!tagDictComposing) scheduleTagDict();
+    });
+    input.addEventListener("keydown", (event) => {
+      const box = document.getElementById("tagDictBox");
+      const open = box && !box.hidden && box.querySelector("[data-tag]");
+      if (!open) return;
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        moveTagDict(event.key === "ArrowDown" ? 1 : -1);
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        hideTagDict();
+        return;
+      }
+      if (event.key === "Enter") {
+        const active = box.querySelector(".active") || box.querySelector("[data-tag]");
+        if (!active) return;
+        event.preventDefault();
+        event.stopPropagation();
+        chooseTagDict(active.dataset.tag || "");
+      }
+    }, true);
+    input.addEventListener("blur", () => setTimeout(hideTagDict, 0));
+    const dialog = document.getElementById("tagDialog");
+    if (dialog && dialog.dataset.tagDict !== "1") {
+      dialog.dataset.tagDict = "1";
+      dialog.addEventListener("close", hideTagDict);
+    }
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bindTagDict);
+  else bindTagDict();
+  setTimeout(bindTagDict, 0);
+})();
+"""
+TAG_DICT_CSS = r"""
+/* tag-dict1 */
+#tagEditor { position: relative; }
+.tag-dict {
+  margin: 6px 0 8px;
+  border: 1px solid #e6e6e6;
+  background: #fff;
+}
+.tag-dict button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #f3f3f3;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: #222;
+  cursor: pointer;
+}
+.tag-dict button:last-child { border-bottom: 0; }
+.tag-dict button:hover,
+.tag-dict button.active { background: #f6f7f9; }
+.tag-dict-direct { color: #8d939c; font-size: 13px; }
+.tag-dict mark {
+  background: #e4f07a;
+  color: inherit;
+  padding: 0 1px;
+}
+html[data-theme="dark"] .tag-dict { background: #1c1c1c; border-color: #333; }
+html[data-theme="dark"] .tag-dict button { background: transparent; color: #eee; border-bottom-color: #2c2c2c; }
+html[data-theme="dark"] .tag-dict button:hover,
+html[data-theme="dark"] .tag-dict button.active { background: #2a2a2a; }
+html[data-theme="dark"] .tag-dict-direct { color: #b0b6bf; }
+html[data-theme="dark"] .tag-dict mark { background: #c6d84a; color: #111; }
+"""
+DETAIL_FIT_JS = r"""
+/* detail-fit1 */
+(function () {
+  function mountDetailIntroMenu() {
+    const header = document.querySelector("#detailDialog header");
+    const close = document.getElementById("closeDetail");
+    if (!header || !close || document.getElementById("detailIntroMenu")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.id = "detailIntroMenu";
+    button.className = "detail-intro-menu";
+    button.textContent = "상세페이지추가글";
+    button.addEventListener("click", () => {
+      if (typeof fillDetailIntroInEditor !== "function") return;
+      fillDetailIntroInEditor().catch((error) => {
+        if (typeof toast === "function") toast(error.message, true);
+      });
+    });
+    close.before(button);
+  }
+  if (typeof fillDetailIntroInEditor === "function" && !fillDetailIntroInEditor.detailFitWrapped) {
+    const fillDetailIntroBeforeFit = fillDetailIntroInEditor;
+    fillDetailIntroInEditor = async function () {
+      const menu = document.getElementById("detailIntroMenu");
+      if (menu) {
+        menu.disabled = true;
+        menu.textContent = "만드는 중...";
+      }
+      try {
+        return await fillDetailIntroBeforeFit.apply(this, arguments);
+      } finally {
+        if (menu) {
+          menu.disabled = false;
+          menu.textContent = "상세페이지추가글";
+        }
+      }
+    };
+    fillDetailIntroInEditor.detailFitWrapped = true;
+  }
+  mountDetailIntroMenu();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountDetailIntroMenu);
+  setTimeout(mountDetailIntroMenu, 0);
+})();
+"""
+DETAIL_FIT_CSS = r"""
+/* detail-fit1 */
+#detailDialog {
+  width: 70vw;
+  height: 70vh;
+  max-width: 70vw;
+  max-height: 70vh;
+  margin: auto;
+  inset: 0;
+}
+#detailIntroMenu {
+  margin-left: auto;
+  height: 32px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+"""
+DETAIL_INTRO_STYLE_JS = r"""
+/* detail-intro-style1 */
+(function () {
+  function tidyDetailIntro() {
+    const menu = document.getElementById("detailIntroMenu");
+    if (menu) menu.remove();
+    const button = document.getElementById("detailIntroAi");
+    if (button && button.textContent !== "만드는 중...") button.textContent = "AI추가글";
+    const url = document.getElementById("detailImageUrl");
+    if (url) url.placeholder = "이미지 URL";
+  }
+  if (typeof fillDetailIntroInEditor === "function" && !fillDetailIntroInEditor.detailIntroStyleWrapped) {
+    const fillDetailIntroBeforeStyle = fillDetailIntroInEditor;
+    fillDetailIntroInEditor = async function () {
+      const button = document.getElementById("detailIntroAi");
+      if (button) button.textContent = "AI추가글";
+      try {
+        return await fillDetailIntroBeforeStyle.apply(this, arguments);
+      } finally {
+        if (button) button.textContent = "AI추가글";
+      }
+    };
+    fillDetailIntroInEditor.detailIntroStyleWrapped = true;
+  }
+  tidyDetailIntro();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tidyDetailIntro);
+  setTimeout(tidyDetailIntro, 0);
+  setTimeout(tidyDetailIntro, 50);
+})();
+"""
+DETAIL_INTRO_STYLE_CSS = r"""
+/* detail-intro-style1 */
+#detailIntroMenu { display: none !important; }
+#detailDialog #detailIntroAi {
+  background: #00c73c;
+  color: #fff;
+  border-color: #00a632;
+  font-weight: 700;
+  white-space: nowrap;
+}
+#detailDialog #detailIntroAi:disabled { opacity: 0.72; }
+#detailDialog .image-add-row { justify-content: flex-start; }
+#detailDialog #detailImageUrl {
+  flex: 0 1 240px;
+  width: 240px;
+  max-width: 46%;
+  min-width: 120px;
+}
+"""
+LOAD_SPIN_HTML = r"""<div id="loadSpinner" class="load-spinner" role="status" aria-live="polite">
+  <div class="load-spin-ring" aria-hidden="true"></div>
+  <p>작업 중</p>
+</div>
+<script>
+/* load-spin1 */
+(function () {
+  const watch = ["/api/products", "/api/markets", "/api/wholesalers"];
+  let pending = 0;
+  let armed = true;
+  function pathOf(input) {
+    const raw = typeof input === "string" ? input : (input && input.url) || "";
+    try {
+      return new URL(raw, location.origin).pathname;
+    } catch (error) {
+      return String(raw).split("?")[0];
+    }
+  }
+  function tracked(input, init) {
+    if (!armed) return false;
+    let method = "GET";
+    if (init && init.method) method = init.method;
+    else if (typeof Request !== "undefined" && input instanceof Request) method = input.method || "GET";
+    if (String(method).toUpperCase() !== "GET") return false;
+    return watch.indexOf(pathOf(input)) >= 0;
+  }
+  function show(on) {
+    const box = document.getElementById("loadSpinner");
+    if (!box) return;
+    box.hidden = !on;
+    box.setAttribute("aria-busy", on ? "true" : "false");
+  }
+  show(true);
+  const native = window.fetch.bind(window);
+  window.fetch = function (input, init) {
+    const track = tracked(input, init);
+    if (track) {
+      pending += 1;
+      show(true);
+    }
+    function finish() {
+      if (!track) return;
+      pending -= 1;
+      if (pending <= 0) {
+        pending = 0;
+        armed = false;
+        show(false);
+      }
+    }
+    return Promise.resolve(native(input, init)).then(function (response) {
+      finish();
+      return response;
+    }, function (error) {
+      finish();
+      throw error;
+    });
+  };
+  setTimeout(function () {
+    if (pending === 0) show(false);
+  }, 30000);
+})();
+</script>
+"""
+LOAD_SPIN_CSS = r"""
+/* load-spin1 */
+#loadSpinner {
+  position: fixed;
+  inset: 0;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+#loadSpinner[hidden] { display: none !important; }
+#loadSpinner .load-spin-ring {
+  width: 64px;
+  height: 64px;
+  border: 6px solid #d6e6f8;
+  border-top-color: #0078d7;
+  border-radius: 50%;
+  box-shadow: 0 0 0 6px rgba(255, 255, 255, 0.92);
+  animation: load-spin 0.75s linear infinite;
+}
+#loadSpinner p {
+  margin: 0;
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #c5d4e8;
+  border-radius: 6px;
+  color: #1a1a1a;
+  font-size: 15px;
+  font-weight: 700;
+}
+html[data-theme="dark"] #loadSpinner { background: rgba(12, 12, 12, 0.55); }
+html[data-theme="dark"] #loadSpinner .load-spin-ring {
+  border-color: #2a3d55;
+  border-top-color: #4da3ff;
+  box-shadow: 0 0 0 6px rgba(20, 20, 20, 0.9);
+}
+html[data-theme="dark"] #loadSpinner p {
+  background: rgba(28, 28, 28, 0.96);
+  color: #f2f2f2;
+  border-color: #555;
+}
+@keyframes load-spin { to { transform: rotate(360deg); } }
+"""
+NAVER_TAG2_SERVICE_PY = r'''
+# naver-tag2
+# Search tags drop page chrome and brand names. Brand names found on shopping
+# pages 1 to 3 are returned so the screen can store them with the forbidden words.
+import threading as _naver_tag2_threading
+
+_naver_tag2_local = _naver_tag2_threading.local()
+_naver_known_brands = set()
+_naver_tag2_found = {}
+_BRAND_FIELD_KEYS = ("brand", "brandName", "brandNm", "maker", "makerName", "manufacturer")
+
+
+def _naver_norm_tag(value):
+    text = _naver_tag_re.sub(r"[^0-9A-Za-z가-힣]", "", str(value or ""))
+    return text[:10]
+
+
+def _naver_tag2_brand_text(value):
+    if isinstance(value, dict):
+        return value.get("name") or value.get("text") or value.get("brandName") or ""
+    return value
+
+
+def _naver_junk_tag(tag):
+    if not tag or len(tag) < 2:
+        return True
+    if "페이지" in tag:
+        return True
+    if tag in {"검색태그", "더보기", "전체상품", "광고", "스폰서"}:
+        return True
+    if tag in _NAVER_AUTO_TAGS:
+        return True
+    if _naver_tag_re.fullmatch(r"\d+개", tag):
+        return True
+    return False
+
+
+def _naver_tag2_walk(node, seen):
+    brands = _naver_tag2_local.brands
+    counts = _naver_tag2_local.counts
+    if isinstance(node, dict):
+        marker = id(node)
+        if marker in seen:
+            return
+        seen.add(marker)
+        productish = any(key in node for key in ("manuTag", "sellerTags", "productTitle", "productName", "mallProductId"))
+        if productish:
+            for key in _BRAND_FIELD_KEYS:
+                token = _naver_norm_tag(_naver_tag2_brand_text(node.get(key)))
+                if len(token) >= 2:
+                    brands.add(token)
+            manu = []
+            for key in ("manuTag", "manualTag", "sellerTag", "searchTag"):
+                if node.get(key):
+                    manu.extend(_naver_split_tags(node.get(key)))
+            for key in ("sellerTags", "tags", "tagList", "manuTags"):
+                value = node.get(key)
+                if isinstance(value, str):
+                    manu.extend(_naver_split_tags(value))
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, str):
+                            manu.append(item)
+                        elif isinstance(item, dict):
+                            manu.append(str(item.get("text") or item.get("tag") or item.get("name") or ""))
+            norms = []
+            for tag in manu:
+                norm = _naver_norm_tag(tag)
+                if norm and norm not in norms:
+                    norms.append(norm)
+            for norm in norms:
+                counts[norm] = counts.get(norm, 0) + 1
+            name = str(node.get("productName") or node.get("productTitle") or "")
+            pieces = name.split()
+            first = _naver_norm_tag(pieces[0] if pieces else "")
+            if len(first) >= 2 and first in norms:
+                brands.add(first)
+        for value in node.values():
+            if isinstance(value, (dict, list)):
+                _naver_tag2_walk(value, seen)
+    elif isinstance(node, list):
+        for item in node:
+            _naver_tag2_walk(item, seen)
+
+
+def _naver_tag2_note(text):
+    if getattr(_naver_tag2_local, "brands", None) is None or getattr(_naver_tag2_local, "counts", None) is None:
+        return
+    raw = str(text or "").lstrip()
+    if not raw.startswith("{") and not raw.startswith("["):
+        return
+    try:
+        data = _naver_tag_json.loads(raw)
+    except Exception:
+        return
+    _naver_tag2_walk(data, set())
+
+
+def _naver_filter_search_tags(tags, query, brands, counts):
+    blocked = set()
+    for brand in brands or []:
+        token = _naver_norm_tag(brand)
+        if len(token) >= 2:
+            blocked.add(token)
+    for part in _naver_tag_re.split(r"[\s>/]+", str(query or "")):
+        token = _naver_norm_tag(part)
+        if len(token) >= 2:
+            blocked.add(token)
+    ranked = []
+    seen = set()
+    for tag in tags or []:
+        norm = _naver_norm_tag(tag)
+        if not norm or norm in seen or _naver_junk_tag(norm):
+            continue
+        if any(norm == brand or norm.startswith(brand) for brand in blocked):
+            continue
+        seen.add(norm)
+        ranked.append(norm)
+    ranked.sort(key=lambda item: -int((counts or {}).get(item, 0)))
+    return ranked[:40]
+
+
+_tags_from_text_before_tag2 = _tags_from_text
+
+
+def _tags_from_text(text):
+    found = _tags_from_text_before_tag2(text)
+    _naver_tag2_note(text)
+    return found
+
+
+_naver_search_product_tags_before_tag2 = _naver_search_product_tags
+
+
+def _naver_search_product_tags(query):
+    _naver_tag2_local.brands = set()
+    _naver_tag2_local.counts = {}
+    tags = _naver_search_product_tags_before_tag2(query)
+    brands = set(_naver_tag2_local.brands)
+    counts = dict(_naver_tag2_local.counts)
+    _naver_known_brands.update(brands)
+    filtered = _naver_filter_search_tags(tags, query, brands, counts)
+    _naver_tag2_found[str(query)] = {"brands": sorted(brands), "tags": filtered}
+    return filtered
+
+
+_naver_dictionary_before_tag2 = _naver_dictionary
+
+
+def _naver_dictionary(keyword):
+    rows = _naver_dictionary_before_tag2(keyword)
+    brands = set(_naver_known_brands)
+    kept = []
+    for row in rows or []:
+        text = row.get("text") if isinstance(row, dict) else str(row or "")
+        if _naver_filter_search_tags([text], keyword, brands, {}):
+            kept.append(row)
+    return kept
+
+
+async def _naver_search_route2(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    found = _naver_tag2_found.get(query) or {}
+    return _naver_json({"query": query, "pages": [1, 2, 3], "tags": tags, "brands": found.get("brands") or []})
+
+
+async def _naver_dictionary_route2(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_dictionary(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags, "brands": sorted(_naver_known_brands)})
+
+
+def _naver_tag2_install():
+    if globals().get("_naver_tag2_installed"):
+        return
+    globals()["_naver_tag2_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-dictionary", _naver_dictionary_route2, methods=["GET"]))
+        routes.insert(0, Route("/api/tags/naver-search", _naver_search_route2, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag2", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG2_NO_INSTALL"):
+    _naver_tag2_install()
+'''
+TAG_DICT_MARKER = "# tag-dict1"
+TAG_DICT_NEEDED = ("# naver-tag2", "_naver_dictionary_before_tag2")
+TAG_DICT_SERVICE_PY = r'''
+# tag-dict1
+# Typing a tag asks Naver's tag dictionary for words that continue it.
+# The typed word stays, unlike the category search which drops its own name.
+
+
+def _tag_dict_suggest(keyword, category=""):
+    source = globals().get("_naver_dictionary_before_tag2")
+    if not callable(source):
+        return []
+    rows = source(keyword)
+    blocked = set()
+    for brand in globals().get("_naver_known_brands") or []:
+        token = _naver_norm_tag(brand)
+        if len(token) >= 2:
+            blocked.add(token)
+    for part in _naver_tag_re.split(r"[\s>/]+", str(category or "")):
+        token = _naver_norm_tag(part)
+        if len(token) >= 2:
+            blocked.add(token)
+    kept = []
+    seen = set()
+    for row in rows or []:
+        text = row.get("text") if isinstance(row, dict) else str(row or "")
+        norm = _naver_norm_tag(text)
+        if not norm or norm in seen or _naver_junk_tag(norm):
+            continue
+        if any(norm == token or norm.startswith(token) for token in blocked):
+            continue
+        seen.add(norm)
+        code = row.get("code") if isinstance(row, dict) else None
+        kept.append({"text": str(text).strip() or norm, "code": code})
+        if len(kept) >= 8:
+            break
+    return kept
+
+
+async def _tag_dict_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    category = str(request.query_params.get("category") or "").strip()
+    if not query:
+        return _naver_json({"query": "", "tags": []})
+    try:
+        tags = _tag_dict_suggest(query, category)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "tags": tags})
+
+
+def _tag_dict_install():
+    if globals().get("_tag_dict_installed"):
+        return
+    globals()["_tag_dict_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-dictionary-suggest", _tag_dict_route, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="tag-dict1", daemon=True).start()
+
+
+if not globals().get("_TAG_DICT_NO_INSTALL"):
+    _tag_dict_install()
+'''
+NAVER_TAG3_MARKER = "# naver-tag3"
+NAVER_TAG3_NEEDED = ("# naver-tag2", "def _naver_search_product_tags", "def _tags_from_text")
+NAVER_TAG3_SERVICE_PY = r'''
+# naver-tag3
+# Pages 2 and 3 stay on the same cookie jar as page 1, and the shopping API
+# only returns later pages when the logic header is PART. Brand names are read
+# from the product JSON even when the page is HTML.
+import time as _naver_tag3_time
+
+_naver_tag3_found = {}
+_NAVER_TAG3_BRAND_KEYS = (
+    "brand", "brandName", "brandNm", "brndNm", "maker", "makerName", "makerNm", "manufacturer", "mkcoNm",
+)
+
+
+def _naver_tag3_blobs(text):
+    raw = str(text or "")
+    stripped = raw.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        return [stripped]
+    blobs = []
+    for match in _naver_tag_re.finditer(
+        r"<script[^>]*id=[\"']__NEXT_DATA__[\"'][^>]*>(.*?)</script>",
+        raw,
+        _naver_tag_re.S | _naver_tag_re.I,
+    ):
+        body = match.group(1).strip()
+        if body:
+            blobs.append(body)
+    return blobs or [raw]
+
+
+def _naver_tag3_quote_brands(text, brands):
+    sample = str(text or "")
+    for key in _NAVER_TAG3_BRAND_KEYS:
+        for match in _naver_tag_re.finditer(r'"' + key + r'"\s*:\s*"((?:\\.|[^"\\])*)"', sample):
+            try:
+                value = _naver_tag_json.loads('"' + match.group(1) + '"')
+            except Exception:
+                value = match.group(1)
+            token = _naver_norm_tag(value)
+            if len(token) >= 2:
+                brands.add(token)
+
+
+def _naver_tag3_has_products(text):
+    sample = str(text or "")
+    if "접속이 일시적으로 제한" in sample:
+        return False
+    return any(token in sample for token in ("manuTag", "sellerTags", "productName", "productTitle"))
+
+
+def _naver_tag3_state(text, tags):
+    sample = str(text or "")
+    if not sample.strip() or "접속이 일시적으로 제한" in sample:
+        return "blocked"
+    if tags:
+        return "ok"
+    return "empty"
+
+
+def _naver_tag3_brand_tag(norm, brands):
+    for brand in brands or []:
+        if len(brand) < 2:
+            continue
+        if norm == brand or norm.startswith(brand):
+            return True
+        if len(brand) >= 3 and brand in norm:
+            return True
+    return False
+
+
+def _naver_tag3_keep(tags, query, brands, counts):
+    kept = []
+    for tag in _naver_filter_search_tags(tags, query, brands, counts):
+        norm = _naver_norm_tag(tag)
+        if not norm or _naver_tag3_brand_tag(norm, brands):
+            continue
+        kept.append(norm)
+    return kept
+
+
+def _naver_tag3_collect(pages, query):
+    raw_pages = []
+    states = []
+    all_brands = set()
+    all_counts = {}
+    for text in list(pages or [])[:3]:
+        brands = set()
+        counts = {}
+        _naver_tag2_local.brands = brands
+        _naver_tag2_local.counts = counts
+        raw = []
+        for blob in _naver_tag3_blobs(text):
+            raw.extend(_tags_from_text(blob))
+            _naver_tag3_quote_brands(blob, brands)
+        _naver_tag3_quote_brands(text, brands)
+        all_brands.update(brands)
+        for key, value in counts.items():
+            all_counts[key] = all_counts.get(key, 0) + int(value)
+        raw_pages.append(raw)
+        states.append(_naver_tag3_state(text, raw))
+    while len(raw_pages) < 3:
+        raw_pages.append([])
+        states.append("blocked")
+    page_tags = [_naver_tag3_keep(raw, query, all_brands, all_counts) for raw in raw_pages]
+    for index, tags in enumerate(page_tags):
+        if tags:
+            states[index] = "ok"
+        elif states[index] != "blocked":
+            states[index] = "empty"
+    flat = []
+    for tags in page_tags:
+        for tag in tags:
+            if tag not in flat:
+                flat.append(tag)
+            if len(flat) >= 80:
+                return flat, page_tags, sorted(all_brands), states
+    return flat, page_tags, sorted(all_brands), states
+
+
+def _naver_tag3_fetch_pages(query):
+    pages = ["", "", ""]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.8",
+        "logic": "PART",
+    }
+    try:
+        import httpx
+    except Exception:
+        httpx = None
+    client = None
+    if httpx is not None:
+        try:
+            client = httpx.Client(headers=headers, follow_redirects=True, timeout=20.0)
+        except Exception:
+            client = None
+
+    def one(page):
+        referer = "https://search.shopping.naver.com/search/all?query=" + str(query) + "&pagingIndex=" + str(page) + "&pagingSize=40"
+        params = {
+            "sort": "rel",
+            "pagingIndex": str(page),
+            "pagingSize": "40",
+            "viewType": "list",
+            "productSet": "total",
+            "query": query,
+            "origQuery": query,
+            "adQuery": query,
+        }
+        text = ""
+        status = 0
+        try:
+            if client is not None:
+                response = client.get(
+                    "https://search.shopping.naver.com/api/search/all",
+                    params=params,
+                    headers={"Referer": referer, "logic": "PART"},
+                )
+                status, text = response.status_code, response.text or ""
+            else:
+                status, text = _naver_http_get(
+                    "https://search.shopping.naver.com/api/search/all",
+                    params,
+                    dict(headers, Referer=referer),
+                )
+        except Exception:
+            status, text = 0, ""
+        if status >= 400 or not _naver_tag3_has_products(text):
+            html_params = {
+                "query": query,
+                "pagingIndex": str(page),
+                "pagingSize": "40",
+                "sort": "rel",
+                "viewType": "list",
+                "productSet": "total",
+            }
+            try:
+                if client is not None:
+                    response = client.get(
+                        "https://search.shopping.naver.com/search/all",
+                        params=html_params,
+                        headers={"Referer": referer, "Accept": "text/html,application/xhtml+xml", "logic": "PART"},
+                    )
+                    text = response.text or ""
+                else:
+                    status, text = _naver_http_get(
+                        "https://search.shopping.naver.com/search/all",
+                        html_params,
+                        dict(headers, Referer=referer, Accept="text/html,application/xhtml+xml"),
+                    )
+            except Exception:
+                text = text or ""
+        return text or ""
+
+    try:
+        for index, page in enumerate((1, 2, 3)):
+            pages[index] = one(page)
+            if page < 3:
+                _naver_tag3_time.sleep(0.4)
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+    return pages
+
+
+_naver_search_product_tags_before_tag3 = _naver_search_product_tags
+
+
+def _naver_search_product_tags(query):
+    pages = _naver_tag3_fetch_pages(query)
+    if not any(_naver_tag3_has_products(text) for text in pages):
+        tags = _naver_search_product_tags_before_tag3(query)
+        found = _naver_tag2_found.get(str(query)) or {}
+        _naver_tag3_found[str(query)] = {
+            "brands": list(found.get("brands") or []),
+            "tags": tags,
+            "pageTags": [list(tags or []), [], []],
+            "pageStates": ["ok" if tags else "empty", "blocked", "blocked"],
+        }
+        return tags
+    flat, page_tags, brands, states = _naver_tag3_collect(pages, query)
+    _naver_known_brands.update(brands)
+    _naver_tag3_found[str(query)] = {
+        "brands": brands,
+        "tags": flat,
+        "pageTags": page_tags,
+        "pageStates": states,
+    }
+    if not flat and all(state == "blocked" for state in states):
+        raise RuntimeError("네이버 쇼핑 검색에서 태그를 가져오지 못했습니다.")
+    return flat
+
+
+async def _naver_search_route3(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"detail": "카테고리가 없습니다."}, 400)
+    try:
+        tags = _naver_search_product_tags(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    found = _naver_tag3_found.get(query) or {}
+    return _naver_json({
+        "query": query,
+        "pages": [1, 2, 3],
+        "pageTags": found.get("pageTags") or [[], [], []],
+        "pageStates": found.get("pageStates") or ["empty", "empty", "empty"],
+        "tags": tags,
+        "brands": found.get("brands") or [],
+    })
+
+
+def _naver_tag3_install():
+    if globals().get("_naver_tag3_installed"):
+        return
+    globals()["_naver_tag3_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-search", _naver_search_route3, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            _naver_tag_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-tag3", daemon=True).start()
+
+
+if not globals().get("_NAVER_TAG3_NO_INSTALL"):
+    _naver_tag3_install()
+'''
+TAG_PAGE_JS = r"""
+/* tag-page1 */
+(function () {
+  const memory = [];
+  function norm(tag) {
+    if (typeof naverTagNorm === "function") return naverTagNorm(tag);
+    return String(tag || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+  }
+  function remember(brands) {
+    (brands || []).forEach((brand) => {
+      const token = norm(brand);
+      if (token.length >= 2 && memory.indexOf(token) < 0) memory.push(token);
+    });
+  }
+  function ownBrands() {
+    const found = [];
+    const item = typeof current !== "undefined" ? current : null;
+    if (!item) return found;
+    [item.brand, item.manufacturer, item.maker, item.maker_name].forEach((value) => {
+      const token = norm(value);
+      if (token.length >= 2 && found.indexOf(token) < 0) found.push(token);
+    });
+    return found;
+  }
+  function blockedBrand(tag) {
+    const token = norm(tag);
+    const list = memory.concat(ownBrands());
+    for (let index = 0; index < list.length; index += 1) {
+      const brand = list[index];
+      if (!brand || brand.length < 2) continue;
+      if (token === brand || token.indexOf(brand) === 0) return true;
+      if (brand.length >= 3 && token.indexOf(brand) >= 0) return true;
+    }
+    return false;
+  }
+  function stripDraft() {
+    if (typeof draftTags === "undefined" || !Array.isArray(draftTags)) return;
+    const next = draftTags.filter((tag) => !blockedBrand(tag));
+    if (next.length !== draftTags.length) draftTags = next;
+  }
+  function ensurePages() {
+    if (!document.querySelector(".naver-search-tags") && typeof ensureNaverTagPanel === "function") ensureNaverTagPanel();
+    const aside = document.querySelector(".naver-search-tags");
+    if (!aside || (aside.dataset.tagPage === "1" && document.getElementById("naverSearchTagPages"))) return;
+    aside.dataset.tagPage = "1";
+    const host = document.createElement("div");
+    host.id = "naverSearchTagPages";
+    host.className = "naver-search-tag-list";
+    [1, 2, 3].forEach((page) => {
+      const section = document.createElement("section");
+      const title = document.createElement("h4");
+      title.textContent = page + "페이지";
+      const box = document.createElement("div");
+      box.dataset.pageTags = String(page);
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.dataset.pageEmpty = String(page);
+      empty.hidden = true;
+      section.append(title, box, empty);
+      host.appendChild(section);
+    });
+    const old = document.getElementById("naverSearchTags");
+    if (old) old.replaceWith(host);
+    else aside.appendChild(host);
+  }
+  function paintPages(data) {
+    ensurePages();
+    const pageTags = Array.isArray(data && data.pageTags) ? data.pageTags : [Array.isArray(data && data.tags) ? data.tags : [], [], []];
+    const states = Array.isArray(data && data.pageStates) ? data.pageStates : ["ok", "ok", "ok"];
+    remember(data && data.brands);
+    const counts = [];
+    for (let page = 1; page <= 3; page += 1) {
+      const tags = (pageTags[page - 1] || []).filter((tag) => !blockedBrand(tag));
+      const box = document.querySelector('[data-page-tags="' + page + '"]');
+      const empty = document.querySelector('[data-page-empty="' + page + '"]');
+      if (box) {
+        box.innerHTML = "";
+        tags.forEach((tag) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = tag;
+          button.addEventListener("click", () => {
+            if (typeof addDraftTag === "function") addDraftTag(tag);
+          });
+          box.appendChild(button);
+        });
+      }
+      const state = tags.length ? "ok" : (states[page - 1] || "empty");
+      if (empty) {
+        empty.hidden = !!tags.length;
+        empty.textContent = state === "blocked" ? "가져오지 못함" : "없음";
+      }
+      counts.push(page + "페이지 " + (tags.length ? tags.length + "개" : (state === "blocked" ? "가져오지 못함" : "없음")));
+    }
+    const count = document.getElementById("naverSearchTagCount");
+    if (count) count.textContent = counts.join(" · ");
+    const hint = document.getElementById("naverSearchTagPage");
+    if (hint) hint.textContent = "1·2·3페이지";
+    stripDraft();
+    if (typeof renderTagChips === "function") renderTagChips();
+  }
+  if (typeof loadNaverSearchTags === "function" && !loadNaverSearchTags.tagPage) {
+    loadNaverSearchTags = async function () {
+      ensurePages();
+      const query = typeof naverTagQuery === "function" ? naverTagQuery() : "";
+      const count = document.getElementById("naverSearchTagCount");
+      if (!query) {
+        if (count) count.textContent = "카테고리의 마지막 분류가 없습니다.";
+        paintPages({ pageTags: [[], [], []], pageStates: ["empty", "empty", "empty"], brands: [] });
+        return;
+      }
+      if (count) count.textContent = query + " 1·2·3페이지를 가져오는 중입니다.";
+      try {
+        const data = await api("/api/tags/naver-search?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+        paintPages(data || {});
+      } catch (error) {
+        if (count) count.textContent = error.message || "검색 태그를 가져오지 못했습니다.";
+        paintPages({ pageTags: [[], [], []], pageStates: ["blocked", "blocked", "blocked"], brands: [] });
+      }
+    };
+    loadNaverSearchTags.tagPage = true;
+  }
+  if (typeof addDraftTag === "function" && !addDraftTag.tagPage) {
+    const addDraftBeforePage = addDraftTag;
+    addDraftTag = function (raw) {
+      const parts = String(raw || "").split(/[,#\s]+/).map((part) => part.trim()).filter(Boolean);
+      const allowed = parts.filter((part) => !blockedBrand(part));
+      if (parts.length && !allowed.length) {
+        if (typeof toast === "function") toast("브랜드는 태그에 넣지 않습니다.", true);
+        const input = document.getElementById("tagInput");
+        if (input) input.value = "";
+        return;
+      }
+      return addDraftBeforePage.call(this, allowed.join(" "));
+    };
+    addDraftTag.tagPage = true;
+  }
+  if (typeof renderTagChips === "function" && !renderTagChips.tagPage) {
+    const renderTagChipsBeforePage = renderTagChips;
+    renderTagChips = function () {
+      stripDraft();
+      return renderTagChipsBeforePage.apply(this, arguments);
+    };
+    renderTagChips.tagPage = true;
+  }
+  if (typeof fillTagsFromDictionary === "function" && !fillTagsFromDictionary.tagPage) {
+    const fillTagsBeforePage = fillTagsFromDictionary;
+    fillTagsFromDictionary = async function () {
+      const result = await fillTagsBeforePage.apply(this, arguments);
+      stripDraft();
+      if (typeof renderTagChips === "function") renderTagChips();
+      return result;
+    };
+    fillTagsFromDictionary.tagPage = true;
+  }
+})();
+"""
+TAG_PAGE_CSS = r"""
+/* tag-page1 */
+#naverSearchTagPages section { margin: 0 0 10px; }
+#naverSearchTagPages h4 { margin: 0 0 4px; font-size: 12px; }
+#naverSearchTagPages [data-page-tags] { display: flex; flex-direction: column; gap: 4px; }
+#naverSearchTagPages [data-page-tags] button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+"""
+IMAGE_ZOOM_RIGHT_JS = r"""
+/* image-zoom-right1 */
+(function () {
+  function snapImageZoom(value, delta) {
+    const step = 5;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : 25;
+    const snapped = Math.round(base / step) * step;
+    return Math.min(120, Math.max(20, snapped + (Number(delta) || 0) * step));
+  }
+  function retuneImageZoom() {
+    const image = document.getElementById("imageDialog");
+    const bar = document.getElementById("imageZoomBar");
+    if (!image || !bar) return;
+    const header = image.querySelector("header");
+    const close = document.getElementById("closeImage");
+    if (header && bar.parentElement !== header) {
+      if (close && close.parentElement === header) header.insertBefore(bar, close);
+      else header.appendChild(bar);
+    }
+    const range = bar.querySelector("input[type='range']");
+    if (range) {
+      range.min = "20";
+      range.max = "120";
+      range.step = "5";
+      const next = snapImageZoom(range.value, 0);
+      if (String(next) !== String(range.value)) {
+        range.value = String(next);
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    }
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      if (button.dataset.zoom5 === "1") return;
+      const fresh = button.cloneNode(true);
+      fresh.dataset.zoom5 = "1";
+      button.replaceWith(fresh);
+      fresh.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!range) return;
+        range.value = String(snapImageZoom(range.value, fresh.dataset.zoom));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+    const drop = document.getElementById("imageDrop");
+    if (drop && drop.dataset.zoom5 !== "1") {
+      drop.dataset.zoom5 = "1";
+      drop.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey || !range) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        range.value = String(snapImageZoom(range.value, event.deltaY > 0 ? -1 : 1));
+        range.dispatchEvent(new Event("input", { bubbles: true }));
+      }, { capture: true, passive: false });
+    }
+  }
+  let droppingAttributeZoom = false;
+  function dropAttributeZoom() {
+    if (droppingAttributeZoom) return;
+    droppingAttributeZoom = true;
+    try {
+      const bar = document.getElementById("attributeZoomBar");
+      if (bar) bar.remove();
+      const fields = document.getElementById("attributeFields");
+      if (!fields) return;
+      const body = fields.querySelector(":scope > .dialog-zoom-body");
+      if (body) {
+        while (body.firstChild) fields.insertBefore(body.firstChild, body);
+        body.remove();
+      }
+      fields.style.zoom = "";
+    } finally {
+      droppingAttributeZoom = false;
+    }
+  }
+  function watchAttributeZoom() {
+    const dialog = document.getElementById("attributeDialog");
+    if (!dialog || dialog.dataset.zoomOff === "1") return;
+    dialog.dataset.zoomOff = "1";
+    new MutationObserver(() => dropAttributeZoom()).observe(dialog, { childList: true, subtree: true });
+    dropAttributeZoom();
+  }
+  ["openAttributeEditor", "renderAttributeFields", "renderFallbackAttributes"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.attrZoomOff) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        dropAttributeZoom();
+        setTimeout(dropAttributeZoom, 0);
+        setTimeout(dropAttributeZoom, 50);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.attrZoomOff = true;
+    window[name] = wrapped;
+  });
+  if (typeof openImageEditor === "function" && !openImageEditor.zoomRight) {
+    const openImageEditorBefore = openImageEditor;
+    openImageEditor = function () {
+      const result = openImageEditorBefore.apply(this, arguments);
+      retuneImageZoom();
+      setTimeout(retuneImageZoom, 0);
+      return result;
+    };
+    openImageEditor.zoomRight = true;
+  }
+  retuneImageZoom();
+  watchAttributeZoom();
+  setTimeout(retuneImageZoom, 0);
+  setTimeout(dropAttributeZoom, 0);
+  setTimeout(dropAttributeZoom, 50);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      retuneImageZoom();
+      watchAttributeZoom();
+    });
+  }
+})();
+"""
+IMAGE_ZOOM_RIGHT_CSS = r"""
+/* image-zoom-right1 */
+#imageDialog header h2 { margin-right: auto; }
+#imageDialog #imageZoomBar {
+  margin: 0 0 0 auto;
+  flex: 0 0 auto;
+}
+#imageDialog #imageZoomBar input[type="range"] { width: 120px; }
+#attributeZoomBar { display: none !important; }
+"""
+IMAGE_ZOOM_LIVE_JS = r"""
+/* image-zoom-live1 */
+(function () {
+  const step = 5;
+  let percent = 25;
+  function clampPercent(value) {
+    const number = Number(value);
+    const base = Number.isFinite(number) ? number : percent;
+    const snapped = Math.round(base / step) * step;
+    return Math.min(120, Math.max(20, snapped));
+  }
+  function paintSlots(next) {
+    percent = clampPercent(next);
+    const size = Math.round(500 * percent / 100);
+    document.documentElement.style.setProperty("--image-slot-size", size + "px");
+    const thumbs = document.getElementById("imageThumbs");
+    if (thumbs) {
+      thumbs.style.setProperty("display", "grid", "important");
+      thumbs.style.setProperty("grid-template-columns", "repeat(5, " + size + "px)", "important");
+      thumbs.style.setProperty("width", "max-content", "important");
+      thumbs.style.setProperty("max-width", "none", "important");
+    }
+    document.querySelectorAll("#imageThumbs .image-slot").forEach((slot) => {
+      slot.style.setProperty("width", size + "px", "important");
+      slot.style.setProperty("height", size + "px", "important");
+      slot.style.setProperty("flex", "0 0 " + size + "px", "important");
+      slot.style.setProperty("aspect-ratio", "auto", "important");
+      slot.style.setProperty("min-width", size + "px", "important");
+    });
+    const bar = document.getElementById("imageZoomBar");
+    if (!bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) {
+      range.min = "20";
+      range.max = "120";
+      range.step = "5";
+      range.value = String(percent);
+    }
+    if (label) label.textContent = percent + "%";
+  }
+  function watchThumbs() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || thumbs.dataset.zoomLive === "1") return;
+    thumbs.dataset.zoomLive = "1";
+    new MutationObserver(() => paintSlots(percent)).observe(thumbs, { childList: true });
+  }
+  function bindBar() {
+    const image = document.getElementById("imageDialog");
+    let bar = document.getElementById("imageZoomBar");
+    if (!image || !bar) return;
+    const header = image.querySelector("header");
+    const close = document.getElementById("closeImage");
+    if (header && bar.parentElement !== header) {
+      if (close && close.parentElement === header) header.insertBefore(bar, close);
+      else header.appendChild(bar);
+    }
+    if (bar.dataset.zoomLive !== "1") {
+      const fresh = bar.cloneNode(true);
+      fresh.dataset.zoomLive = "1";
+      fresh.dataset.step5 = "1";
+      bar.replaceWith(fresh);
+      bar = fresh;
+      bar.querySelectorAll("[data-zoom]").forEach((button) => {
+        button.dataset.zoom5 = "1";
+      });
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        paintSlots(percent + Number(button.dataset.zoom) * step);
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => paintSlots(range.value));
+    }
+    watchThumbs();
+    const range = bar.querySelector("input[type='range']");
+    paintSlots(range && range.value ? range.value : percent);
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.zoomLive) {
+    const renderImageEditorBefore = renderImageEditor;
+    renderImageEditor = function () {
+      const result = renderImageEditorBefore.apply(this, arguments);
+      paintSlots(percent);
+      return result;
+    };
+    renderImageEditor.zoomLive = true;
+  }
+  if (typeof openImageEditor === "function" && !openImageEditor.zoomLive) {
+    const openImageEditorBefore = openImageEditor;
+    openImageEditor = function () {
+      const result = openImageEditorBefore.apply(this, arguments);
+      const finish = () => {
+        bindBar();
+        setTimeout(bindBar, 0);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    openImageEditor.zoomLive = true;
+  }
+  bindBar();
+  setTimeout(bindBar, 0);
+  setTimeout(bindBar, 80);
+})();
+"""
+IMAGE_ZOOM_LIVE_CSS = r"""
+/* image-zoom-live1 */
+#imageDialog .image-drop { overflow: auto; }
+#imageDialog #imageThumbs.image-thumbs {
+  display: grid !important;
+  grid-template-columns: repeat(5, var(--image-slot-size, 125px)) !important;
+  width: max-content !important;
+  max-width: none !important;
+}
+#imageDialog #imageThumbs .image-slot {
+  width: var(--image-slot-size, 125px) !important;
+  height: var(--image-slot-size, 125px) !important;
+  flex: 0 0 var(--image-slot-size, 125px) !important;
+  aspect-ratio: auto !important;
+  min-width: var(--image-slot-size, 125px) !important;
+  max-width: none !important;
+}
+"""
+NAVER_KEYWORD_MARKER = "# naver-keyword1"
+NAVER_KEYWORD_NEEDED = ("def _naver_http_get", "def _naver_json", "def _find_api_app")
+NAVER_KEYWORD_SERVICE_PY = r'''
+# naver-keyword1
+# The product's own Naver search suggestions are shown beside the category tags.
+try:
+    from starlette.requests import Request as _NaverRequest
+except Exception:
+    _NaverRequest = object
+
+
+def _naver_keyword_rows(payload):
+    words = []
+    items = payload.get("items") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return words
+    for group in items:
+        if not isinstance(group, list):
+            continue
+        for row in group:
+            text = ""
+            if isinstance(row, list) and row:
+                text = str(row[0] or "")
+            elif isinstance(row, str):
+                text = row
+            text = " ".join(text.split())
+            if text and text not in words:
+                words.append(text)
+            if len(words) >= 20:
+                return words
+    return words
+
+
+def _naver_product_keywords(query):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Referer": "https://search.naver.com/",
+    }
+    status, text = _naver_http_get(
+        "https://ac.search.naver.com/nx/ac",
+        {
+            "q": query,
+            "con": "1",
+            "frm": "nv",
+            "ans": "2",
+            "r_format": "json",
+            "r_enc": "UTF-8",
+            "r_unicode": "0",
+            "t_koreng": "1",
+            "run": "2",
+            "rev": "4",
+            "q_enc": "UTF-8",
+            "st": "100",
+        },
+        headers,
+    )
+    if status >= 400 or not text:
+        raise RuntimeError("네이버 검색어를 가져오지 못했습니다.")
+    import json as _naver_keyword_json
+    try:
+        payload = _naver_keyword_json.loads(text)
+    except Exception as exc:
+        raise RuntimeError("네이버 검색어 응답을 읽지 못했습니다.") from exc
+    return _naver_keyword_rows(payload)
+
+
+async def _naver_keyword_route(request: _NaverRequest):
+    query = str(request.query_params.get("q") or "").strip()
+    if not query:
+        return _naver_json({"query": "", "keywords": []})
+    try:
+        keywords = _naver_product_keywords(query)
+    except Exception as exc:
+        return _naver_json({"detail": str(exc)}, 502)
+    return _naver_json({"query": query, "keywords": keywords})
+
+
+def _naver_keyword_install():
+    if globals().get("_naver_keyword_installed"):
+        return
+    globals()["_naver_keyword_installed"] = True
+
+    def attach():
+        app = _find_api_app()
+        if app is None:
+            return False
+        router = getattr(app, "router", None)
+        routes = getattr(router, "routes", None) if router is not None else None
+        if routes is None:
+            routes = getattr(app, "routes", None)
+        if routes is None:
+            return False
+        from starlette.routing import Route
+        routes.insert(0, Route("/api/tags/naver-keywords", _naver_keyword_route, methods=["GET"]))
+        return True
+
+    try:
+        if attach():
+            return
+    except Exception:
+        pass
+    import threading
+
+    def run():
+        for _ in range(40):
+            try:
+                if attach():
+                    return
+            except Exception:
+                return
+            import time as _naver_keyword_time
+            _naver_keyword_time.sleep(0.5)
+    threading.Thread(target=run, name="naver-keyword1", daemon=True).start()
+
+
+if not globals().get("_NAVER_KEYWORD_NO_INSTALL"):
+    _naver_keyword_install()
+'''
+PRODUCT_KEYWORD_JS = r"""
+/* product-keyword1 */
+(function () {
+  function productKeywordQuery() {
+    const item = typeof current !== "undefined" ? current : null;
+    const name = item ? String(item.name || item.product_name || "").trim() : "";
+    if (name) return name;
+    return typeof naverTagQuery === "function" ? naverTagQuery() : "";
+  }
+  function ensureKeywordBox() {
+    if (!document.querySelector(".naver-search-tags") && typeof ensureNaverTagPanel === "function") ensureNaverTagPanel();
+    const aside = document.querySelector(".naver-search-tags");
+    if (!aside) return null;
+    let box = document.getElementById("naverProductKeywords");
+    if (box) return box;
+    const section = document.createElement("section");
+    section.id = "naverProductKeywordSection";
+    const title = document.createElement("h4");
+    title.textContent = "이 상품 검색어";
+    box = document.createElement("div");
+    box.id = "naverProductKeywords";
+    const empty = document.createElement("p");
+    empty.id = "naverProductKeywordEmpty";
+    empty.className = "hint";
+    empty.hidden = true;
+    empty.textContent = "검색어가 없습니다.";
+    section.append(title, box, empty);
+    const pages = document.getElementById("naverSearchTagPages");
+    if (pages) aside.insertBefore(section, pages);
+    else aside.appendChild(section);
+    return box;
+  }
+  function paintKeywords(keywords) {
+    const box = ensureKeywordBox();
+    const empty = document.getElementById("naverProductKeywordEmpty");
+    if (!box) return;
+    box.innerHTML = "";
+    (keywords || []).forEach((keyword) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = keyword;
+      button.addEventListener("click", () => {
+        if (typeof addDraftTag === "function") addDraftTag(keyword);
+      });
+      box.appendChild(button);
+    });
+    if (empty) empty.hidden = keywords && keywords.length > 0;
+  }
+  async function loadProductKeywords() {
+    ensureKeywordBox();
+    const query = productKeywordQuery();
+    const empty = document.getElementById("naverProductKeywordEmpty");
+    if (!query) {
+      paintKeywords([]);
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = "상품명이 없습니다.";
+      }
+      return;
+    }
+    try {
+      const data = await api("/api/tags/naver-keywords?q=" + encodeURIComponent(query), { method: "GET", quiet: true });
+      paintKeywords(Array.isArray(data && data.keywords) ? data.keywords : []);
+    } catch (error) {
+      paintKeywords([]);
+      if (empty) {
+        empty.hidden = false;
+        empty.textContent = error.message || "검색어를 가져오지 못했습니다.";
+      }
+    }
+  }
+  if (typeof loadNaverSearchTags === "function" && !loadNaverSearchTags.productKeywords) {
+    const loadTagsBeforeKeywords = loadNaverSearchTags;
+    loadNaverSearchTags = function () {
+      const result = loadTagsBeforeKeywords.apply(this, arguments);
+      loadProductKeywords();
+      return result;
+    };
+    loadNaverSearchTags.productKeywords = true;
+  }
+  if (typeof openTagEditor === "function" && !openTagEditor.productKeywords) {
+    const openTagBeforeKeywords = openTagEditor;
+    openTagEditor = function () {
+      const result = openTagBeforeKeywords.apply(this, arguments);
+      loadProductKeywords();
+      return result;
+    };
+    openTagEditor.productKeywords = true;
+  }
+})();
+"""
+PRODUCT_KEYWORD_CSS = r"""
+/* product-keyword1 */
+#naverProductKeywordSection { margin: 0 0 12px; }
+#naverProductKeywordSection h4 { margin: 0 0 4px; font-size: 12px; }
+#naverProductKeywords { display: flex; flex-direction: column; gap: 4px; }
+#naverProductKeywords button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  padding: 6px 8px;
+}
+"""
+IMAGE_NARROW_CSS = r"""
+/* image-narrow1 */
+#imageDialog {
+  box-sizing: border-box;
+  width: 90vw;
+  max-width: 90vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: auto;
+  inset: 0;
+}
+"""
+PROMPT_NARROW_JS = r"""
+/* prompt-narrow1 */
+(function () {
+  function labelOf(button) {
+    return String(button.textContent || "").replace(/\s+/g, "");
+  }
+  function tunePrompt() {
+    document.querySelectorAll("button").forEach((button) => {
+      if (labelOf(button) !== "AI실행") return;
+      const row = button.parentElement;
+      if (!row) return;
+      const field = row.querySelector("input, textarea");
+      if (field && field.dataset.promptNarrow !== "1") {
+        const current = field.getBoundingClientRect().width;
+        if (current >= 40) {
+          const next = Math.round(current * 0.7);
+          field.dataset.promptNarrow = "1";
+          field.classList.add("prompt-narrow-input");
+          field.style.setProperty("box-sizing", "border-box", "important");
+          field.style.setProperty("width", next + "px", "important");
+          field.style.setProperty("flex", "0 0 " + next + "px", "important");
+          field.style.setProperty("max-width", next + "px", "important");
+        }
+      }
+      const host = button.closest("dialog, form, section") || document.body;
+      const menu = host.querySelector(".work-foot, .dialog-actions");
+      if (menu && menu !== row) menu.classList.add("prompt-menu-shift");
+    });
+  }
+  tunePrompt();
+  setTimeout(tunePrompt, 0);
+  setTimeout(tunePrompt, 200);
+  if (document.body) {
+    new MutationObserver(tunePrompt).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+  }
+  if (typeof HTMLDialogElement === "function" && HTMLDialogElement.prototype && !HTMLDialogElement.prototype.showModal.promptNarrow) {
+    const showModalBefore = HTMLDialogElement.prototype.showModal;
+    const wrapped = function () {
+      const result = showModalBefore.apply(this, arguments);
+      tunePrompt();
+      setTimeout(tunePrompt, 0);
+      return result;
+    };
+    wrapped.promptNarrow = true;
+    HTMLDialogElement.prototype.showModal = wrapped;
+  }
+})();
+"""
+PROMPT_NARROW_CSS = r"""
+/* prompt-narrow1 */
+.prompt-menu-shift {
+  padding-right: 24px;
+  box-sizing: border-box;
+}
+"""
+NAME_PANE_LIVE_JS = r"""
+/* name-pane-live1 */
+(function () {
+  /* name-pane-pure-start */
+  function detailPaneImageWidth(fit, percent) {
+    const step = 5;
+    const current = Number(percent);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = Math.min(200, Math.max(25, snapped));
+    const pane = Math.max(1, Math.round(Number(fit) || 1));
+    return Math.max(1, Math.round(pane * next / 100));
+  }
+  /* name-pane-pure-end */
+  function snapPercent(value) {
+    return detailPaneImageWidth(100, value);
+  }
+  function enlargeNameText(root) {
+    if (!root) return;
+    const nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("h1,h2,h3,h4,h5,label,input,textarea,button,span,p,li,a,b,small,strong,em,th,td,div")));
+    const sizes = nodes.map((el) => {
+      if (!el || el.dataset.text120 === "1" || el.tagName === "IMG" || el.tagName === "INPUT" && el.type === "range") return 0;
+      const size = parseFloat(window.getComputedStyle(el).fontSize);
+      return size > 0 ? size : 0;
+    });
+    const scale = 1.2;
+    nodes.forEach((el, index) => {
+      if (!sizes[index]) return;
+      el.dataset.text120 = "1";
+      el.style.setProperty("font-size", (Math.round(sizes[index] * scale * 10) / 10) + "px", "important");
+    });
+  }
+  function placeNamePane() {
+    const dialog = document.getElementById("nameDialog");
+    const form = document.getElementById("nameForm");
+    const pane = document.getElementById("nameDetailPane");
+    const box = document.getElementById("nameSuggestKeywords");
+    if (form) {
+      form.classList.add("name-keywords-below");
+      form.style.setProperty("display", "flex", "important");
+      form.style.setProperty("flex-direction", "column", "important");
+      form.style.setProperty("flex", "0 0 440px", "important");
+      form.style.setProperty("width", "440px", "important");
+      form.style.setProperty("min-width", "300px", "important");
+      form.style.setProperty("max-width", "440px", "important");
+      form.style.setProperty("overflow", "hidden", "important");
+      const actions = form.querySelector(".dialog-actions");
+      if (box && actions && box.parentElement === form) form.insertBefore(box, actions);
+    }
+    if (pane) {
+      pane.style.setProperty("flex", "1 1 auto", "important");
+      pane.style.setProperty("width", "auto", "important");
+      pane.style.setProperty("min-width", "0", "important");
+      pane.style.setProperty("max-width", "none", "important");
+    }
+    if (dialog) enlargeNameText(dialog);
+  }
+  function paintDetailImages() {
+    const view = document.getElementById("nameDetailView");
+    const bar = document.getElementById("nameDetailZoomBar");
+    if (!view || !bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    const percent = snapPercent(range ? range.value : 100);
+    if (range && String(range.value) !== String(percent)) range.value = String(percent);
+    if (label) label.textContent = percent + "%";
+    const viewStyle = window.getComputedStyle(view);
+    const pad = (parseFloat(viewStyle.paddingLeft) || 0) + (parseFloat(viewStyle.paddingRight) || 0);
+    const fit = Math.max(1, Math.round(view.clientWidth - pad));
+    const width = detailPaneImageWidth(fit, percent);
+    const body = view.querySelector(":scope > .dialog-zoom-body");
+    if (body) {
+      body.style.setProperty("zoom", "1", "important");
+      body.style.setProperty("width", width + "px", "important");
+      body.style.setProperty("max-width", "none", "important");
+      body.style.setProperty("transform", "none", "important");
+    }
+    view.querySelectorAll("img").forEach((img) => {
+      img.style.setProperty("width", width + "px", "important");
+      img.style.setProperty("max-width", "none", "important");
+      img.style.setProperty("height", "auto", "important");
+    });
+  }
+  function bindDetailImages() {
+    const view = document.getElementById("nameDetailView");
+    const bar = document.getElementById("nameDetailZoomBar");
+    if (!view || !bar) return;
+    if (bar.dataset.detailImageSize !== "1") {
+      bar.dataset.detailImageSize = "1";
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : 100;
+        const next = snapPercent(current + Number(button.dataset.zoom) * 5);
+        if (range) range.value = String(next);
+        paintDetailImages();
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => paintDetailImages());
+    }
+    if (view.dataset.detailImageWheel !== "1") {
+      view.dataset.detailImageWheel = "1";
+      view.addEventListener("wheel", (event) => {
+        if (!event.ctrlKey && !event.metaKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : 100;
+        const next = snapPercent(current + (event.deltaY > 0 ? -5 : 5));
+        if (range) range.value = String(next);
+        paintDetailImages();
+      }, { capture: true, passive: false });
+      new MutationObserver(() => {
+        enlargeNameText(view);
+        paintDetailImages();
+      }).observe(view, { childList: true, subtree: true });
+    }
+    paintDetailImages();
+  }
+  function refreshNamePane() {
+    placeNamePane();
+    bindDetailImages();
+  }
+  if (typeof widenNameEditorColumn === "function" && !widenNameEditorColumn.namePaneLive) {
+    const widenBefore = widenNameEditorColumn;
+    widenNameEditorColumn = function () {
+      const result = widenBefore.apply(this, arguments);
+      placeNamePane();
+      return result;
+    };
+    widenNameEditorColumn.namePaneLive = true;
+  }
+  if (typeof openNameEditor === "function" && !openNameEditor.namePaneLive) {
+    const openNameEditorBefore = openNameEditor;
+    openNameEditor = function () {
+      const result = openNameEditorBefore.apply(this, arguments);
+      const finish = () => {
+        refreshNamePane();
+        setTimeout(refreshNamePane, 0);
+        setTimeout(refreshNamePane, 50);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    openNameEditor.namePaneLive = true;
+  }
+})();
+"""
+NAME_PANE_LIVE_CSS = r"""
+/* name-pane-live1 */
+#nameDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
+  font-weight: 700;
+}
+#nameDialog.name-with-detail #nameForm,
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm:has(aside) {
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 0 0 440px !important;
+  width: 440px !important;
+  min-width: 300px !important;
+  max-width: 440px !important;
+  overflow: hidden !important;
+  align-self: stretch !important;
+}
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  flex: 0 0 auto !important;
+  flex-basis: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+#nameDialog #nameSuggestKeywords:not([hidden]) {
+  display: flex !important;
+  flex-direction: column !important;
+  flex-wrap: nowrap !important;
+  align-items: stretch !important;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  margin-top: 8px;
+  overflow: auto;
+}
+#nameDialog #nameSuggestKeywords span {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  box-sizing: border-box;
+  border-radius: 4px;
+}
+#nameDetailView {
+  overflow: auto;
+}
+#nameDetailView > .dialog-zoom-body {
+  zoom: 1 !important;
+  transform: none !important;
+}
+#nameDetailView img {
+  max-width: none;
+  height: auto;
+}
+"""
+ATTRIBUTE_FOOT_JS = r"""
+/* attribute-foot1 */
+(function () {
+  const scale = 1.2;
+  function enlargeAttributeText(root) {
+    if (!root) return;
+    const nodes = [root].concat(Array.prototype.slice.call(root.querySelectorAll("p,span,label,input,textarea,select,th,td,div,li,a,b,strong,em,small")));
+    const sizes = nodes.map((el) => {
+      if (!el || el.dataset.attrText120 === "1") return 0;
+      if (el.tagName === "INPUT" && el.type === "range") return 0;
+      const size = parseFloat(window.getComputedStyle(el).fontSize);
+      return size > 0 ? size : 0;
+    });
+    nodes.forEach((el, index) => {
+      if (!sizes[index]) return;
+      el.dataset.attrText120 = "1";
+      el.style.setProperty("font-size", (Math.round(sizes[index] * scale * 10) / 10) + "px", "important");
+    });
+  }
+  function tuneAttributeFoot() {
+    const dialog = document.getElementById("attributeDialog");
+    if (!dialog) return;
+    const collected = document.getElementById("attributeFillCollected");
+    if (collected) collected.remove();
+    const ai = document.getElementById("attributeFillAi");
+    if (ai && ai.textContent.replace(/\s+/g, "") !== "AI속성채우기") ai.textContent = "AI속성채우기";
+    const actions = dialog.querySelector(".dialog-actions");
+    const close = document.getElementById("closeAttribute");
+    if (close && actions) {
+      close.type = "button";
+      close.textContent = "닫기";
+      close.classList.add("attribute-close");
+      if (close.parentElement !== actions) actions.appendChild(close);
+      if (close.dataset.attributeClose !== "1") {
+        close.dataset.attributeClose = "1";
+        close.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          dialog.close();
+        });
+      }
+    }
+    enlargeAttributeText(document.getElementById("attributeCategory"));
+    const help = dialog.querySelector(".attribute-help");
+    enlargeAttributeText(help);
+    enlargeAttributeText(document.getElementById("attributeMessage"));
+    enlargeAttributeText(document.getElementById("attributeFields"));
+  }
+  function watchAttributeFields() {
+    const fields = document.getElementById("attributeFields");
+    if (!fields || fields.dataset.attrTextWatch === "1") return;
+    fields.dataset.attrTextWatch = "1";
+    new MutationObserver(() => enlargeAttributeText(fields)).observe(fields, { childList: true, subtree: true });
+  }
+  ["openAttributeEditor", "renderAttributeFields", "renderFallbackAttributes"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.attributeFoot) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        watchAttributeFields();
+        tuneAttributeFoot();
+        setTimeout(tuneAttributeFoot, 0);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.attributeFoot = true;
+    window[name] = wrapped;
+  });
+  tuneAttributeFoot();
+  watchAttributeFields();
+  setTimeout(tuneAttributeFoot, 0);
+})();
+"""
+ATTRIBUTE_FOOT_CSS = r"""
+/* attribute-foot1 */
+#attributeFillCollected { display: none !important; }
+#attributeDialog .dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 0;
+}
+#attributeDialog .dialog-actions #closeAttribute.attribute-close {
+  border: 1px solid var(--button-border, #a0a0a0) !important;
+  background: var(--button, #e8e8e8) !important;
+  color: var(--text, #111) !important;
+  font-size: inherit !important;
+  font-weight: 400 !important;
+  line-height: 1.35 !important;
+  padding: 4px 12px !important;
+  min-width: 64px;
+  height: auto;
+}
+"""
+IMAGE_ROLE_ZOOM_JS = r"""
+/* image-role-zoom1 */
+(function () {
+  /* image-role-pure-start */
+  function roleZoomStep(value, delta, min, max) {
+    const step = 5;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : min;
+    const snapped = Math.round(base / step) * step;
+    const next = snapped + (Number(delta) || 0) * step;
+    return Math.min(max, Math.max(min, next));
+  }
+  /* image-role-pure-end */
+  let rep = 25;
+  let detail = 100;
+  function syncBar(bar, percent, min, max) {
+    if (!bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) {
+      range.min = String(min);
+      range.max = String(max);
+      range.step = "5";
+      range.value = String(percent);
+    }
+    if (label) label.textContent = percent + "%";
+  }
+  function paintRep(next) {
+    rep = roleZoomStep(next, 0, 20, 120);
+    const size = Math.round(500 * rep / 100);
+    document.documentElement.style.setProperty("--image-slot-size", size + "px");
+    const thumbs = document.getElementById("imageThumbs");
+    if (thumbs) {
+      thumbs.style.setProperty("display", "grid", "important");
+      thumbs.style.setProperty("grid-template-columns", "repeat(5, " + size + "px)", "important");
+      thumbs.style.setProperty("width", "max-content", "important");
+      thumbs.style.setProperty("max-width", "none", "important");
+    }
+    document.querySelectorAll("#imageThumbs .image-slot").forEach((slot) => {
+      slot.style.setProperty("width", size + "px", "important");
+      slot.style.setProperty("height", size + "px", "important");
+      slot.style.setProperty("flex", "0 0 " + size + "px", "important");
+      slot.style.setProperty("aspect-ratio", "auto", "important");
+      slot.style.setProperty("min-width", size + "px", "important");
+    });
+    syncBar(document.getElementById("repImageZoomBar"), rep, 20, 120);
+  }
+  function paintDetail(next) {
+    detail = roleZoomStep(next, 0, 25, 200);
+    syncBar(document.getElementById("imageZoomBar"), detail, 25, 200);
+    const title = document.querySelector("#imageZoomBar > span");
+    if (title) title.textContent = "상세페이지";
+    ["detailVisual", "nameDetailView"].forEach((id) => {
+      const view = document.getElementById(id);
+      if (!view || view.clientWidth < 40) return;
+      const style = window.getComputedStyle(view);
+      const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      const fit = Math.max(1, Math.round(view.clientWidth - pad));
+      const width = Math.max(1, Math.round(fit * detail / 100));
+      view.style.setProperty("zoom", "1", "important");
+      const body = view.querySelector(":scope > .dialog-zoom-body");
+      if (body) {
+        body.style.setProperty("zoom", "1", "important");
+        body.style.setProperty("width", width + "px", "important");
+        body.style.setProperty("max-width", "none", "important");
+        body.style.setProperty("transform", "none", "important");
+      }
+      view.querySelectorAll("img").forEach((img) => {
+        img.style.setProperty("width", width + "px", "important");
+        img.style.setProperty("max-width", "none", "important");
+        img.style.setProperty("height", "auto", "important");
+      });
+    });
+  }
+  function ownBar(bar, onStep, min, max) {
+    if (!bar) return null;
+    if (bar.dataset.roleZoom !== "1") {
+      const fresh = bar.cloneNode(true);
+      fresh.dataset.roleZoom = "1";
+      fresh.dataset.zoomLive = "1";
+      fresh.dataset.step5 = "1";
+      fresh.dataset.bound = "1";
+      fresh.dataset.dialogZoom = "1";
+      bar.replaceWith(fresh);
+      bar = fresh;
+    }
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.dataset.zoom5 = "1";
+    });
+    if (bar.dataset.roleBound !== "1") {
+      bar.dataset.roleBound = "1";
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : min;
+        onStep(roleZoomStep(current, Number(button.dataset.zoom) || 0, min, max));
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => onStep(roleZoomStep(range.value, 0, min, max)));
+    }
+    return bar;
+  }
+  function ensureRepBar() {
+    const drop = document.getElementById("imageDrop") || document.getElementById("imageThumbs");
+    let bar = document.getElementById("repImageZoomBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "repImageZoomBar";
+      bar.className = "work-zoom";
+      bar.innerHTML = '<span>대표이미지</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="20" max="120" step="5" value="25" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>25%</b>';
+    }
+    if (drop && drop.parentNode && bar.nextElementSibling !== drop) drop.parentNode.insertBefore(bar, drop);
+    return ownBar(bar, (value) => paintRep(value), 20, 120);
+  }
+  function ensureRightBar() {
+    const image = document.getElementById("imageDialog");
+    if (!image) return null;
+    const header = image.querySelector("header");
+    let bar = document.getElementById("imageZoomBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "imageZoomBar";
+      bar.className = "work-zoom";
+      bar.innerHTML = '<span>상세페이지</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b>';
+      if (header) header.appendChild(bar);
+    } else if (header && bar.parentElement !== header) {
+      header.appendChild(bar);
+    }
+    const owned = ownBar(bar, (value) => paintDetail(value), 25, 200);
+    const title = owned && owned.querySelector("span");
+    if (title) title.textContent = "상세페이지";
+    return owned;
+  }
+  function tuneImageFoot() {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog) return;
+    const actions = dialog.querySelector(".dialog-actions");
+    if (!actions) return;
+    const save = actions.querySelector("button[type='submit'], .btn-apply, .work-save");
+    if (save) {
+      let node = save.nextElementSibling;
+      while (node) {
+        const next = node.nextElementSibling;
+        if (node.tagName === "BUTTON" && node.textContent.replace(/\s+/g, "") === "닫기") node.remove();
+        node = next;
+      }
+    }
+    let footClose = null;
+    actions.querySelectorAll("button").forEach((button) => {
+      if (button === save) return;
+      if (button.textContent.replace(/\s+/g, "") === "닫기") footClose = button;
+    });
+    if (!footClose) {
+      footClose = document.createElement("button");
+      footClose.type = "button";
+      footClose.className = "work-close";
+      footClose.textContent = "닫기";
+      if (save) save.before(footClose);
+      else actions.appendChild(footClose);
+    }
+    if (footClose.dataset.roleClose !== "1") {
+      footClose.dataset.roleClose = "1";
+      footClose.type = "button";
+      footClose.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.close();
+      });
+    }
+    const headerClose = document.getElementById("closeImage");
+    if (headerClose && headerClose !== footClose) headerClose.remove();
+  }
+  function watchRep() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || thumbs.dataset.roleZoom === "1") return;
+    thumbs.dataset.roleZoom = "1";
+    new MutationObserver(() => {
+      setTimeout(() => {
+        paintRep(rep);
+        paintDetail(detail);
+      }, 0);
+    }).observe(thumbs, { childList: true });
+  }
+  function watchDetail() {
+    const view = document.getElementById("detailVisual");
+    if (!view || view.dataset.roleZoom === "1") return;
+    view.dataset.roleZoom = "1";
+    new MutationObserver(() => setTimeout(() => paintDetail(detail), 0)).observe(view, { childList: true, subtree: true });
+  }
+  function tune() {
+    tuneImageFoot();
+    ensureRightBar();
+    ensureRepBar();
+    watchRep();
+    watchDetail();
+    paintRep(rep);
+    paintDetail(detail);
+  }
+  ["renderImageEditor", "openImageEditor", "openDetailEditor"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.imageRoleZoom) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        tune();
+        setTimeout(tune, 0);
+        setTimeout(tune, 100);
+        setTimeout(tune, 200);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.imageRoleZoom = true;
+    if (prev.zoomLive) wrapped.zoomLive = true;
+    if (prev.zoomRight) wrapped.zoomRight = true;
+    window[name] = wrapped;
+  });
+  tune();
+  setTimeout(tune, 0);
+  setTimeout(tune, 100);
+  setTimeout(tune, 200);
+})();
+"""
+IMAGE_ROLE_ZOOM_CSS = r"""
+/* image-role-zoom1 */
+#repImageZoomBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  flex: 0 0 auto;
+}
+#imageDialog header #closeImage { display: none !important; }
+#imageDialog .dialog-actions .work-save,
+#imageDialog .dialog-actions button[type="submit"],
+html[data-theme="dark"] #imageDialog .work-save,
+html[data-theme="dark"] #imageDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
+}
+"""
+NAVER_OPTION_SHIP_JS = r"""
+/* naver-option-ship1 */
+(function () {
+  /* naver-option-pure-start */
+  function markRepresentative(images) {
+    return (images || []).map((image, index) => {
+      const copy = {};
+      Object.keys(image || {}).forEach((key) => { copy[key] = image[key]; });
+      copy.representative = index === 0;
+      return copy;
+    });
+  }
+  function optionListFromGroups(groups, existing, stock, simple) {
+    const qty = Number(stock || 9999);
+    const kept = new Map();
+    (existing || []).forEach((item) => {
+      const values = item && item.values ? item.values : [];
+      if (!values.length) return;
+      kept.set(values.join("\u0001"), item);
+    });
+    const use = (values, group) => {
+      const prev = kept.get(values.join("\u0001")) || {};
+      return {
+        group: group || prev.group || "",
+        values: values,
+        price: Number(prev.price || 0),
+        stock: prev.stock == null ? qty : Number(prev.stock),
+        status: prev.status || "SALE",
+        code: prev.code || "",
+        usable: prev.usable !== false,
+        id: prev.id || "",
+      };
+    };
+    if (!groups || !groups.length) return [];
+    if (simple) {
+      const rows = [];
+      groups.forEach((group) => {
+        (group.values || []).forEach((value) => rows.push(use([value], group.name)));
+      });
+      return rows.slice(0, 200);
+    }
+    let rows = [{ values: [] }];
+    groups.forEach((group) => {
+      const next = [];
+      (group.values || []).forEach((value) => {
+        rows.forEach((row) => next.push({ values: row.values.concat([value]) }));
+      });
+      rows = next;
+    });
+    return rows.slice(0, 200).map((row) => use(row.values, ""));
+  }
+  function shipAmountFromText(text) {
+    const raw = String(text == null ? "" : text).replace(/,/g, "").replace(/원/g, "").trim();
+    if (!raw) return null;
+    const amount = Number(raw);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    return Math.round(amount);
+  }
+  /* naver-option-pure-end */
+  function markDraftFirst() {
+    if (typeof draftImages === "undefined" || !Array.isArray(draftImages)) return;
+    draftImages.forEach((image, index) => {
+      if (image) image.representative = index === 0;
+    });
+  }
+  function mountSlotDeletes() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || typeof draftImages === "undefined") return;
+    [...thumbs.querySelectorAll(".image-slot")].forEach((slot, index) => {
+      if (!draftImages[index] || slot.querySelector(".image-slot-delete")) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "image-slot-delete";
+      button.textContent = "삭제";
+      button.addEventListener("pointerdown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        draftImages.splice(index, 1);
+        markDraftFirst();
+        if (typeof renderImageEditor === "function") renderImageEditor();
+      });
+      slot.appendChild(button);
+    });
+  }
+  function paintNaverOptionTable(rows) {
+    const body = document.getElementById("optionComboTable");
+    if (!body) return;
+    const table = body.parentElement;
+    const head = table ? table.querySelector("thead tr") : null;
+    const groups = typeof readOptionGroups === "function" ? readOptionGroups() : [];
+    const names = groups.map((group) => group.name).filter(Boolean);
+    if (head) {
+      head.innerHTML = "";
+      const titles = ["", "옵션번호"].concat(names.length ? names : ["옵션명"], ["옵션가", "재고수량", "판매상태", "관리코드", "사용여부", "삭제"]);
+      titles.forEach((title, index) => {
+        const cell = document.createElement("th");
+        if (index === 0) {
+          const box = document.createElement("input");
+          box.type = "checkbox";
+          box.id = "selectAllCombos";
+          box.addEventListener("change", () => {
+            body.querySelectorAll("[data-combo-check]").forEach((item) => { item.checked = box.checked; });
+          });
+          cell.appendChild(box);
+        } else {
+          cell.textContent = title;
+        }
+        head.appendChild(cell);
+      });
+    }
+    body.innerHTML = "";
+    (rows || []).forEach((row, index) => {
+      const tr = document.createElement("tr");
+      const price = Number(row.price || 0);
+      const sign = price < 0 ? "-" : "+";
+      const values = row.values || [];
+      tr.dataset.values = JSON.stringify(values);
+      tr.dataset.group = row.group || "";
+      const check = document.createElement("td");
+      check.innerHTML = '<input type="checkbox" data-combo-check />';
+      const number = document.createElement("td");
+      number.textContent = row.id ? String(row.id) : String(index + 1);
+      tr.append(check, number);
+      const columns = names.length ? names : [""];
+      columns.forEach((name, nameIndex) => {
+        const cell = document.createElement("td");
+        if (row.group) cell.textContent = row.group === name ? (values[0] || "") : "";
+        else cell.textContent = values[nameIndex] || "";
+        tr.appendChild(cell);
+      });
+      const priceCell = document.createElement("td");
+      priceCell.innerHTML = '<span class="option-price-cell"><select data-combo-sign><option value="+">+</option><option value="-">-</option></select><input data-combo-price type="number" step="10" /></span>';
+      const stockCell = document.createElement("td");
+      stockCell.innerHTML = '<input data-combo-stock type="number" />';
+      const statusCell = document.createElement("td");
+      statusCell.innerHTML = '<select data-combo-status><option value="SALE">판매중</option><option value="SUSPENSION">판매중지</option></select>';
+      const codeCell = document.createElement("td");
+      codeCell.innerHTML = '<input data-combo-code />';
+      const usableCell = document.createElement("td");
+      usableCell.innerHTML = '<select data-combo-usable><option value="true">Y</option><option value="false">N</option></select>';
+      const removeCell = document.createElement("td");
+      removeCell.innerHTML = '<button type="button" class="remove-combo" aria-label="삭제">×</button>';
+      tr.append(priceCell, stockCell, statusCell, codeCell, usableCell, removeCell);
+      tr.querySelector("[data-combo-sign]").value = sign;
+      tr.querySelector("[data-combo-price]").value = String(Math.abs(price));
+      tr.querySelector("[data-combo-stock]").value = String(Number(row.stock || 9999));
+      tr.querySelector("[data-combo-status]").value = row.status === "SUSPENSION" ? "SUSPENSION" : "SALE";
+      tr.querySelector("[data-combo-code]").value = row.code || "";
+      tr.querySelector("[data-combo-usable]").value = row.usable === false ? "false" : "true";
+      tr.querySelector(".remove-combo").addEventListener("click", () => tr.remove());
+      body.appendChild(tr);
+    });
+  }
+  function refreshOptionList() {
+    if (typeof optionEnabled === "function" && !optionEnabled()) return;
+    if (typeof readOptionGroups !== "function" || typeof readOptionCombos !== "function") return;
+    const groups = readOptionGroups();
+    if (!groups.length) return;
+    const simple = typeof optionTypeValue === "function" && optionTypeValue() === "SIMPLE";
+    const stock = typeof current !== "undefined" && current ? current.stock : 9999;
+    const rows = optionListFromGroups(groups, readOptionCombos(), stock, simple);
+    if (typeof renderOptionCombos === "function") renderOptionCombos(rows);
+  }
+  function ensureDirectOption() {
+    const form = document.getElementById("optionForm");
+    if (!form || document.getElementById("directOptionField")) return;
+    const actions = form.querySelector(":scope > .dialog-actions");
+    const field = document.createElement("div");
+    field.className = "option-field";
+    field.id = "directOptionField";
+    field.innerHTML = '<span class="option-label">직접입력형</span><div><div class="option-toggle"><button type="button" id="directOptionOn">설정함</button><button type="button" id="directOptionOff" class="active">설정안함</button></div><div id="directOptionBox" hidden><textarea id="directOptionText" rows="3" placeholder="구매자가 직접 입력할 항목"></textarea><button type="button" id="directOptionDone" class="btn-apply">설정완료</button></div></div>';
+    if (actions) form.insertBefore(field, actions);
+    else form.appendChild(field);
+    const box = field.querySelector("#directOptionBox");
+    const on = field.querySelector("#directOptionOn");
+    const off = field.querySelector("#directOptionOff");
+    const setOn = (enabled) => {
+      on.classList.toggle("active", enabled);
+      off.classList.toggle("active", !enabled);
+      box.hidden = !enabled;
+    };
+    on.addEventListener("click", () => setOn(true));
+    off.addEventListener("click", () => setOn(false));
+    field.querySelector("#directOptionDone").addEventListener("click", () => {
+      if (typeof current !== "undefined" && current) current.input_options = field.querySelector("#directOptionText").value.trim();
+    });
+    const sort = document.createElement("div");
+    sort.className = "option-field";
+    sort.id = "optionSortField";
+    sort.innerHTML = '<span class="option-label">정렬 순서</span><div><select id="optionSortOrder"><option value="register">등록순</option></select></div>';
+    const count = document.getElementById("optionGroupCount");
+    const countField = count && count.closest(".option-field");
+    if (countField && countField.parentElement) countField.parentElement.insertBefore(sort, countField.nextSibling);
+  }
+  function fillDirectOption() {
+    const text = document.getElementById("directOptionText");
+    if (!text || typeof current === "undefined" || !current) return;
+    text.value = current.input_options || "";
+    const enabled = Boolean(String(current.input_options || "").trim());
+    const on = document.getElementById("directOptionOn");
+    const off = document.getElementById("directOptionOff");
+    const box = document.getElementById("directOptionBox");
+    if (on) on.classList.toggle("active", enabled);
+    if (off) off.classList.toggle("active", !enabled);
+    if (box) box.hidden = !enabled;
+  }
+  function tuneOptionDialog() {
+    ensureDirectOption();
+    fillDirectOption();
+    const save = document.querySelector("#optionForm > .dialog-actions button[type='submit']");
+    if (save) {
+      save.classList.add("btn-apply");
+      save.textContent = "옵션 저장";
+    }
+    document.querySelectorAll("#optionEditor .remove-option-value").forEach((button) => {
+      button.textContent = "×";
+      button.setAttribute("aria-label", "삭제");
+    });
+  }
+  function shipKey(id) {
+    return "modumodu-manual-ship:" + id;
+  }
+  function readStoredShip(id) {
+    try {
+      const stored = localStorage.getItem(shipKey(id));
+      if (stored == null || stored === "") return null;
+      return shipAmountFromText(stored);
+    } catch (error) {
+      return null;
+    }
+  }
+  function writeStoredShip(id, amount) {
+    try {
+      if (amount == null) localStorage.removeItem(shipKey(id));
+      else localStorage.setItem(shipKey(id), String(amount));
+    } catch (error) {}
+  }
+  function applyStoredShips() {
+    if (typeof products === "undefined" || !Array.isArray(products)) return;
+    products.forEach((item) => {
+      if (!item || !item.id) return;
+      if (!item._shipAutoReady && typeof wholesaleShipAmount === "function") {
+        item._shipAutoReady = true;
+        item._shipAuto = wholesaleShipAmount(item);
+      }
+      const stored = readStoredShip(item.id);
+      if (stored == null) {
+        if (item._shipManual) {
+          item.shipping_fee = item._shipAuto;
+          item._shipManual = false;
+        }
+        return;
+      }
+      item.shipping_fee = stored;
+      item._shipManual = true;
+    });
+  }
+  function installShipInputs() {
+    document.querySelectorAll("#productTable td[data-ship='1']").forEach((cell) => {
+      if (cell.querySelector("input")) return;
+      const row = cell.closest("tr");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.inputMode = "numeric";
+      input.className = "manual-ship-input";
+      input.value = cell.textContent.replace(/,/g, "").trim();
+      input.title = "배송비를 직접 입력합니다. 비우면 가져온 배송비를 씁니다.";
+      input.dataset.field = "manual_ship";
+      cell.textContent = "";
+      cell.appendChild(input);
+      const commit = () => {
+        if (typeof products === "undefined") return;
+        const item = products.find((rowItem) => rowItem && String(rowItem.id) === String(row && row.dataset.id));
+        if (!item) return;
+        const amount = shipAmountFromText(input.value);
+        if (!item._shipAutoReady && typeof wholesaleShipAmount === "function") {
+          item._shipAutoReady = true;
+          item._shipAuto = item._shipManual ? item._shipAuto : wholesaleShipAmount(item);
+        }
+        writeStoredShip(item.id, amount);
+        if (amount == null) {
+          item.shipping_fee = item._shipAuto;
+          item._shipManual = false;
+        } else {
+          item.shipping_fee = amount;
+          item._shipManual = true;
+        }
+        const master = typeof isMasterProduct === "function" && isMasterProduct(item);
+        const finish = () => {
+          if (typeof renderProductSheet === "function") renderProductSheet();
+        };
+        if (master || typeof saveProduct !== "function") {
+          finish();
+          return;
+        }
+        Promise.resolve(saveProduct(item, { shipping_fee: item.shipping_fee }, true)).then(finish, finish);
+      };
+      input.addEventListener("change", commit);
+      input.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        input.blur();
+      });
+    });
+  }
+  function watchShipTable() {
+    const body = document.getElementById("productTable");
+    if (!body || body.dataset.manualShipWatch === "1") return;
+    body.dataset.manualShipWatch = "1";
+    new MutationObserver(() => installShipInputs()).observe(body, { childList: true, subtree: true });
+  }
+  function tuneShipColumn() {
+    applyStoredShips();
+    installShipInputs();
+    watchShipTable();
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.naverOptionShip) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      markDraftFirst();
+      const result = renderBefore.apply(this, arguments);
+      mountSlotDeletes();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    if (renderBefore.zoomLive) wrapped.zoomLive = true;
+    if (renderBefore.imageRoleZoom) wrapped.imageRoleZoom = true;
+    renderImageEditor = wrapped;
+  }
+  if (typeof saveDraftImages === "function" && !saveDraftImages.naverOptionShip) {
+    const saveBefore = saveDraftImages;
+    const wrapped = function () {
+      markDraftFirst();
+      return saveBefore.apply(this, arguments);
+    };
+    wrapped.naverOptionShip = true;
+    saveDraftImages = wrapped;
+  }
+  if (typeof renderOptionCombos === "function" && !renderOptionCombos.naverOptionShip) {
+    const renderCombosBefore = renderOptionCombos;
+    const wrapped = function (rows) {
+      paintNaverOptionTable(rows);
+      return rows;
+    };
+    wrapped.naverOptionShip = true;
+    renderOptionCombos = wrapped;
+    void renderCombosBefore;
+  }
+  if (typeof renderOptionNameRows === "function" && !renderOptionNameRows.naverOptionShip) {
+    const renderNamesBefore = renderOptionNameRows;
+    const wrapped = function () {
+      const result = renderNamesBefore.apply(this, arguments);
+      tuneOptionDialog();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    renderOptionNameRows = wrapped;
+  }
+  if (typeof openOptionEditor === "function" && !openOptionEditor.naverOptionShip) {
+    const openBefore = openOptionEditor;
+    const wrapped = function () {
+      const result = openBefore.apply(this, arguments);
+      tuneOptionDialog();
+      fillDirectOption();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    openOptionEditor = wrapped;
+  }
+  if (typeof renderProductSheet === "function" && !renderProductSheet.naverOptionShip) {
+    const renderSheetBefore = renderProductSheet;
+    const wrapped = function () {
+      applyStoredShips();
+      const result = renderSheetBefore.apply(this, arguments);
+      tuneShipColumn();
+      return result;
+    };
+    wrapped.naverOptionShip = true;
+    if (renderSheetBefore.shipCol) wrapped.shipCol = true;
+    if (renderSheetBefore.marginCol) wrapped.marginCol = true;
+    renderProductSheet = wrapped;
+  }
+  const optionForm = document.getElementById("optionForm");
+  if (optionForm && optionForm.dataset.naverOptionShip !== "1") {
+    optionForm.dataset.naverOptionShip = "1";
+    optionForm.addEventListener("submit", () => {
+      const text = document.getElementById("directOptionText");
+      const enabled = document.getElementById("directOptionOn") && document.getElementById("directOptionOn").classList.contains("active");
+      if (typeof current !== "undefined" && current && text) current.input_options = enabled ? text.value.trim() : "";
+      refreshOptionList();
+    }, true);
+  }
+  if (typeof saveProduct === "function" && !saveProduct.naverOptionShip) {
+    const saveProductBefore = saveProduct;
+    const wrapped = async function (product, patch) {
+      if (patch && patch.options && product && product.input_options != null && patch.input_options == null) {
+        patch.input_options = product.input_options;
+      }
+      return saveProductBefore.apply(this, arguments);
+    };
+    wrapped.naverOptionShip = true;
+    saveProduct = wrapped;
+  }
+  tuneOptionDialog();
+  setTimeout(tuneShipColumn, 0);
+  setTimeout(tuneShipColumn, 200);
+})();
+"""
+NAVER_OPTION_SHIP_CSS = r"""
+/* naver-option-ship1 */
+#imageDialog #imageThumbs .image-slot { position: relative; }
+#imageDialog .image-slot-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 3;
+  min-width: 40px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid #111;
+  background: #fff;
+  color: #111;
+  font-size: 12px;
+  line-height: 22px;
+}
+#optionDialog {
+  max-height: calc(100vh - 24px);
+}
+#optionDialog form {
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+}
+#optionDialog form > .dialog-actions {
+  position: sticky;
+  bottom: 0;
+  background: var(--page, #fff);
+  padding-top: 8px;
+}
+#optionDialog #applyOptionList,
+#optionDialog #directOptionDone,
+#optionDialog form > .dialog-actions button[type="submit"],
+#tagDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
+  font-weight: 700;
+}
+#optionDialog .remove-option-value,
+#optionDialog .remove-combo {
+  min-width: 28px;
+  background: transparent;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+#productGrid td[data-ship="1"] .manual-ship-input {
+  width: 72px;
+  text-align: right;
+  box-sizing: border-box;
+}
+"""
+FIRST_SCREEN_JS = r"""
+/* first-screen1 */
+(function () {
+  function showImageDeletes() {
+    const table = document.getElementById("imageUrlTable");
+    if (!table) return;
+    const head = table.parentElement && table.parentElement.querySelector("thead tr");
+    if (head && head.lastElementChild) head.lastElementChild.classList.add("image-row-delete");
+    table.querySelectorAll(".remove-image").forEach((button) => {
+      const cell = button.closest("td");
+      if (cell) cell.classList.add("image-row-delete");
+    });
+  }
+  function unlockDeliveryArea() {
+    const areaType = document.getElementById("deliveryAreaType");
+    const area2 = document.querySelector('#deliveryForm [name="area2_extra_fee"]');
+    const area3 = document.querySelector('#deliveryForm [name="area3_extra_fee"]');
+    const hint = document.getElementById("deliveryAreaFeeHint");
+    if (areaType) areaType.disabled = false;
+    if (area2) area2.disabled = false;
+    if (area3) area3.disabled = false;
+    if (hint) hint.hidden = true;
+  }
+  if (typeof renderImageEditor === "function" && !renderImageEditor.firstScreen) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      showImageDeletes();
+      return result;
+    };
+    wrapped.firstScreen = true;
+    if (renderBefore.naverOptionShip) wrapped.naverOptionShip = true;
+    if (renderBefore.imageRoleZoom) wrapped.imageRoleZoom = true;
+    if (renderBefore.zoomLive) wrapped.zoomLive = true;
+    renderImageEditor = wrapped;
+  }
+  if (typeof syncDeliveryFields === "function" && !syncDeliveryFields.firstScreen) {
+    const syncBefore = syncDeliveryFields;
+    const wrapped = function () {
+      const result = syncBefore.apply(this, arguments);
+      unlockDeliveryArea();
+      return result;
+    };
+    wrapped.firstScreen = true;
+    syncDeliveryFields = wrapped;
+  }
+  const table = document.getElementById("imageUrlTable");
+  if (table && table.dataset.firstScreen !== "1") {
+    table.dataset.firstScreen = "1";
+    new MutationObserver(() => showImageDeletes()).observe(table, { childList: true });
+  }
+  showImageDeletes();
+  unlockDeliveryArea();
+})();
+"""
+FIRST_SCREEN_CSS = r"""
+/* first-screen1 */
+#imageDialog .option-list-wrap { overflow-x: hidden; overflow-y: auto; }
+#imageDialog #imageUrlTable { table-layout: fixed; width: 100%; }
+#imageDialog #imageUrlTable th:nth-child(1),
+#imageDialog #imageUrlTable td:nth-child(1) { width: 56px; white-space: nowrap; }
+#imageDialog #imageUrlTable td:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#imageDialog #imageUrlTable .image-row-delete {
+  width: 72px;
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background: var(--surface, #222);
+  text-align: center;
+}
+#imageDialog #imageUrlTable .remove-image,
+#imageDialog .image-slot-delete {
+  display: inline-block;
+  min-width: 48px;
+  background: #fff !important;
+  color: #111 !important;
+  border: 1px solid #111 !important;
+  font-weight: 700;
+}
+#imageDialog .image-slot img { position: relative; z-index: 0; }
+#imageDialog .image-slot-delete { z-index: 6; box-shadow: 0 0 0 2px #111; }
+"""
+DETAIL_MARKET_JS = r"""
+/* detail-market1 */
+(function () {
+  /* detail-market-pure-start */
+  function detailZoomScale(percent) {
+    const step = 5;
+    const current = Number(percent);
+    const base = Number.isFinite(current) ? current : 100;
+    const snapped = Math.round(base / step) * step;
+    const next = Math.min(200, Math.max(25, snapped));
+    return next / 100;
+  }
+  function deliveryMarketChoice(selected, treeId, settingsId, markets) {
+    const ids = (markets || []).map((item) => item && item.id).filter(Boolean);
+    if (selected && ids.indexOf(selected) >= 0) return selected;
+    if (treeId && ids.indexOf(treeId) >= 0) return treeId;
+    if (settingsId && ids.indexOf(settingsId) >= 0) return settingsId;
+    return ids[0] || "";
+  }
+  /* detail-market-pure-end */
+  let detailPercent = 100;
+  let detailZoomOwned = false;
+  function zoomNumber(value) {
+    const current = parseFloat(value);
+    if (!Number.isFinite(current)) return NaN;
+    return current > 3 ? current / 100 : current;
+  }
+  function paintDetailZoom() {
+    const want = detailZoomScale(detailPercent);
+    const zoom = String(want);
+    const view = document.getElementById("detailVisual");
+    if (!view) return;
+    view.style.setProperty("zoom", zoom, "important");
+    const body = view.querySelector(":scope > .dialog-zoom-body");
+    if (body) {
+      body.style.setProperty("zoom", "1", "important");
+      body.style.setProperty("width", "auto", "important");
+      body.style.setProperty("max-width", "100%", "important");
+    }
+    view.querySelectorAll("img").forEach((img) => {
+      img.style.setProperty("width", "auto", "important");
+      img.style.setProperty("max-width", "100%", "important");
+      img.style.setProperty("height", "auto", "important");
+      img.style.removeProperty("zoom");
+    });
+  }
+  function watchDetailZoom(view) {
+    if (!view || view.dataset.detailMarketZoom === "1") return;
+    view.dataset.detailMarketZoom = "1";
+    new MutationObserver(() => {
+      if (!detailZoomOwned) return;
+      const want = detailZoomScale(detailPercent);
+      const current = zoomNumber(view.style.zoom);
+      if (Number.isFinite(current) && Math.abs(current - want) < 0.001) return;
+      paintDetailZoom();
+    }).observe(view, { attributes: true, attributeFilter: ["style"] });
+  }
+  function readDetailBar(bar) {
+    if (!bar || bar.id !== "imageZoomBar") return;
+    const range = bar.querySelector("input[type='range']");
+    if (!range) return;
+    detailZoomOwned = true;
+    detailPercent = Number(range.value) || detailPercent;
+    const label = bar.querySelector("[data-zoom-label]");
+    if (label) label.textContent = Math.round(detailZoomScale(detailPercent) * 100) + "%";
+    paintDetailZoom();
+  }
+  function tuneDetailClose() {
+    const dialog = document.getElementById("detailDialog");
+    if (!dialog || dialog.dataset.detailClosing === "1") return;
+    const actions = dialog.querySelector(".dialog-actions");
+    if (!actions) return;
+    dialog.dataset.detailClosing = "1";
+    const save = actions.querySelector("button[type='submit'], .work-save, .btn-apply");
+    const closes = [...dialog.querySelectorAll("button")].filter((button) => button.textContent.replace(/\s+/g, "") === "닫기");
+    let keep = closes.find((button) => save && button.parentElement === actions && (button.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING));
+    if (!keep) keep = closes.find((button) => button.parentElement === actions) || null;
+    closes.forEach((button) => {
+      if (button !== keep) button.remove();
+    });
+    if (keep && keep.dataset.detailOneClose !== "1") {
+      keep.dataset.detailOneClose = "1";
+      keep.type = "button";
+      keep.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.close();
+      }, true);
+    }
+    dialog.dataset.detailClosing = "";
+  }
+  function deliveryMarketId() {
+    const select = document.getElementById("deliveryMarket");
+    const selected = select ? select.value : "";
+    const list = typeof markets !== "undefined" ? markets : [];
+    const treeId = typeof marketFilter !== "undefined" ? marketFilter : "";
+    const settingsId = typeof currentMarketId !== "undefined" ? currentMarketId : "";
+    return deliveryMarketChoice(selected, treeId, settingsId, list);
+  }
+  function fillDeliveryMarket() {
+    const pane = document.getElementById("deliveryPane");
+    if (pane && !document.getElementById("deliveryMarketField")) {
+      const row = document.createElement("div");
+      row.className = "delivery-row";
+      row.id = "deliveryMarketField";
+      row.innerHTML = '<span class="dl">마켓</span><select id="deliveryMarket"></select>';
+      const hint = pane.querySelector(".hint");
+      if (hint) hint.after(row);
+      else pane.insertBefore(row, pane.firstChild);
+      row.querySelector("select").addEventListener("change", () => {
+        if (typeof loadDeliveryCatalog !== "function") return;
+        loadDeliveryCatalog().catch(() => {});
+      });
+    }
+    const select = document.getElementById("deliveryMarket");
+    if (!select || typeof markets === "undefined") return;
+    const treeId = typeof marketFilter !== "undefined" ? marketFilter : "";
+    const settingsId = typeof currentMarketId !== "undefined" ? currentMarketId : "";
+    const want = deliveryMarketChoice("", treeId, settingsId, markets);
+    select.innerHTML = "";
+    markets.forEach((item) => {
+      const option = document.createElement("option");
+      option.value = item.id;
+      option.textContent = item.name || item.login_id || item.id;
+      select.appendChild(option);
+    });
+    if (want) select.value = want;
+  }
+  document.addEventListener("input", (event) => {
+    const bar = event.target && event.target.closest ? event.target.closest("#imageZoomBar") : null;
+    if (!bar) return;
+    readDetailBar(bar);
+  });
+  document.addEventListener("click", (event) => {
+    const button = event.target && event.target.closest ? event.target.closest("#imageZoomBar [data-zoom]") : null;
+    if (!button) return;
+    setTimeout(() => readDetailBar(document.getElementById("imageZoomBar")), 0);
+  }, true);
+  if (typeof withMarketParam === "function" && !withMarketParam.detailMarket) {
+    const marketParamBefore = withMarketParam;
+    const wrapped = function (path) {
+      const id = deliveryMarketId();
+      const item = String(path || "");
+      if (id && (item.indexOf("/api/addresses") >= 0 || item.indexOf("/api/bundle-groups") >= 0 || item.indexOf("/delivery-templates/import") >= 0)) {
+        return item.split("?")[0] + "?market_id=" + encodeURIComponent(id);
+      }
+      return marketParamBefore.apply(this, arguments);
+    };
+    wrapped.detailMarket = true;
+    withMarketParam = wrapped;
+  }
+  if (typeof openDeliveryEditor === "function" && !openDeliveryEditor.detailMarket) {
+    const openBefore = openDeliveryEditor;
+    const wrapped = function () {
+      fillDeliveryMarket();
+      return openBefore.apply(this, arguments);
+    };
+    wrapped.detailMarket = true;
+    openDeliveryEditor = wrapped;
+  }
+  ["openDetailEditor", "openImageEditor"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.detailMarket) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        tuneDetailClose();
+        watchDetailZoom(document.getElementById("detailVisual"));
+        if (detailZoomOwned) paintDetailZoom();
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.detailMarket = true;
+    window[name] = wrapped;
+  });
+  tuneDetailClose();
+  fillDeliveryMarket();
+  watchDetailZoom(document.getElementById("detailVisual"));
+  setTimeout(tuneDetailClose, 0);
+  setTimeout(fillDeliveryMarket, 0);
+})();
+"""
+DETAIL_MARKET_CSS = r"""
+/* detail-market1 */
+#detailDialog header #closeDetail { display: none !important; }
+#deliveryMarket { min-width: 180px; }
+"""
+STORE_NUMBER_JS = r"""
+/* store-number1 */
+(function () {
+  /* store-number-pure-start */
+  function smartStoreNumber(item) {
+    const channel = String(item && item.channel_product_no || "").trim();
+    if (channel) return channel;
+    return String(item && item.origin_product_no || "").trim();
+  }
+  function storeRegisterSplit(items) {
+    const fresh = [];
+    const registered = [];
+    (items || []).forEach((item) => {
+      if (smartStoreNumber(item)) registered.push(item);
+      else fresh.push(item);
+    });
+    return { fresh: fresh, registered: registered };
+  }
+  function storeUpdateAsk(count) {
+    const total = Number(count) || 0;
+    if (total > 1) return "선택한 " + total + "개입니다. 상품정보 업데이트할까요?";
+    return "상품정보 업데이트할까요?";
+  }
+  function storeSameMarket(items) {
+    const ids = [];
+    (items || []).forEach((item) => {
+      const id = item && item.market_id;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (ids.length > 1) return "";
+    return ids[0] || "";
+  }
+  /* store-number-pure-end */
+  function ensureStoreNumberColumn() {
+    const sellerCol = document.querySelector("#productGrid col[data-col='seller']");
+    if (sellerCol && !document.querySelector("#productGrid col[data-col='store_no']")) {
+      const col = document.createElement("col");
+      col.dataset.col = "store_no";
+      col.style.width = "140px";
+      sellerCol.before(col);
+    }
+    const heads = document.querySelectorAll("#productGrid thead th");
+    let sellerHead = null;
+    heads.forEach((th) => {
+      if (th.textContent.replace(/\s+/g, "") === "판매자코드") sellerHead = th;
+    });
+    if (sellerHead && !document.getElementById("storeNumberHead")) {
+      const th = document.createElement("th");
+      th.id = "storeNumberHead";
+      th.textContent = "스마트스토어번호";
+      sellerHead.before(th);
+    }
+  }
+  function paintStoreNumbers() {
+    ensureStoreNumberColumn();
+    const body = document.getElementById("productTable");
+    if (!body) return;
+    body.querySelectorAll("tr").forEach((row) => {
+      const seller = row.querySelector("[data-field='seller_code']");
+      const cell = seller && seller.closest ? seller.closest("td") : null;
+      if (!cell || cell.previousElementSibling && cell.previousElementSibling.dataset.storeNo === "1") return;
+      const id = row.dataset.id;
+      const list = typeof products !== "undefined" && Array.isArray(products) ? products : [];
+      const item = list.find((rowItem) => rowItem && String(rowItem.id) === String(id));
+      const td = document.createElement("td");
+      td.dataset.storeNo = "1";
+      const number = smartStoreNumber(item);
+      td.textContent = number;
+      td.title = number ? "스마트스토어 상품번호 " + number : "";
+      cell.before(td);
+    });
+  }
+  async function updateRegisteredProducts(items) {
+    const rows = items || [];
+    if (!rows.length) return;
+    if (typeof setBusy === "function") setBusy(true, "상품정보 업데이트 중 (0/" + rows.length + ")");
+    let ok = 0;
+    let fail = 0;
+    try {
+      for (let index = 0; index < rows.length; index += 1) {
+        if (typeof throwIfCancelled === "function") throwIfCancelled();
+        const item = rows[index];
+        if (typeof setBusy === "function") setBusy(true, "상품정보 업데이트 중 (" + (index + 1) + "/" + rows.length + ")");
+        try {
+          if (typeof saveCurrentRow === "function") await saveCurrentRow(item.id);
+          const saved = await api("/api/products/" + item.id + "/register", {
+            method: "POST",
+            body: JSON.stringify({
+              update: true,
+              origin_product_no: item.origin_product_no || "",
+              channel_product_no: item.channel_product_no || "",
+            }),
+            quiet: true,
+          });
+          const next = saved && typeof saved === "object" ? saved : {};
+          if (typeof patchLocalProduct === "function") {
+            patchLocalProduct(item.id, Object.assign({}, next, {
+              status: next.status || "registered",
+              origin_product_no: next.origin_product_no || item.origin_product_no || "",
+              channel_product_no: next.channel_product_no || item.channel_product_no || "",
+            }));
+          }
+          if (typeof log === "function") log((next.name || item.name || "상품") + " 상품정보를 업데이트했습니다.", "ok");
+          ok += 1;
+        } catch (error) {
+          if (typeof isAbortError === "function" && isAbortError(error)) throw error;
+          fail += 1;
+          if (typeof log === "function") log((item.name || "상품") + " 업데이트 실패: " + (error && error.message ? error.message : error), "err");
+        }
+      }
+      if (typeof loadProducts === "function") await loadProducts();
+      paintStoreNumbers();
+      if (typeof toast === "function") {
+        if (fail) toast(ok + "개 업데이트, " + fail + "개 실패", true);
+        else if (ok) toast(ok + "개 상품정보를 업데이트했습니다.");
+      }
+    } finally {
+      if (typeof setBusy === "function") setBusy(false);
+    }
+  }
+  function askStoreUpdate(split) {
+    const message = split.fresh.length
+      ? "이미 등록한 상품은 새로 등록하지 않습니다. 상품정보 업데이트할까요?"
+      : storeUpdateAsk(split.registered.length);
+    return window.confirm(message);
+  }
+  function guardRegisterItems(items) {
+    if (typeof isMasterProduct === "function" && items.some((item) => isMasterProduct(item) || !item.market_id)) {
+      if (typeof toast === "function") toast("마스터상품은 등록할 수 없습니다. 먼저 마켓으로 보낸 뒤 그 마켓에서 등록하세요.", true);
+      return false;
+    }
+    if (items.length && !storeSameMarket(items)) {
+      if (typeof toast === "function") toast("선택한 상품의 마켓이 서로 다릅니다. 같은 마켓 상품만 등록하세요.", true);
+      return false;
+    }
+    return true;
+  }
+  if (typeof renderProductSheet === "function" && !renderProductSheet.storeNumber) {
+    const renderBefore = renderProductSheet;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      paintStoreNumbers();
+      return result;
+    };
+    wrapped.storeNumber = true;
+    ["shipCol", "marginCol", "naverOptionShip"].forEach((key) => {
+      if (renderBefore[key]) wrapped[key] = renderBefore[key];
+    });
+    renderProductSheet = wrapped;
+  }
+  if (typeof registerSelected === "function" && !registerSelected.storeNumber) {
+    const registerBefore = registerSelected;
+    const wrapped = async function () {
+      const items = typeof requireSelected === "function" ? requireSelected() : [];
+      const split = storeRegisterSplit(items);
+      if (!items.length) return;
+      if (!split.registered.length) return registerBefore.apply(this, arguments);
+      if (!guardRegisterItems(items)) return;
+      const update = askStoreUpdate(split);
+      if (!split.fresh.length) {
+        if (update) return updateRegisteredProducts(split.registered);
+        return;
+      }
+      const saved = new Set(selectedIds);
+      selectedIds = new Set(split.fresh.map((item) => item.id));
+      try {
+        const result = await registerBefore.apply(this, arguments);
+        if (update) await updateRegisteredProducts(split.registered);
+        return result;
+      } finally {
+        selectedIds = saved;
+      }
+    };
+    wrapped.storeNumber = true;
+    registerSelected = wrapped;
+  }
+  if (typeof proceedRegisterSelected === "function" && !proceedRegisterSelected.storeNumber) {
+    const proceedBefore = proceedRegisterSelected;
+    const wrapped = async function (options) {
+      const items = typeof requireSelected === "function" ? requireSelected() : [];
+      const split = storeRegisterSplit(items);
+      if (!items.length) return;
+      if (!split.registered.length) return proceedBefore.apply(this, arguments);
+      if (!guardRegisterItems(items)) return;
+      const update = askStoreUpdate(split);
+      const saved = new Set(selectedIds);
+      let result;
+      if (split.fresh.length) {
+        selectedIds = new Set(split.fresh.map((item) => item.id));
+        try {
+          result = await proceedBefore.apply(this, arguments);
+        } finally {
+          selectedIds = saved;
+        }
+      }
+      if (update) await updateRegisteredProducts(split.registered);
+      return result;
+    };
+    wrapped.storeNumber = true;
+    proceedRegisterSelected = wrapped;
+  }
+  paintStoreNumbers();
+  setTimeout(paintStoreNumbers, 0);
+})();
+"""
+STORE_NUMBER_CSS = r"""
+/* store-number1 */
+#productGrid td[data-store-no="1"] {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+"""
+STORE_CHOICE_JS = r"""
+/* store-choice1 */
+(function () {
+  /* store-choice-pure-start */
+  function storeChoiceDefault() {
+    return "update";
+  }
+  function storeChoicePlan(choice) {
+    if (choice === "new") return "register";
+    if (choice === "cancel") return "skip";
+    return "update";
+  }
+  function storeChoiceValue(returned) {
+    if (returned === "new" || returned === "update" || returned === "cancel") return returned;
+    return "cancel";
+  }
+  function storeChoiceTitle(count) {
+    const total = Number(count) || 0;
+    const lead = total > 1 ? "선택한 " + total + "개입니다." : "이미 등록한 상품입니다.";
+    return lead + "\n정보업데이트 또는 새상품으로 등록을 고르세요.\n기본은 정보업데이트입니다.";
+  }
+  function storeChoiceConfirmIsUpdate(message) {
+    const text = String(message || "");
+    return text.indexOf("상품정보 업데이트할까요?") >= 0 || text.indexOf("새로 등록하지 않습니다") >= 0;
+  }
+  function storeChoiceNumber(item) {
+    const channel = String(item && item.channel_product_no || "").trim();
+    if (channel) return channel;
+    return String(item && item.origin_product_no || "").trim();
+  }
+  /* store-choice-pure-end */
+  function storeChoiceSplit(items) {
+    const fresh = [];
+    const registered = [];
+    (items || []).forEach((item) => {
+      if (storeChoiceNumber(item)) registered.push(item);
+      else fresh.push(item);
+    });
+    return { fresh: fresh, registered: registered };
+  }
+  function storeChoiceGuard(items) {
+    if (typeof isMasterProduct === "function" && items.some((item) => isMasterProduct(item) || !item.market_id)) {
+      if (typeof toast === "function") toast("마스터상품은 등록할 수 없습니다. 먼저 마켓으로 보낸 뒤 그 마켓에서 등록하세요.", true);
+      return false;
+    }
+    const ids = [];
+    (items || []).forEach((item) => {
+      const id = item && item.market_id;
+      if (id && ids.indexOf(id) < 0) ids.push(id);
+    });
+    if (items.length && ids.length > 1) {
+      if (typeof toast === "function") toast("선택한 상품의 마켓이 서로 다릅니다. 같은 마켓 상품만 등록하세요.", true);
+      return false;
+    }
+    return true;
+  }
+  function ensureStoreChoiceDialog() {
+    let dialog = document.getElementById("storeChoiceDialog");
+    if (dialog) return dialog;
+    dialog = document.createElement("dialog");
+    dialog.id = "storeChoiceDialog";
+    dialog.innerHTML = '<form method="dialog"><p data-store-choice-text></p><div class="dialog-actions"><button type="submit" value="update" data-store-choice="update">정보업데이트</button><button type="submit" value="new" data-store-choice="new">새상품으로 등록</button><button type="submit" value="cancel" data-store-choice="cancel">취소</button></div></form>';
+    dialog.querySelectorAll("[data-store-choice]").forEach((button) => {
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        const value = button.getAttribute("value") || "";
+        dialog.dataset.storeChoice = value;
+        dialog.returnValue = value;
+        const resolve = dialog._storeChoiceResolve;
+        dialog._storeChoiceResolve = null;
+        if (typeof resolve === "function") resolve(storeChoiceValue(value));
+        try {
+          if (dialog.open && typeof dialog.close === "function") dialog.close(value);
+        } catch (error) {}
+      });
+    });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+  function askStoreChoice(count) {
+    const dialog = ensureStoreChoiceDialog();
+    const text = dialog.querySelector("[data-store-choice-text]");
+    if (text) text.textContent = storeChoiceTitle(count);
+    dialog.returnValue = "";
+    dialog.dataset.storeChoice = "";
+    const update = dialog.querySelector("[data-store-choice='update']");
+    return new Promise((resolve) => {
+      dialog._storeChoiceResolve = resolve;
+      const finish = () => {
+        dialog.removeEventListener("close", finish);
+        dialog._storeChoiceResolve = null;
+        resolve(storeChoiceValue(dialog.dataset.storeChoice || dialog.returnValue));
+      };
+      dialog.addEventListener("close", finish);
+      if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
+      if (update && typeof update.focus === "function") update.focus();
+    });
+  }
+  function hookUpdateConfirm() {
+    const previous = window.confirm;
+    window.confirm = function (message) {
+      if (storeChoiceConfirmIsUpdate(message)) return true;
+      return previous.apply(window, arguments);
+    };
+    return function () { window.confirm = previous; };
+  }
+  async function runRegisteredChoice(next, args) {
+    const items = typeof requireSelected === "function" ? requireSelected() : [];
+    const split = storeChoiceSplit(items);
+    if (!items.length) return;
+    if (!split.registered.length) return next.apply(this, args);
+    if (!storeChoiceGuard(items)) return;
+    const choice = await askStoreChoice(split.registered.length);
+    const plan = storeChoicePlan(choice);
+    if (plan === "update") {
+      const restore = hookUpdateConfirm();
+      try {
+        return await next.apply(this, args);
+      } finally {
+        restore();
+      }
+    }
+    if (plan === "register") {
+      const stash = [];
+      split.registered.forEach((item) => {
+        stash.push({ item: item, channel: item.channel_product_no, origin: item.origin_product_no });
+        item.channel_product_no = "";
+        item.origin_product_no = "";
+      });
+      try {
+        return await next.apply(this, args);
+      } finally {
+        stash.forEach((saved) => {
+          const channel = String(saved.item.channel_product_no || "").trim();
+          const origin = String(saved.item.origin_product_no || "").trim();
+          if (!channel && !origin) {
+            saved.item.channel_product_no = saved.channel;
+            saved.item.origin_product_no = saved.origin;
+          }
+        });
+      }
+    }
+    if (!split.fresh.length) return;
+    const saved = new Set(selectedIds);
+    selectedIds = new Set(split.fresh.map((item) => item.id));
+    try {
+      return await next.apply(this, args);
+    } finally {
+      selectedIds = saved;
+    }
+  }
+  if (typeof registerSelected === "function" && !registerSelected.storeChoice) {
+    const registerBefore = registerSelected;
+    const wrapped = function () {
+      return runRegisteredChoice.call(this, registerBefore, arguments);
+    };
+    wrapped.storeChoice = true;
+    wrapped.storeNumber = true;
+    registerSelected = wrapped;
+  }
+  if (typeof proceedRegisterSelected === "function" && !proceedRegisterSelected.storeChoice) {
+    const proceedBefore = proceedRegisterSelected;
+    const wrapped = function () {
+      return runRegisteredChoice.call(this, proceedBefore, arguments);
+    };
+    wrapped.storeChoice = true;
+    wrapped.storeNumber = true;
+    proceedRegisterSelected = wrapped;
+  }
+})();
+"""
+STORE_CHOICE_CSS = r"""
+/* store-choice1 */
+#storeChoiceDialog {
+  background: #1b1b1b;
+  color: #f2f2f2;
+  border: 1px solid #3a3a3a;
+  border-radius: 12px;
+  padding: 18px 20px;
+  width: 520px;
+}
+#storeChoiceDialog p { margin: 0 0 14px; line-height: 1.5; white-space: pre-line; }
+#storeChoiceDialog .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+#storeChoiceDialog button { border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+#storeChoiceDialog [data-store-choice="update"] {
+  background: #03C75A;
+  color: #fff;
+  border: 0;
+}
+"""
+IMAGE_PICK_JS = r"""
+/* image-pick1 */
+(function () {
+  /* image-pick-pure-start */
+  function imagePickKey(image, index) {
+    const url = String(image && (image.source_url || image.file || "") || "").trim();
+    if (url) return "url:" + url;
+    return "index:" + String(index);
+  }
+  function imagePickFind(images, key) {
+    const list = images || [];
+    for (let index = 0; index < list.length; index += 1) {
+      if (imagePickKey(list[index], index) === key) return index;
+    }
+    return -1;
+  }
+  function imagePickIndex(slotIndex, rowIndex) {
+    if (slotIndex >= 0) return slotIndex;
+    if (rowIndex >= 0) return rowIndex;
+    return -1;
+  }
+  /* image-pick-pure-end */
+  let pickedKey = "";
+  function draftList() {
+    return typeof draftImages !== "undefined" && Array.isArray(draftImages) ? draftImages : null;
+  }
+  function paintImagePick() {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog) return;
+    dialog.querySelectorAll(".image-slot, #imageUrlTable tr").forEach((node) => node.classList.remove("image-picked"));
+    const list = draftList();
+    let index = -1;
+    if (list) index = imagePickFind(list, pickedKey);
+    else if (pickedKey.indexOf("index:") === 0) index = Number(pickedKey.slice(6));
+    if (index < 0) return;
+    const slots = dialog.querySelectorAll("#imageThumbs .image-slot");
+    const rows = dialog.querySelectorAll("#imageUrlTable tr");
+    if (slots[index]) slots[index].classList.add("image-picked");
+    if (rows[index]) rows[index].classList.add("image-picked");
+  }
+  function rememberImagePick(index) {
+    const list = draftList();
+    const image = list && list[index];
+    pickedKey = image ? imagePickKey(image, index) : "index:" + index;
+  }
+  document.addEventListener("click", (event) => {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog || !event.target || !event.target.closest || !dialog.contains(event.target)) return;
+    const button = event.target.closest("button");
+    const slots = [...dialog.querySelectorAll("#imageThumbs .image-slot")];
+    const rows = [...dialog.querySelectorAll("#imageUrlTable tr")];
+    if (button && dialog.contains(button)) {
+      const row = button.closest("tr");
+      const slot = button.closest(".image-slot");
+      const index = imagePickIndex(slot ? slots.indexOf(slot) : -1, row ? rows.indexOf(row) : -1);
+      if (index < 0) return;
+      const list = draftList();
+      const key = list && list[index] ? imagePickKey(list[index], index) : "index:" + index;
+      if (key === pickedKey) pickedKey = "";
+      return;
+    }
+    if (typeof imageDragMoved !== "undefined" && imageDragMoved) return;
+    const slot = event.target.closest("#imageThumbs .image-slot");
+    const row = !slot && event.target.closest("#imageUrlTable tr");
+    if (slot && !slot.querySelector("img")) return;
+    const index = imagePickIndex(slot ? slots.indexOf(slot) : -1, row ? rows.indexOf(row) : -1);
+    if (index < 0) return;
+    rememberImagePick(index);
+    paintImagePick();
+  }, true);
+  if (typeof renderImageEditor === "function" && !renderImageEditor.imagePick) {
+    const renderBefore = renderImageEditor;
+    const wrapped = function () {
+      const result = renderBefore.apply(this, arguments);
+      paintImagePick();
+      return result;
+    };
+    wrapped.imagePick = true;
+    ["zoomLive", "imageRoleZoom", "naverOptionShip", "firstScreen"].forEach((key) => {
+      if (renderBefore[key]) wrapped[key] = renderBefore[key];
+    });
+    renderImageEditor = wrapped;
+  }
+})();
+"""
+IMAGE_PICK_CSS = r"""
+/* image-pick1 */
+#imageDialog #imageThumbs .image-slot { position: relative; }
+#imageDialog #imageThumbs .image-slot.image-picked {
+  box-shadow: inset 0 0 0 3px #03C75A;
+  outline: 3px solid #03C75A;
+}
+#imageDialog #imageThumbs .image-slot.image-picked::after {
+  content: "선택";
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  z-index: 4;
+  background: #03C75A;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 6px;
+}
+#imageDialog #imageUrlTable tr.image-picked td {
+  background: #143024;
+  color: #d9ffe8;
+  box-shadow: inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+}
+#imageDialog #imageUrlTable tr.image-picked td:first-child {
+  box-shadow: inset 2px 0 0 #03C75A, inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+  color: #03C75A;
+  font-weight: 700;
+}
+#imageDialog #imageUrlTable tr.image-picked td:last-child {
+  box-shadow: inset -2px 0 0 #03C75A, inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+}
+"""
+IMAGE_PICK_FIT_CSS = r"""
+/* image-pick-fit1 */
+#imageDialog #imageThumbs .image-slot.image-picked {
+  box-shadow: none;
+}
+#imageDialog #imageThumbs .image-slot.image-picked::after {
+  top: auto;
+  bottom: 4px;
+  pointer-events: none;
+}
+"""
 
 
 def frozen_fix_plan() -> dict:
@@ -6900,6 +14260,9 @@ def frozen_fix_plan() -> dict:
             (GODO_MARKER, ("def extract_product",), GODO_SCRAPER_PY),
             (GODO_NAME_MARKER, ("def extract_product", GODO_MARKER), GODO_NAME_SCRAPER_PY),
             (GODO_IMAGE1_MARKER, GODO_IMAGE1_SCRAPER_NEEDED, GODO_IMAGE1_SCRAPER_PY),
+            (GODO_IMAGE2_MARKER, GODO_IMAGE2_SCRAPER_NEEDED, GODO_IMAGE2_SCRAPER_PY),
+            (GODO_IMAGE3_MARKER, GODO_IMAGE3_SCRAPER_NEEDED, GODO_IMAGE3_SCRAPER_PY),
+            (GODO_IMAGE4_MARKER, GODO_IMAGE4_SCRAPER_NEEDED, GODO_IMAGE4_SCRAPER_PY),
         ],
         "app.service": [
             (MURRAY_MARKER, ("def _apply_wholesale_extract",), MURRAY_SERVICE_PY),
@@ -6909,6 +14272,12 @@ def frozen_fix_plan() -> dict:
             (GODO_SITE2_MARKER, GODO_SITE2_SERVICE_NEEDED, GODO_SITE2_SERVICE_PY),
             (GODO_OPEN1_MARKER, GODO_OPEN1_SERVICE_NEEDED, GODO_OPEN1_SERVICE_PY),
             (GODO_LOGIN2_MARKER, GODO_LOGIN2_SERVICE_NEEDED, GODO_LOGIN2_SERVICE_PY),
+            (GODO_IMAGE2_MARKER, GODO_IMAGE2_SERVICE_NEEDED, GODO_IMAGE2_SERVICE_PY),
+            (NAVER_TAG_MARKER, NAVER_TAG_SERVICE_NEEDED, NAVER_TAG_SERVICE_PY),
+            (NAVER_TAG2_MARKER, NAVER_TAG2_NEEDED, NAVER_TAG2_SERVICE_PY),
+            (TAG_DICT_MARKER, TAG_DICT_NEEDED, TAG_DICT_SERVICE_PY),
+            (NAVER_TAG3_MARKER, NAVER_TAG3_NEEDED, NAVER_TAG3_SERVICE_PY),
+            (NAVER_KEYWORD_MARKER, NAVER_KEYWORD_NEEDED, NAVER_KEYWORD_SERVICE_PY),
         ],
         "app.chrome_app": [
             (TEXT_DECODE1_MARKER, TEXT_DECODE1_CHROME_NEEDED, TEXT_DECODE1_CHROME_PY),
@@ -6918,6 +14287,9 @@ def frozen_fix_plan() -> dict:
             (GODO_NAME2_MARKER, GODO_NAME2_CATALOG_NEEDED, GODO_NAME2_CATALOG_PY),
             (GODO_SITE1_MARKER, GODO_SITE1_CATALOG_NEEDED, GODO_SITE1_CATALOG_PY),
             (GODO_IMAGE1_MARKER, GODO_IMAGE1_CATALOG_NEEDED, GODO_IMAGE1_CATALOG_PY),
+            (GODO_IMAGE2_MARKER, GODO_IMAGE2_CATALOG_NEEDED, GODO_IMAGE2_CATALOG_PY),
+            (GODO_IMAGE3_MARKER, GODO_IMAGE3_CATALOG_NEEDED, GODO_IMAGE3_CATALOG_PY),
+            (GODO_IMAGE4_MARKER, GODO_IMAGE4_CATALOG_NEEDED, GODO_IMAGE4_CATALOG_PY),
         ],
     }
 

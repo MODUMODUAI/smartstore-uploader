@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.62"
+SCREEN_VERSION = "2026.10.28.63"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 62))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 63))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4154,6 +4154,9 @@ def patch_help(text: str) -> str:
     image_live_help = "크기 조절은 오른쪽에서 5%씩 움직입니다."
     if image_live_help in text and "그림 칸도 같이" not in text:
         text = text.replace(image_live_help, "크기 조절은 오른쪽에서 5%씩 움직이고, 그림 칸도 같이 커지거나 작아집니다.", 1)
+    image_narrow_help = "그림 칸도 같이 커지거나 작아집니다."
+    if image_narrow_help in text and "창 가로는 화면보다 10% 좁습니다" not in text:
+        text = text.replace(image_narrow_help, image_narrow_help + " 창 가로는 화면보다 10% 좁습니다.", 1)
     tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
     if tag_page_anchor in text and "1·2·3페이지" not in text:
         text = text.replace(
@@ -5696,6 +5699,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_CSS
     if "/* product-keyword1 */" not in text:
         text = text.rstrip() + "\n" + PRODUCT_KEYWORD_CSS
+    if "/* image-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_NARROW_CSS
     return text
 
 
@@ -12206,6 +12211,18 @@ PRODUCT_KEYWORD_CSS = r"""
   background: var(--field);
   border: 1px solid var(--field-border);
   padding: 6px 8px;
+}
+"""
+IMAGE_NARROW_CSS = r"""
+/* image-narrow1 */
+#imageDialog {
+  box-sizing: border-box;
+  width: 90vw;
+  max-width: 90vw;
+  height: 100vh;
+  max-height: 100vh;
+  margin: auto;
+  inset: 0;
 }
 """
 

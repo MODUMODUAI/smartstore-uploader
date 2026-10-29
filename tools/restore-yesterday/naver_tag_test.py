@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.62")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.63")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -308,6 +308,20 @@ if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Erro
         self.assertGreater(scripted.rindex("/* product-keyword1 */"), scripted.rindex("/* tag-page1 */"))
         help_html = patch.patch_help("<p>카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다.</p>")
         self.assertIn("그 상품 이름의 네이버 검색어", help_html)
+
+    def test_image_dialog_width_is_ten_percent_narrower(self):
+        self.assertIn("width: 90vw", patch.IMAGE_NARROW_CSS)
+        self.assertIn("max-width: 90vw", patch.IMAGE_NARROW_CSS)
+        self.assertIn("box-sizing: border-box", patch.IMAGE_NARROW_CSS)
+        self.assertIn("height: 100vh", patch.IMAGE_NARROW_CSS)
+        self.assertIn("inset: 0", patch.IMAGE_NARROW_CSS)
+        self.assertNotIn("#detailDialog", patch.IMAGE_NARROW_CSS)
+        styled = patch.patch_css("#imageDialog { width: 100vw; height: 100vh; }\n")
+        self.assertIn("/* image-narrow1 */", styled)
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw"))
+        help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
+        self.assertIn("창 가로는 화면보다 10% 좁습니다", help_html)
+        self.assertIn("그림 칸도 같이 커지거나 작아집니다", help_html)
 
 
 if __name__ == "__main__":

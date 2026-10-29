@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.74"
+SCREEN_VERSION = "2026.10.28.75"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 74))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 75))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5823,6 +5823,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + STORE_CHOICE_CSS
     if "/* image-pick1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_PICK_CSS
+    if "/* image-pick-fit1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_PICK_FIT_CSS
     return text
 
 
@@ -14228,6 +14230,17 @@ IMAGE_PICK_CSS = r"""
 }
 #imageDialog #imageUrlTable tr.image-picked td:last-child {
   box-shadow: inset -2px 0 0 #03C75A, inset 0 2px 0 #03C75A, inset 0 -2px 0 #03C75A;
+}
+"""
+IMAGE_PICK_FIT_CSS = r"""
+/* image-pick-fit1 */
+#imageDialog #imageThumbs .image-slot.image-picked {
+  box-shadow: none;
+}
+#imageDialog #imageThumbs .image-slot.image-picked::after {
+  top: auto;
+  bottom: 4px;
+  pointer-events: none;
 }
 """
 

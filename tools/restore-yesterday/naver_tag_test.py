@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.74")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.75")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -625,6 +625,17 @@ if (imagePickIndex(-1, -1) !== -1) throw new Error("none");
         scripted = patch.patch_answer("function renderImageEditor(){ return 1; }\n")
         self.assertIn("/* image-pick1 */", scripted)
         self.assertGreater(scripted.rindex("/* image-pick1 */"), scripted.rindex("/* store-choice1 */"))
+
+    def test_image_pick_badge_stays_off_the_delete_button(self):
+        self.assertIn("bottom: 4px", patch.IMAGE_PICK_FIT_CSS)
+        self.assertIn("pointer-events: none", patch.IMAGE_PICK_FIT_CSS)
+        self.assertIn("box-shadow: none", patch.IMAGE_PICK_FIT_CSS)
+        self.assertNotIn("100vw", patch.IMAGE_PICK_FIT_CSS)
+        styled = patch.patch_css("/* image-pick1 */\n#imageDialog .image-slot.image-picked::after { top: 4px; }\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* image-pick-fit1 */", styled)
+        self.assertGreater(styled.rindex("/* image-pick-fit1 */"), styled.rindex("/* image-pick1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        self.assertGreater(styled.rindex("bottom: 4px"), styled.rindex("top: 4px"))
 
 
 if __name__ == "__main__":

@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.63")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.64")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -322,6 +322,25 @@ if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Erro
         help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
         self.assertIn("창 가로는 화면보다 10% 좁습니다", help_html)
         self.assertIn("그림 칸도 같이 커지거나 작아집니다", help_html)
+
+    def test_prompt_field_shrinks_and_menu_shifts_left(self):
+        self.assertIn("AI실행", patch.PROMPT_NARROW_JS)
+        self.assertIn("current * 0.7", patch.PROMPT_NARROW_JS)
+        self.assertIn('field.style.setProperty("box-sizing", "border-box", "important")', patch.PROMPT_NARROW_JS)
+        self.assertIn("prompt-menu-shift", patch.PROMPT_NARROW_JS)
+        self.assertIn("padding-right: 24px", patch.PROMPT_NARROW_CSS)
+        full = Path("/tmp/prompt-narrow.js")
+        full.write_text(patch.PROMPT_NARROW_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        scripted = patch.patch_answer("function openImageEditor(){ return 1; }\n")
+        self.assertIn("/* prompt-narrow1 */", scripted)
+        self.assertGreater(scripted.rindex("/* prompt-narrow1 */"), scripted.rindex("/* product-keyword1 */"))
+        styled = patch.patch_css("/* image-narrow1 */\n")
+        self.assertIn("/* prompt-narrow1 */", styled)
+        self.assertGreater(styled.rindex("/* prompt-narrow1 */"), styled.rindex("/* image-narrow1 */"))
+        help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
+        self.assertIn("프롬프트 칸은 30% 짧습니다", help_html)
+        self.assertIn("저장 메뉴는 조금 왼쪽에 있습니다", help_html)
 
 
 if __name__ == "__main__":

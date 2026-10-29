@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.63"
+SCREEN_VERSION = "2026.10.28.64"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 63))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 64))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4157,6 +4157,9 @@ def patch_help(text: str) -> str:
     image_narrow_help = "그림 칸도 같이 커지거나 작아집니다."
     if image_narrow_help in text and "창 가로는 화면보다 10% 좁습니다" not in text:
         text = text.replace(image_narrow_help, image_narrow_help + " 창 가로는 화면보다 10% 좁습니다.", 1)
+    prompt_help = "창 가로는 화면보다 10% 좁습니다."
+    if prompt_help in text and "프롬프트 칸은 30% 짧습니다" not in text:
+        text = text.replace(prompt_help, prompt_help + " AI 실행 앞의 프롬프트 칸은 30% 짧습니다. 저장 메뉴는 조금 왼쪽에 있습니다.", 1)
     tag_page_anchor = "카테고리, 브랜드, 판매자명이 포함된 태그는 등록되지 않습니다."
     if tag_page_anchor in text and "1·2·3페이지" not in text:
         text = text.replace(
@@ -5621,6 +5624,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_ZOOM_LIVE_JS
     if "/* product-keyword1 */" not in text:
         text = text.rstrip() + "\n" + PRODUCT_KEYWORD_JS
+    if "/* prompt-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + PROMPT_NARROW_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5701,6 +5706,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + PRODUCT_KEYWORD_CSS
     if "/* image-narrow1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_NARROW_CSS
+    if "/* prompt-narrow1 */" not in text:
+        text = text.rstrip() + "\n" + PROMPT_NARROW_CSS
     return text
 
 
@@ -12223,6 +12230,66 @@ IMAGE_NARROW_CSS = r"""
   max-height: 100vh;
   margin: auto;
   inset: 0;
+}
+"""
+PROMPT_NARROW_JS = r"""
+/* prompt-narrow1 */
+(function () {
+  function labelOf(button) {
+    return String(button.textContent || "").replace(/\s+/g, "");
+  }
+  function tunePrompt() {
+    document.querySelectorAll("button").forEach((button) => {
+      if (labelOf(button) !== "AI실행") return;
+      const row = button.parentElement;
+      if (!row) return;
+      const field = row.querySelector("input, textarea");
+      if (field && field.dataset.promptNarrow !== "1") {
+        const current = field.getBoundingClientRect().width;
+        if (current >= 40) {
+          const next = Math.round(current * 0.7);
+          field.dataset.promptNarrow = "1";
+          field.classList.add("prompt-narrow-input");
+          field.style.setProperty("box-sizing", "border-box", "important");
+          field.style.setProperty("width", next + "px", "important");
+          field.style.setProperty("flex", "0 0 " + next + "px", "important");
+          field.style.setProperty("max-width", next + "px", "important");
+        }
+      }
+      const host = button.closest("dialog, form, section") || document.body;
+      const menu = host.querySelector(".work-foot, .dialog-actions");
+      if (menu && menu !== row) menu.classList.add("prompt-menu-shift");
+    });
+  }
+  tunePrompt();
+  setTimeout(tunePrompt, 0);
+  setTimeout(tunePrompt, 200);
+  if (document.body) {
+    new MutationObserver(tunePrompt).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["open"],
+    });
+  }
+  if (typeof HTMLDialogElement === "function" && HTMLDialogElement.prototype && !HTMLDialogElement.prototype.showModal.promptNarrow) {
+    const showModalBefore = HTMLDialogElement.prototype.showModal;
+    const wrapped = function () {
+      const result = showModalBefore.apply(this, arguments);
+      tunePrompt();
+      setTimeout(tunePrompt, 0);
+      return result;
+    };
+    wrapped.promptNarrow = true;
+    HTMLDialogElement.prototype.showModal = wrapped;
+  }
+})();
+"""
+PROMPT_NARROW_CSS = r"""
+/* prompt-narrow1 */
+.prompt-menu-shift {
+  padding-right: 24px;
+  box-sizing: border-box;
 }
 """
 

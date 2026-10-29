@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.47"
+SCREEN_VERSION = "2026.10.28.48"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 47))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 48))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4111,6 +4111,14 @@ def patch_help(text: str) -> str:
         "품절/재판매: 품절상품 조회하기 또는 재판매상품 조회하기로 목록을 본 뒤, 모두 선택한 상태에서 품절진행 또는 재판매진행을 누릅니다.",
         stock_help,
     )
+    old_forbid = "등록금지키워드: 상품명에서 빼야 하는 말을 등록합니다."
+    new_forbid = "등록금지키워드: 상품명과 상품태그에서 빼야 하는 말을 등록합니다."
+    if old_forbid in text and new_forbid not in text:
+        text = text.replace(old_forbid, new_forbid, 1)
+    name_help = "경쟁강도 낮음 단어는 뺍니다. Claude 키가 있으면 상품명은 Claude로 만들고, 없으면 설정에서 고른 AI를 씁니다."
+    name_help_new = name_help + " 누르면 옆에 그 상품의 상세페이지가 함께 열립니다."
+    if name_help in text and "옆에 그 상품의 상세페이지" not in text:
+        text = text.replace(name_help, name_help_new, 1)
     return text
 
 
@@ -5502,6 +5510,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + GODO_IMAGE4_JS
     if "/* naver-tag1 */" not in text:
         text = text.rstrip() + "\n" + NAVER_TAG_JS
+    if "/* name-keyword-tags1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_FORBID_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5550,6 +5560,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + extra
     if "/* naver-tag1 */" not in text:
         text = text.rstrip() + "\n" + NAVER_TAG_CSS
+    if "/* name-keyword-tags1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_FORBID_CSS
     return text
 
 
@@ -8492,6 +8504,200 @@ NAVER_TAG_CSS = r"""
 @media (max-width: 800px) {
   .tag-layout { flex-direction: column; }
   .naver-search-tags { width: auto; flex-basis: auto; }
+}
+"""
+NAME_FORBID_JS = r"""
+/* name-keyword-tags1 */
+let nameForbidCache = [];
+
+/* forbid-pure-start */
+function stripForbiddenText(value, words) {
+  let text = String(value || "");
+  const source = Array.isArray(words) ? words : (typeof nameForbidWords === "function" ? nameForbidWords() : []);
+  const list = source
+    .map((word) => String(word || "").replace(/\s+/g, " ").trim())
+    .filter((word) => word.length >= 2);
+  list.sort((a, b) => b.length - a.length);
+  list.forEach((word) => {
+    if (text.indexOf(word) >= 0) text = text.split(word).join(" ");
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+function stripForbiddenTags(tags, words) {
+  const out = [];
+  const list = Array.isArray(tags) ? tags : [];
+  for (let index = 0; index < list.length; index += 1) {
+    const stripped = stripForbiddenText(list[index], words);
+    const tag = typeof cleanTag === "function"
+      ? cleanTag(stripped)
+      : String(stripped || "").replace(/\s+/g, "").replace(/[^0-9A-Za-z가-힣]/g, "").slice(0, 10);
+    if (tag && out.indexOf(tag) < 0) out.push(tag);
+    if (out.length >= 10) break;
+  }
+  return out;
+}
+/* forbid-pure-end */
+
+function nameForbidWords() {
+  return nameForbidCache.slice();
+}
+function scrubProductRecord(product) {
+  if (!product || typeof product !== "object" || !product.id) return product;
+  const words = nameForbidWords();
+  if (!words.length) return product;
+  if (typeof product.name === "string") product.name = stripForbiddenText(product.name, words);
+  if (Array.isArray(product.tags)) product.tags = stripForbiddenTags(product.tags, words);
+  return product;
+}
+function scrubForbidPayload(data) {
+  if (Array.isArray(data)) {
+    data.forEach(scrubProductRecord);
+    return data;
+  }
+  if (data && typeof data === "object") {
+    scrubProductRecord(data);
+    if (Array.isArray(data.items)) data.items.forEach(scrubProductRecord);
+    if (data.product) scrubProductRecord(data.product);
+  }
+  return data;
+}
+function rememberForbidWords(data) {
+  const raw = data && Array.isArray(data.keywords) ? data.keywords : [];
+  nameForbidCache = typeof uniqueNameKeywords === "function" ? uniqueNameKeywords(raw) : raw.slice();
+  return nameForbidCache;
+}
+function applyForbidToLoadedProducts() {
+  try {
+    if (typeof products !== "undefined" && Array.isArray(products)) products.forEach(scrubProductRecord);
+    if (typeof current !== "undefined" && current) scrubProductRecord(current);
+    if (typeof renderSheets === "function" && document.getElementById("productTable")) renderSheets();
+    if (typeof fillPreview === "function") fillPreview();
+  } catch (error) {}
+}
+if (typeof api === "function" && !api.nameForbidWrapped) {
+  const apiBeforeForbid = api;
+  api = async function (path, options) {
+    const data = await apiBeforeForbid(path, options);
+    const url = String(path || "");
+    if (url.indexOf("/api/name-keywords") >= 0) {
+      rememberForbidWords(data);
+      applyForbidToLoadedProducts();
+      return data;
+    }
+    if (url.indexOf("/name/suggest") >= 0 && data && typeof data === "object") {
+      const words = nameForbidWords();
+      if (typeof data.name === "string") data.name = stripForbiddenText(data.name, words);
+      if (Array.isArray(data.keywords)) {
+        data.keywords = data.keywords.filter((row) => {
+          const word = String((row && row.keyword) || "");
+          return word && stripForbiddenText(word, words) === word;
+        });
+      }
+      return data;
+    }
+    return scrubForbidPayload(data);
+  };
+  api.nameForbidWrapped = true;
+}
+if (typeof saveProduct === "function" && !saveProduct.nameForbidWrapped) {
+  const saveProductBeforeForbid = saveProduct;
+  saveProduct = async function (product, patch, quiet) {
+    const next = patch && typeof patch === "object" ? Object.assign({}, patch) : patch;
+    const words = nameForbidWords();
+    if (next && words.length) {
+      if (typeof next.name === "string") next.name = stripForbiddenText(next.name, words);
+      if (Array.isArray(next.tags)) next.tags = stripForbiddenTags(next.tags, words);
+    }
+    return saveProductBeforeForbid(product, next, quiet);
+  };
+  saveProduct.nameForbidWrapped = true;
+}
+if (typeof renderTagChips === "function" && !renderTagChips.nameForbidWrapped) {
+  const renderTagChipsBeforeForbid = renderTagChips;
+  renderTagChips = function () {
+    if (typeof draftTags !== "undefined" && Array.isArray(draftTags) && nameForbidWords().length) {
+      draftTags = stripForbiddenTags(draftTags, nameForbidWords());
+    }
+    return renderTagChipsBeforeForbid.apply(this, arguments);
+  };
+  renderTagChips.nameForbidWrapped = true;
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameDetailWrapped) {
+  const openNameEditorBeforeDetail = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeDetail.apply(this, arguments);
+    const dialog = document.getElementById("nameDialog");
+    if (!dialog || !dialog.open) return result;
+    const form = document.getElementById("nameForm");
+    let layout = document.getElementById("nameDetailLayout");
+    if (!layout && form && form.parentNode) {
+      layout = document.createElement("div");
+      layout.id = "nameDetailLayout";
+      layout.className = "name-detail-layout";
+      form.parentNode.insertBefore(layout, form);
+      layout.appendChild(form);
+      const pane = document.createElement("aside");
+      pane.id = "nameDetailPane";
+      pane.className = "name-detail-pane";
+      pane.innerHTML = '<h3>상세페이지</h3><div id="nameDetailView" class="detail-visual name-detail-view"></div>';
+      layout.appendChild(pane);
+      dialog.classList.add("name-with-detail");
+    }
+    const view = document.getElementById("nameDetailView");
+    if (view && typeof current !== "undefined" && current) {
+      const html = typeof prepareDetailHtml === "function" ? prepareDetailHtml(current.detail_html || "") : (current.detail_html || "");
+      view.innerHTML = html || '<p class="hint">상세페이지가 없습니다.</p>';
+      if (typeof bindDetailImages === "function") bindDetailImages(view);
+    }
+    return result;
+  };
+  openNameEditor.nameDetailWrapped = true;
+}
+if (typeof api === "function") {
+  api("/api/name-keywords", { method: "GET", quiet: true }).catch(() => {});
+}
+"""
+NAME_FORBID_CSS = r"""
+/* name-keyword-tags1 */
+#nameDialog.name-with-detail {
+  width: min(1180px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+}
+#nameDialog.name-with-detail .name-detail-layout {
+  display: flex;
+  align-items: stretch;
+  max-height: calc(100vh - 48px);
+}
+#nameDialog.name-with-detail #nameForm {
+  flex: 0 0 400px;
+  width: 400px;
+  max-width: 46vw;
+  overflow: auto;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line, #d6dbe3);
+  background: var(--page, #fff);
+}
+#nameDialog.name-with-detail .name-detail-pane h3 {
+  margin: 0;
+  padding: 14px 16px 8px;
+  font-size: 16px;
+}
+#nameDialog.name-with-detail .name-detail-view {
+  flex: 1 1 auto;
+  margin: 0 12px 12px;
+  min-height: 240px;
+  max-height: calc(100vh - 120px);
+}
+@media (max-width: 860px) {
+  #nameDialog.name-with-detail .name-detail-layout { flex-direction: column; }
+  #nameDialog.name-with-detail #nameForm { width: auto; max-width: none; flex-basis: auto; }
+  #nameDialog.name-with-detail .name-detail-pane { border-left: 0; border-top: 1px solid var(--line, #d6dbe3); }
+  #nameDialog.name-with-detail .name-detail-view { max-height: 42vh; }
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

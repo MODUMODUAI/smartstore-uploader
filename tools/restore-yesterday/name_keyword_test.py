@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.49")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.50")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -61,6 +61,23 @@ if (menuSaveClosesDialog("/api/delivery-templates/abc", { method: "PUT" }) !== "
         path = Path("/tmp/name-count-test.js")
         path.write_text(script, encoding="utf-8")
         subprocess.run(["node", str(path)], check=True)
+
+
+    def test_name_dialog_column_stays_wide_beside_keywords(self):
+        css = patch.NAME_FORBID_CSS + patch.NAME_COUNT_CSS + patch.NAME_LAYOUT_CSS
+        self.assertLess(css.index("max-width: 46vw"), css.index("/* name-layout1 */"))
+        self.assertIn("/* name-layout1 */", patch.NAME_LAYOUT_JS)
+        self.assertIn("name-has-keywords", patch.NAME_LAYOUT_CSS)
+        self.assertIn("min-width: min(760px, 100%)", patch.NAME_LAYOUT_CSS)
+        styled = patch.patch_css("/* name-keyword-tags1 */\n/* name-count1 */\n")
+        self.assertIn("/* name-layout1 */", styled)
+        self.assertGreater(styled.rindex("/* name-layout1 */"), styled.rindex("/* name-count1 */"))
+        scripted = patch.patch_answer("function openNameEditor(){ return 1; }\n")
+        self.assertIn("/* name-layout1 */", scripted)
+        self.assertGreater(scripted.rindex("/* name-layout1 */"), scripted.rindex("/* name-count1 */"))
+        layout_js = Path("/tmp/name-layout.js")
+        layout_js.write_text(patch.NAME_LAYOUT_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(layout_js)], check=True)
 
 
 if __name__ == "__main__":

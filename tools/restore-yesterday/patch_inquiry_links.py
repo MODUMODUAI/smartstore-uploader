@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.49"
+SCREEN_VERSION = "2026.10.28.50"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 49))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 50))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5521,6 +5521,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_FORBID_JS
     if "/* name-count1 */" not in text:
         text = text.rstrip() + "\n" + NAME_COUNT_JS
+    if "/* name-layout1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_LAYOUT_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5573,6 +5575,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_FORBID_CSS
     if "/* name-count1 */" not in text:
         text = text.rstrip() + "\n" + NAME_COUNT_CSS
+    if "/* name-layout1 */" not in text:
+        text = text.rstrip() + "\n" + NAME_LAYOUT_CSS
     return text
 
 
@@ -8832,6 +8836,116 @@ td.name-count-cell .cell-view,
 td.name-count-cell input {
   padding-right: 58px;
   box-sizing: border-box;
+}
+"""
+NAME_LAYOUT_JS = r"""
+/* name-layout1 */
+function widenNameEditorColumn() {
+  const form = document.getElementById("nameForm");
+  const input = document.getElementById("nameInput");
+  const dialog = document.getElementById("nameDialog");
+  if (!form || !input || !dialog) return;
+  let node = input.parentElement;
+  let column = null;
+  while (node && node !== form && node !== dialog) {
+    const parent = node.parentElement;
+    if (!parent) break;
+    const style = window.getComputedStyle(parent);
+    const display = style.display || "";
+    const direction = style.flexDirection || "row";
+    const row = (display === "flex" || display === "inline-flex") && direction.indexOf("column") !== 0;
+    const grid = display === "grid" || display === "inline-grid";
+    if (row || grid) {
+      const siblings = Array.prototype.filter.call(parent.children, (el) => el !== node);
+      if (siblings.length) {
+        column = node;
+        break;
+      }
+    }
+    node = parent;
+  }
+  form.classList.toggle("name-has-keywords", !!column);
+  if (!column) return;
+  column.style.setProperty("flex", "1 0 360px", "important");
+  column.style.setProperty("min-width", "360px", "important");
+  column.style.setProperty("max-width", "520px", "important");
+  column.style.setProperty("width", "auto", "important");
+}
+if (typeof openNameEditor === "function" && !openNameEditor.nameLayoutWrapped) {
+  const openNameEditorBeforeLayout = openNameEditor;
+  openNameEditor = function () {
+    const result = openNameEditorBeforeLayout.apply(this, arguments);
+    widenNameEditorColumn();
+    setTimeout(widenNameEditorColumn, 0);
+    return result;
+  };
+  openNameEditor.nameLayoutWrapped = true;
+}
+"""
+NAME_LAYOUT_CSS = r"""
+/* name-layout1 */
+#nameDialog.name-with-detail {
+  width: min(1480px, calc(100vw - 24px));
+}
+#nameDialog.name-with-detail #nameForm {
+  flex: 1 0 420px;
+  width: auto;
+  min-width: 360px;
+  max-width: 520px;
+  overflow: auto;
+}
+#nameDialog.name-with-detail #nameForm.name-has-keywords,
+#nameDialog.name-with-detail #nameForm:has(aside) {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: min(760px, 100%);
+  max-width: none;
+}
+#nameDialog.name-with-detail .name-detail-pane {
+  flex: 1 1 420px;
+  min-width: 260px;
+}
+#nameDialog.name-with-detail #nameForm *:has(#nameInput):not(:has(aside)) {
+  flex-grow: 1 !important;
+  flex-shrink: 0 !important;
+  flex-basis: 360px !important;
+  min-width: 360px !important;
+  max-width: 520px;
+  width: auto !important;
+  box-sizing: border-box;
+}
+#nameDialog.name-with-detail #nameInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 96px;
+  writing-mode: horizontal-tb;
+  word-break: keep-all;
+  padding-right: 76px;
+  padding-bottom: 28px;
+}
+#nameDialog.name-with-detail .name-suggest-actions button {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+#nameDialog.name-with-detail .name-suggest-actions .hint {
+  white-space: normal;
+  word-break: keep-all;
+  line-height: 1.45;
+}
+@media (max-width: 980px) {
+  #nameDialog.name-with-detail .name-detail-layout { flex-direction: column; }
+  #nameDialog.name-with-detail #nameForm,
+  #nameDialog.name-with-detail #nameForm.name-has-keywords {
+    min-width: 0;
+    max-width: none;
+    width: auto;
+    flex-basis: auto;
+  }
+  #nameDialog.name-with-detail .name-detail-pane {
+    min-width: 0;
+    border-left: 0;
+    border-top: 1px solid var(--line, #d6dbe3);
+  }
 }
 """
 NAVER_TAG_SERVICE_PY = r'''

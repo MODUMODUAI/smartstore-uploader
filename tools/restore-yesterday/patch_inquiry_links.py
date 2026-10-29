@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.51"
+SCREEN_VERSION = "2026.10.28.52"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 51))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 52))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -5525,6 +5525,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_LAYOUT_JS
     if "/* dialog-resize1 */" not in text:
         text = text.rstrip() + "\n" + DIALOG_RESIZE_JS
+    if "/* menu-save-close2 */" not in text:
+        text = text.rstrip() + "\n" + MENU_SAVE_CLOSE2_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -9114,6 +9116,92 @@ try {
     HTMLDialogElement.prototype.showModal.dialogResizeWrapped = true;
   }
 } catch (error) {}
+"""
+MENU_SAVE_CLOSE2_JS = r"""
+/* menu-save-close2 */
+/* save-close-pure-start */
+function menuSaveButtonCloses(label) {
+  const text = String(label || "").replace(/\s+/g, "");
+  if (text.indexOf("저장") < 0) return false;
+  if (text.indexOf("저장위치") >= 0) return false;
+  return true;
+}
+function menuSaveRequestCloses(path, method) {
+  const verb = String(method || "GET").toUpperCase();
+  if (verb !== "POST" && verb !== "PUT" && verb !== "PATCH") return false;
+  const url = String(path || "").split("?")[0];
+  if (/\/import$/.test(url) || url.indexOf("/import/") >= 0) return false;
+  if (url.indexOf("/name/suggest") >= 0) return false;
+  if (url.indexOf("/collect") >= 0) return false;
+  if (url.indexOf("/register") >= 0) return false;
+  if (/\/test$/.test(url)) return false;
+  if (url.indexOf("/copy") >= 0) return false;
+  if (url.indexOf("/delete") >= 0) return false;
+  return true;
+}
+/* save-close-pure-end */
+let menuSaveDialog = null;
+let menuSaveStamp = 0;
+let menuSaveStarted = false;
+function rememberMenuSaveDialog(button) {
+  if (!button || button.disabled) return;
+  if (!menuSaveButtonCloses(button.textContent || button.value || "")) return;
+  const dialog = button.closest ? button.closest("dialog") : null;
+  if (!dialog || !dialog.open) return;
+  menuSaveDialog = dialog;
+  menuSaveStamp = Date.now();
+  menuSaveStarted = false;
+  const stamp = menuSaveStamp;
+  setTimeout(() => {
+    if (menuSaveStamp === stamp && !menuSaveStarted) menuSaveDialog = null;
+  }, 0);
+}
+document.addEventListener("click", (event) => {
+  rememberMenuSaveDialog(event.target && event.target.closest ? event.target.closest("button, input[type='submit']") : null);
+}, true);
+document.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!form || !form.closest) return;
+  const dialog = form.closest("dialog");
+  if (!dialog || !dialog.open) return;
+  const submitter = event.submitter;
+  if (submitter) {
+    rememberMenuSaveDialog(submitter);
+    return;
+  }
+  const buttons = form.querySelectorAll("button, input[type='submit']");
+  for (let index = 0; index < buttons.length; index += 1) {
+    if (menuSaveButtonCloses(buttons[index].textContent || buttons[index].value || "")) {
+      rememberMenuSaveDialog(buttons[index]);
+      break;
+    }
+  }
+}, true);
+if (typeof api === "function" && !api.menuSaveClose2Wrapped) {
+  const apiBeforeMenuSave2 = api;
+  api = async function (path, options) {
+    const dialog = menuSaveDialog;
+    const stamp = menuSaveStamp;
+    const closeThis = Boolean(dialog) && menuSaveStamp === stamp && menuSaveRequestCloses(path, options && options.method);
+    if (closeThis) menuSaveStarted = true;
+    try {
+      const data = await apiBeforeMenuSave2.apply(this, arguments);
+      if (closeThis && menuSaveStamp === stamp && dialog.open) {
+        menuSaveDialog = null;
+        menuSaveStarted = false;
+        dialog.close();
+      }
+      return data;
+    } catch (error) {
+      if (closeThis && menuSaveStamp === stamp) {
+        menuSaveDialog = null;
+        menuSaveStarted = false;
+      }
+      throw error;
+    }
+  };
+  api.menuSaveClose2Wrapped = true;
+}
 """
 DIALOG_RESIZE_CSS = r"""
 /* dialog-resize1 */

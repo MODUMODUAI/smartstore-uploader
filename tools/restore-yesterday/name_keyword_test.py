@@ -35,7 +35,7 @@ if (tags.join(",") !== "인증,무료,특가,운동화") throw new Error(tags.jo
         )
         self.assertIn("상품명과 상품태그에서 빼야 하는 말", html)
         self.assertIn("옆에 그 상품의 상세페이지가 함께 열립니다", html)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.51")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.52")
         self.assertIn("nameCharCount", patch.NAME_COUNT_JS)
         self.assertIn("benefitDialog", patch.NAME_COUNT_JS)
         self.assertIn("nameKeywordDialog", patch.NAME_COUNT_JS)
@@ -100,6 +100,27 @@ if (shrunk.width !== 420 || shrunk.left !== 100) throw new Error("shrink " + JSO
         full_js = Path("/tmp/dialog-resize-full.js")
         full_js.write_text(patch.DIALOG_RESIZE_JS, encoding="utf-8")
         subprocess.run(["node", "--check", str(full_js)], check=True)
+        start = patch.MENU_SAVE_CLOSE2_JS.index("/* save-close-pure-start */")
+        end = patch.MENU_SAVE_CLOSE2_JS.index("/* save-close-pure-end */")
+        save_script = patch.MENU_SAVE_CLOSE2_JS[start:end] + r"""
+if (!menuSaveButtonCloses("저장")) throw new Error("save");
+if (!menuSaveButtonCloses("배송정보저장")) throw new Error("delivery");
+if (!menuSaveButtonCloses("옵션 저장")) throw new Error("option");
+if (menuSaveButtonCloses("닫기")) throw new Error("close");
+if (menuSaveButtonCloses("저장 위치")) throw new Error("place");
+if (!menuSaveRequestCloses("/api/products/1", "PUT")) throw new Error("product");
+if (!menuSaveRequestCloses("/api/benefit", "PUT")) throw new Error("benefit");
+if (menuSaveRequestCloses("/api/delivery-templates/import", "POST")) throw new Error("import");
+if (menuSaveRequestCloses("/api/products/1/name/suggest", "POST")) throw new Error("suggest");
+if (menuSaveRequestCloses("/api/benefit", "GET")) throw new Error("get");
+if (menuSaveRequestCloses("/api/products/collect", "POST")) throw new Error("collect");
+"""
+        save_js = Path("/tmp/menu-save-close-test.js")
+        save_js.write_text(save_script, encoding="utf-8")
+        subprocess.run(["node", str(save_js)], check=True)
+        full_save = Path("/tmp/menu-save-close-full.js")
+        full_save.write_text(patch.MENU_SAVE_CLOSE2_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full_save)], check=True)
 
 
 if __name__ == "__main__":

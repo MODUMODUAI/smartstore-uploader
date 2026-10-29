@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.66"
+SCREEN_VERSION = "2026.10.28.67"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 66))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 67))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4160,6 +4160,13 @@ def patch_help(text: str) -> str:
     prompt_help = "창 가로는 화면보다 10% 좁습니다."
     if prompt_help in text and "프롬프트 칸은 30% 짧습니다" not in text:
         text = text.replace(prompt_help, prompt_help + " AI 실행 앞의 프롬프트 칸은 30% 짧습니다. 저장 메뉴는 조금 왼쪽에 있습니다.", 1)
+    image_role_help = "저장 메뉴는 조금 왼쪽에 있습니다."
+    if image_role_help in text and "대표이미지 조절은 이미지 칸 위" not in text:
+        text = text.replace(
+            image_role_help,
+            image_role_help + " 오른쪽 닫기는 없고, 저장은 네이버 초록색입니다. 대표이미지 조절은 이미지 칸 위에 있고 5%씩 움직입니다. 오른쪽 조절은 상세페이지 크기이고 5%씩 움직입니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5644,6 +5651,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_PANE_LIVE_JS
     if "/* attribute-foot1 */" not in text:
         text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_JS
+    if "/* image-role-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5730,6 +5739,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + NAME_PANE_LIVE_CSS
     if "/* attribute-foot1 */" not in text:
         text = text.rstrip() + "\n" + ATTRIBUTE_FOOT_CSS
+    if "/* image-role-zoom1 */" not in text:
+        text = text.rstrip() + "\n" + IMAGE_ROLE_ZOOM_CSS
     return text
 
 
@@ -12626,6 +12637,253 @@ ATTRIBUTE_FOOT_CSS = r"""
   padding: 4px 12px !important;
   min-width: 64px;
   height: auto;
+}
+"""
+IMAGE_ROLE_ZOOM_JS = r"""
+/* image-role-zoom1 */
+(function () {
+  /* image-role-pure-start */
+  function roleZoomStep(value, delta, min, max) {
+    const step = 5;
+    const current = Number(value);
+    const base = Number.isFinite(current) ? current : min;
+    const snapped = Math.round(base / step) * step;
+    const next = snapped + (Number(delta) || 0) * step;
+    return Math.min(max, Math.max(min, next));
+  }
+  /* image-role-pure-end */
+  let rep = 25;
+  let detail = 100;
+  function syncBar(bar, percent, min, max) {
+    if (!bar) return;
+    const range = bar.querySelector("input[type='range']");
+    const label = bar.querySelector("[data-zoom-label]");
+    if (range) {
+      range.min = String(min);
+      range.max = String(max);
+      range.step = "5";
+      range.value = String(percent);
+    }
+    if (label) label.textContent = percent + "%";
+  }
+  function paintRep(next) {
+    rep = roleZoomStep(next, 0, 20, 120);
+    const size = Math.round(500 * rep / 100);
+    document.documentElement.style.setProperty("--image-slot-size", size + "px");
+    const thumbs = document.getElementById("imageThumbs");
+    if (thumbs) {
+      thumbs.style.setProperty("display", "grid", "important");
+      thumbs.style.setProperty("grid-template-columns", "repeat(5, " + size + "px)", "important");
+      thumbs.style.setProperty("width", "max-content", "important");
+      thumbs.style.setProperty("max-width", "none", "important");
+    }
+    document.querySelectorAll("#imageThumbs .image-slot").forEach((slot) => {
+      slot.style.setProperty("width", size + "px", "important");
+      slot.style.setProperty("height", size + "px", "important");
+      slot.style.setProperty("flex", "0 0 " + size + "px", "important");
+      slot.style.setProperty("aspect-ratio", "auto", "important");
+      slot.style.setProperty("min-width", size + "px", "important");
+    });
+    syncBar(document.getElementById("repImageZoomBar"), rep, 20, 120);
+  }
+  function paintDetail(next) {
+    detail = roleZoomStep(next, 0, 25, 200);
+    syncBar(document.getElementById("imageZoomBar"), detail, 25, 200);
+    const title = document.querySelector("#imageZoomBar > span");
+    if (title) title.textContent = "상세페이지";
+    ["detailVisual", "nameDetailView"].forEach((id) => {
+      const view = document.getElementById(id);
+      if (!view || view.clientWidth < 40) return;
+      const style = window.getComputedStyle(view);
+      const pad = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+      const fit = Math.max(1, Math.round(view.clientWidth - pad));
+      const width = Math.max(1, Math.round(fit * detail / 100));
+      view.style.setProperty("zoom", "1", "important");
+      const body = view.querySelector(":scope > .dialog-zoom-body");
+      if (body) {
+        body.style.setProperty("zoom", "1", "important");
+        body.style.setProperty("width", width + "px", "important");
+        body.style.setProperty("max-width", "none", "important");
+        body.style.setProperty("transform", "none", "important");
+      }
+      view.querySelectorAll("img").forEach((img) => {
+        img.style.setProperty("width", width + "px", "important");
+        img.style.setProperty("max-width", "none", "important");
+        img.style.setProperty("height", "auto", "important");
+      });
+    });
+  }
+  function ownBar(bar, onStep, min, max) {
+    if (!bar) return null;
+    if (bar.dataset.roleZoom !== "1") {
+      const fresh = bar.cloneNode(true);
+      fresh.dataset.roleZoom = "1";
+      fresh.dataset.zoomLive = "1";
+      fresh.dataset.step5 = "1";
+      fresh.dataset.bound = "1";
+      fresh.dataset.dialogZoom = "1";
+      bar.replaceWith(fresh);
+      bar = fresh;
+    }
+    bar.querySelectorAll("[data-zoom]").forEach((button) => {
+      button.dataset.zoom5 = "1";
+    });
+    if (bar.dataset.roleBound !== "1") {
+      bar.dataset.roleBound = "1";
+      bar.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-zoom]");
+        if (!button || !bar.contains(button)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const range = bar.querySelector("input[type='range']");
+        const current = range ? Number(range.value) : min;
+        onStep(roleZoomStep(current, Number(button.dataset.zoom) || 0, min, max));
+      }, true);
+      const range = bar.querySelector("input[type='range']");
+      if (range) range.addEventListener("input", () => onStep(roleZoomStep(range.value, 0, min, max)));
+    }
+    return bar;
+  }
+  function ensureRepBar() {
+    const drop = document.getElementById("imageDrop") || document.getElementById("imageThumbs");
+    let bar = document.getElementById("repImageZoomBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "repImageZoomBar";
+      bar.className = "work-zoom";
+      bar.innerHTML = '<span>대표이미지</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="20" max="120" step="5" value="25" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>25%</b>';
+    }
+    if (drop && drop.parentNode && bar.nextElementSibling !== drop) drop.parentNode.insertBefore(bar, drop);
+    return ownBar(bar, (value) => paintRep(value), 20, 120);
+  }
+  function ensureRightBar() {
+    const image = document.getElementById("imageDialog");
+    if (!image) return null;
+    const header = image.querySelector("header");
+    let bar = document.getElementById("imageZoomBar");
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "imageZoomBar";
+      bar.className = "work-zoom";
+      bar.innerHTML = '<span>상세페이지</span><button type="button" data-zoom="-1" aria-label="축소">−</button><input type="range" min="25" max="200" step="5" value="100" /><button type="button" data-zoom="1" aria-label="확대">+</button><b data-zoom-label>100%</b>';
+      if (header) header.appendChild(bar);
+    } else if (header && bar.parentElement !== header) {
+      header.appendChild(bar);
+    }
+    const owned = ownBar(bar, (value) => paintDetail(value), 25, 200);
+    const title = owned && owned.querySelector("span");
+    if (title) title.textContent = "상세페이지";
+    return owned;
+  }
+  function tuneImageFoot() {
+    const dialog = document.getElementById("imageDialog");
+    if (!dialog) return;
+    const actions = dialog.querySelector(".dialog-actions");
+    if (!actions) return;
+    const save = actions.querySelector("button[type='submit'], .btn-apply, .work-save");
+    if (save) {
+      let node = save.nextElementSibling;
+      while (node) {
+        const next = node.nextElementSibling;
+        if (node.tagName === "BUTTON" && node.textContent.replace(/\s+/g, "") === "닫기") node.remove();
+        node = next;
+      }
+    }
+    let footClose = null;
+    actions.querySelectorAll("button").forEach((button) => {
+      if (button === save) return;
+      if (button.textContent.replace(/\s+/g, "") === "닫기") footClose = button;
+    });
+    if (!footClose) {
+      footClose = document.createElement("button");
+      footClose.type = "button";
+      footClose.className = "work-close";
+      footClose.textContent = "닫기";
+      if (save) save.before(footClose);
+      else actions.appendChild(footClose);
+    }
+    if (footClose.dataset.roleClose !== "1") {
+      footClose.dataset.roleClose = "1";
+      footClose.type = "button";
+      footClose.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.close();
+      });
+    }
+    const headerClose = document.getElementById("closeImage");
+    if (headerClose && headerClose !== footClose) headerClose.remove();
+  }
+  function watchRep() {
+    const thumbs = document.getElementById("imageThumbs");
+    if (!thumbs || thumbs.dataset.roleZoom === "1") return;
+    thumbs.dataset.roleZoom = "1";
+    new MutationObserver(() => {
+      setTimeout(() => {
+        paintRep(rep);
+        paintDetail(detail);
+      }, 0);
+    }).observe(thumbs, { childList: true });
+  }
+  function watchDetail() {
+    const view = document.getElementById("detailVisual");
+    if (!view || view.dataset.roleZoom === "1") return;
+    view.dataset.roleZoom = "1";
+    new MutationObserver(() => setTimeout(() => paintDetail(detail), 0)).observe(view, { childList: true, subtree: true });
+  }
+  function tune() {
+    tuneImageFoot();
+    ensureRightBar();
+    ensureRepBar();
+    watchRep();
+    watchDetail();
+    paintRep(rep);
+    paintDetail(detail);
+  }
+  ["renderImageEditor", "openImageEditor", "openDetailEditor"].forEach((name) => {
+    const fn = window[name];
+    if (typeof fn !== "function" || fn.imageRoleZoom) return;
+    const prev = fn;
+    const wrapped = function () {
+      const result = prev.apply(this, arguments);
+      const finish = () => {
+        tune();
+        setTimeout(tune, 0);
+        setTimeout(tune, 100);
+        setTimeout(tune, 200);
+      };
+      if (result && typeof result.then === "function") result.then(finish, finish);
+      finish();
+      return result;
+    };
+    wrapped.imageRoleZoom = true;
+    if (prev.zoomLive) wrapped.zoomLive = true;
+    if (prev.zoomRight) wrapped.zoomRight = true;
+    window[name] = wrapped;
+  });
+  tune();
+  setTimeout(tune, 0);
+  setTimeout(tune, 100);
+  setTimeout(tune, 200);
+})();
+"""
+IMAGE_ROLE_ZOOM_CSS = r"""
+/* image-role-zoom1 */
+#repImageZoomBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 12px 0;
+  flex: 0 0 auto;
+}
+#imageDialog header #closeImage { display: none !important; }
+#imageDialog .dialog-actions .work-save,
+#imageDialog .dialog-actions button[type="submit"],
+html[data-theme="dark"] #imageDialog .work-save,
+html[data-theme="dark"] #imageDialog .dialog-actions button[type="submit"] {
+  background: #03C75A !important;
+  color: #fff !important;
+  border-color: #02a84d !important;
 }
 """
 

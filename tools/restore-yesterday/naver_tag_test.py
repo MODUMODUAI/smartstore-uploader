@@ -48,7 +48,7 @@ class NaverTagTest(unittest.TestCase):
         self.assertIn("naver-dictionary", patch.NAVER_TAG_JS)
         self.assertIn("1–3페이지", patch.NAVER_TAG_JS)
         self.assertIn("태그넣기", patch.NAVER_TAG_JS)
-        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.66")
+        self.assertEqual(patch.SCREEN_VERSION, "2026.10.28.67")
 
     def test_search_tags_drop_brands_page_chrome_and_keep_words(self):
         ns = {"_NAVER_TAG_NO_INSTALL": True, "_NAVER_TAG2_NO_INSTALL": True}
@@ -341,6 +341,41 @@ if (texts.join(",") !== "견고한,견고한자,견고한재질") throw new Erro
         help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
         self.assertIn("프롬프트 칸은 30% 짧습니다", help_html)
         self.assertIn("저장 메뉴는 조금 왼쪽에 있습니다", help_html)
+
+    def test_image_role_zoom_splits_rep_and_detail(self):
+        start = patch.IMAGE_ROLE_ZOOM_JS.index("/* image-role-pure-start */")
+        end = patch.IMAGE_ROLE_ZOOM_JS.index("/* image-role-pure-end */")
+        script = patch.IMAGE_ROLE_ZOOM_JS[start:end] + r"""
+if (roleZoomStep(25, 1, 20, 120) !== 30) throw new Error("rep " + roleZoomStep(25, 1, 20, 120));
+if (roleZoomStep(100, 1, 25, 200) !== 105) throw new Error("detail " + roleZoomStep(100, 1, 25, 200));
+if (roleZoomStep(100, -1, 25, 200) !== 95) throw new Error("down " + roleZoomStep(100, -1, 25, 200));
+if (roleZoomStep(25, 1, 20, 120) === 50) throw new Error("jumped 25");
+"""
+        path = Path("/tmp/image-role-zoom-test.js")
+        path.write_text(script, encoding="utf-8")
+        subprocess.run(["node", str(path)], check=True)
+        full = Path("/tmp/image-role-zoom.js")
+        full.write_text(patch.IMAGE_ROLE_ZOOM_JS, encoding="utf-8")
+        subprocess.run(["node", "--check", str(full)], check=True)
+        self.assertIn("repImageZoomBar", patch.IMAGE_ROLE_ZOOM_JS)
+        self.assertIn("상세페이지", patch.IMAGE_ROLE_ZOOM_JS)
+        self.assertIn("headerClose.remove()", patch.IMAGE_ROLE_ZOOM_JS)
+        self.assertIn("stopImmediatePropagation", patch.IMAGE_ROLE_ZOOM_JS)
+        self.assertIn("#03C75A", patch.IMAGE_ROLE_ZOOM_CSS)
+        self.assertNotIn("100vw", patch.IMAGE_ROLE_ZOOM_CSS)
+        self.assertIn("대표이미지", patch.IMAGE_ROLE_ZOOM_JS)
+        scripted = patch.patch_answer("function openImageEditor(){ return 1; }\nfunction renderImageEditor(){ return 1; }\n")
+        self.assertIn("/* image-role-zoom1 */", scripted)
+        self.assertGreater(scripted.rindex("/* image-role-zoom1 */"), scripted.rindex("/* attribute-foot1 */"))
+        styled = patch.patch_css("/* attribute-foot1 */\n#imageDialog { width: 90vw; }\n")
+        self.assertIn("/* image-role-zoom1 */", styled)
+        self.assertGreater(styled.rindex("/* image-role-zoom1 */"), styled.rindex("/* attribute-foot1 */"))
+        self.assertGreater(styled.rindex("90vw"), styled.rindex("100vw") if "100vw" in styled else 0)
+        help_html = patch.patch_help("<p>이미지바꾸기: 대표 이미지를 바꾸고, 순서를 정하고, 빼거나 넣습니다.</p>")
+        self.assertIn("대표이미지 조절은 이미지 칸 위", help_html)
+        self.assertIn("오른쪽 조절은 상세페이지 크기", help_html)
+        self.assertIn("오른쪽 닫기는 없고", help_html)
+        self.assertIn("저장은 네이버 초록색입니다", help_html)
 
 
 if __name__ == "__main__":

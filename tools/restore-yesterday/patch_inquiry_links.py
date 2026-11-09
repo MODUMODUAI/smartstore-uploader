@@ -131,10 +131,10 @@ ROW_NEW = (
 DETAIL_OLD = 'if ($("#inquiryProductNo")) $("#inquiryProductNo").textContent = item.product_no || "";'
 DETAIL_NEW = "fillInquiryProductLink(item);"
 ANSWER_MARKER = "/* inquiry-simple2 */"
-SCREEN_VERSION = "2026.10.28.75"
+SCREEN_VERSION = "2026.10.28.76"
 # Longer tokens first is unnecessary: each token is a full version, and a
 # shorter prefix such as 2026.10.28.4 must never be added or it rewrites .40.
-_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 75))
+_OLD_SCREEN_VERSIONS = tuple(f"2026.10.28.{n}" for n in range(10, 76))
 SELLER_UPDATE_URL = "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/latest.json"
 SIMPLE1_RE = re.compile(
     r"/\* inquiry-simple1 \*/\s*\(function \(\) \{.*?\n\}\)\(\);\s*",
@@ -4216,6 +4216,13 @@ def patch_help(text: str) -> str:
             image_pick_help + " 이미지바꾸기에서 그림이나 목록을 누르면 고른 칸이 초록으로 표시됩니다.",
             1,
         )
+    master_progress_help = "고른 칸이 초록으로 표시됩니다."
+    if master_progress_help in text and "진행 막대" not in text:
+        text = text.replace(
+            master_progress_help,
+            master_progress_help + " 원본상품 정보업데이트는 끝난 개수만큼 진행 막대가 움직입니다.",
+            1,
+        )
     collected_help = "수집값 채우기는 가져온 값을 넣고, AI 채우기와 속성AI는 상세페이지의 글과 이미지를 읽습니다."
     if collected_help in text and "AI속성채우기" not in text:
         text = text.replace(
@@ -5723,6 +5730,8 @@ def patch_answer(text: str) -> str:
         text = text.rstrip() + "\n" + STORE_CHOICE_JS
     if "/* image-pick1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_PICK_JS
+    if "/* master-update-progress1 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_UPDATE_PROGRESS_JS
     text = text.replace("배포용", "셀러용")
     return _replace_old_versions(text)
 
@@ -5825,6 +5834,8 @@ def patch_css(text: str) -> str:
         text = text.rstrip() + "\n" + IMAGE_PICK_CSS
     if "/* image-pick-fit1 */" not in text:
         text = text.rstrip() + "\n" + IMAGE_PICK_FIT_CSS
+    if "/* master-update-progress1 */" not in text:
+        text = text.rstrip() + "\n" + MASTER_UPDATE_PROGRESS_CSS
     return text
 
 
@@ -14241,6 +14252,261 @@ IMAGE_PICK_FIT_CSS = r"""
   top: auto;
   bottom: 4px;
   pointer-events: none;
+}
+"""
+MASTER_UPDATE_PROGRESS_JS = r"""
+/* master-update-progress1 */
+(function () {
+  /* master-update-pure-start */
+  function masterUpdatePercent(done, total, status) {
+    const complete = status === "done";
+    const amount = Number(done);
+    const whole = Number(total);
+    const safeDone = Number.isFinite(amount) && amount > 0 ? amount : 0;
+    const safeTotal = Number.isFinite(whole) && whole > 0 ? whole : 0;
+    if (!safeTotal) return complete ? 0 : null;
+    const ratio = Math.round((Math.min(safeDone, safeTotal) / safeTotal) * 100);
+    if (complete) return 100;
+    if (ratio < 0) return 0;
+    if (ratio > 100) return 100;
+    return ratio;
+  }
+  function masterUpdateState(job) {
+    const item = job || {};
+    const status = String(item.status || "");
+    const done = Number(item.done || 0);
+    const total = Number(item.total || 0);
+    const updated = Number(item.updated || 0);
+    const failed = Number(item.failed || 0);
+    if (!status || status === "idle") {
+      return { hidden: true, percent: 0, indeterminate: false, label: "", tone: "idle" };
+    }
+    if (status === "running") {
+      const percent = masterUpdatePercent(done, total, status);
+      const known = Number.isFinite(Number(total)) && Number(total) > 0;
+      return {
+        hidden: false,
+        percent: percent == null ? 0 : percent,
+        indeterminate: percent == null,
+        label: known
+          ? ("원본상품 정보 업데이트 " + done + "/" + total)
+          : (item.phase || "원본상품 정보를 업데이트하는 중입니다."),
+        tone: "running",
+      };
+    }
+    if (status === "cancelled") {
+      const percent = masterUpdatePercent(done, total, status);
+      return {
+        hidden: false,
+        percent: percent == null ? 0 : percent,
+        indeterminate: false,
+        label: "정보 업데이트를 멈췄습니다. " + updated + "개 반영, 실패 " + failed + "개.",
+        tone: "stopped",
+      };
+    }
+    if (status === "error") {
+      const percent = masterUpdatePercent(done, total, status);
+      return {
+        hidden: false,
+        percent: percent == null ? 0 : percent,
+        indeterminate: false,
+        label: item.message || ("원본상품 정보 업데이트에 실패했습니다. " + done + "/" + total),
+        tone: "error",
+      };
+    }
+    if (!total && !updated && !failed) {
+      return {
+        hidden: false,
+        percent: 0,
+        indeterminate: false,
+        label: "업데이트할 원본상품이 없습니다.",
+        tone: "empty",
+      };
+    }
+    return {
+      hidden: false,
+      percent: 100,
+      indeterminate: false,
+      label: "원본상품 " + updated + "개의 정보를 업데이트했습니다. 실패 " + failed + "개.",
+      tone: failed ? "error" : "done",
+    };
+  }
+  function masterUpdatePath(path) {
+    const item = String(path || "").split("?")[0];
+    if (item === "/api/products/refresh-original") return true;
+    return /^\/api\/product-refresh-jobs\/[^/]+$/.test(item);
+  }
+  function masterUpdateFollowsStatus(message, busy, hasJob, jobStatus) {
+    const text = String(message || "");
+    if (busy && text.indexOf("원본상품 정보를 업데이트하는 중") >= 0 && jobStatus !== "running") return "start";
+    if (busy && text && text.indexOf("원본상품") < 0 && hasJob && jobStatus !== "running") return "clear";
+    return "keep";
+  }
+  /* master-update-pure-end */
+  let lastJob = null;
+  let lastView = masterUpdateState(null);
+  function ensureBars() {
+    const hosts = [];
+    document.querySelectorAll(".job-status").forEach((node) => hosts.push(node));
+    const spinner = document.getElementById("jobSpinner");
+    if (spinner) hosts.push(spinner);
+    hosts.forEach((host) => {
+      if (host.querySelector("[data-master-update-progress]")) return;
+      const wrap = document.createElement("div");
+      wrap.className = "master-update-progress";
+      wrap.dataset.masterUpdateProgress = "1";
+      wrap.hidden = true;
+      const label = document.createElement("div");
+      label.className = "master-update-progress-label";
+      label.dataset.masterUpdateLabel = "1";
+      const bar = document.createElement("progress");
+      bar.max = 100;
+      bar.value = 0;
+      wrap.append(label, bar);
+      host.appendChild(wrap);
+    });
+  }
+  function applyBar(node, view) {
+    node.hidden = Boolean(view.hidden);
+    node.classList.remove("is-running", "is-done", "is-error", "is-stopped", "is-empty", "is-idle");
+    if (!view.hidden && view.tone) node.classList.add("is-" + view.tone);
+    const label = node.querySelector("[data-master-update-label]");
+    if (label) label.textContent = view.label || "";
+    const bar = node.querySelector("progress");
+    if (!bar) return;
+    bar.max = 100;
+    if (view.indeterminate) {
+      bar.removeAttribute("value");
+      bar.removeAttribute("aria-valuenow");
+    } else {
+      const percent = Number(view.percent) || 0;
+      bar.value = percent;
+      bar.setAttribute("aria-valuenow", String(percent));
+    }
+    bar.setAttribute("aria-valuemin", "0");
+    bar.setAttribute("aria-valuemax", "100");
+    bar.setAttribute("aria-label", view.label || "원본상품 정보업데이트 진행");
+  }
+  function paint(view) {
+    lastView = view;
+    ensureBars();
+    document.querySelectorAll("[data-master-update-progress]").forEach((node) => applyBar(node, view));
+  }
+  function remember(job) {
+    lastJob = job;
+    paint(masterUpdateState(job));
+  }
+  function rememberFailure(error) {
+    const base = lastJob && lastJob.status === "running" ? lastJob : { done: 0, total: 0, updated: 0, failed: 0 };
+    const next = {};
+    Object.keys(base).forEach((key) => { next[key] = base[key]; });
+    next.status = "error";
+    next.message = (error && error.message) || "원본상품 정보 업데이트에 실패했습니다.";
+    remember(next);
+  }
+  function hideBar() {
+    lastJob = null;
+    paint(masterUpdateState(null));
+  }
+  function isAbort(error) {
+    if (!error) return false;
+    if (error.name === "AbortError") return true;
+    return typeof isAbortError === "function" && isAbortError(error);
+  }
+  if (typeof setJobStatus === "function" && !setJobStatus.masterUpdateProgress) {
+    const previousStatus = setJobStatus;
+    const wrappedStatus = function (message, busy) {
+      const result = previousStatus.apply(this, arguments);
+      const action = masterUpdateFollowsStatus(message, busy, Boolean(lastJob), lastJob && lastJob.status);
+      if (action === "start") {
+        paint(masterUpdateState({
+          status: "running",
+          done: 0,
+          total: 0,
+          phase: String(message || ""),
+        }));
+      } else if (action === "clear") {
+        hideBar();
+      }
+      return result;
+    };
+    wrappedStatus.masterUpdateProgress = true;
+    setJobStatus = wrappedStatus;
+  }
+  if (typeof api === "function" && !api.masterUpdateProgress) {
+    const previousApi = api;
+    const wrappedApi = async function (path) {
+      try {
+        const data = await previousApi.apply(this, arguments);
+        if (masterUpdatePath(path) && data && typeof data === "object" && data.status) remember(data);
+        return data;
+      } catch (error) {
+        if (masterUpdatePath(path)) {
+          if (isAbort(error)) {
+            if (!lastJob) hideBar();
+          } else {
+            rememberFailure(error);
+          }
+        }
+        throw error;
+      }
+    };
+    wrappedApi.masterUpdateProgress = true;
+    api = wrappedApi;
+  }
+  if (typeof showAppView === "function" && !showAppView.masterUpdateProgress) {
+    const previousView = showAppView;
+    const wrappedView = function () {
+      const result = previousView.apply(this, arguments);
+      paint(lastView);
+      return result;
+    };
+    wrappedView.masterUpdateProgress = true;
+    showAppView = wrappedView;
+  }
+  function boot() {
+    ensureBars();
+    paint(lastView);
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+"""
+MASTER_UPDATE_PROGRESS_CSS = r"""
+/* master-update-progress1 */
+.master-update-progress {
+  width: 100%;
+  margin: 6px 0 0;
+}
+.master-update-progress[hidden] { display: none !important; }
+.master-update-progress-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.master-update-progress progress {
+  display: block;
+  width: 100%;
+  height: 18px;
+}
+.master-update-progress.is-running progress { accent-color: #0078d7; }
+.master-update-progress.is-done progress { accent-color: #03C75A; }
+.master-update-progress.is-error progress,
+.master-update-progress.is-stopped progress { accent-color: #b42318; }
+.master-update-progress.is-empty progress { accent-color: #98a2b3; }
+#jobSpinner .master-update-progress {
+  width: min(420px, 86vw);
+  margin: 0;
+  padding: 8px 10px 10px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--line, #c5c5c5);
+  border-radius: 6px;
+}
+html[data-theme="dark"] #jobSpinner .master-update-progress {
+  background: #333333;
+  color: var(--text, #f2f2f2);
+  border-color: #555;
 }
 """
 

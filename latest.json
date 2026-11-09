@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.09.11",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.11/MODUMODU-update.zip",
+  "version": "2026.11.09.12",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.12/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "b68b53dfb9c076225c2ef58f48a15552ade2e871ef668dafa886d700f686a395",
-  "notes": "공급처 주문에서 한 번 고른 옵션을 기억해 다음부터 자동으로 고릅니다. 마켓에서 잘린 옵션 이름도 원래 이름으로 찾습니다."
+  "sha256": "504deb64ef35b413c47d75c20667cabb4fbf403d9792cbfa47f04719086bc712",
+  "notes": "공급처 주문에서 옵션을 고른 뒤 다시 고르다 멈추던 문제를 고쳤습니다. 옵션 선택 → 바로구매 → 주소·연락처 입력까지 이어집니다."
 }

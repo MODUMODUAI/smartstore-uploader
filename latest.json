@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.09.4",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.4/MODUMODU-update.zip",
+  "version": "2026.11.09.7",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.7/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "6770339112732ad1edc8af85632823828f1eaa32daa5bd5c92c1fdd0c9e85d87",
-  "notes": "배송중 주문의 송장번호수정을 누르면 스마트스토어센터 배송현황 관리를 열고, 새 송장번호를 복사해 두어 바로 바꿀 수 있습니다."
+  "sha256": "e8f379b68e296522a1f17d141921964c6601cbabfc46252c02b59ab178c2bc02",
+  "notes": "서브창과 상품담기·공급처 화면의 글자를 키우고 여백을 넓혀 더 보기 편해졌습니다."
 }

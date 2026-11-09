@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.09.9",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.9/MODUMODU-update.zip",
+  "version": "2026.11.09.10",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.10/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "9863c2d98af8b237a71ad3d3375aa5f1dbb3dfc443097b72f71bc46a700bab2c",
-  "notes": "상품명·속성바꾸기 같은 창이 화면 안에 맞게 줄어들어, 저장·닫기 버튼이 늘 보입니다."
+  "sha256": "b832d386752d344b30305fffaf58da6623c5364cc524d34bab07c478f082ad6f",
+  "notes": "공급처 주문이 옵션을 더 정확히 고르고(2단·단일 옵션, 품절 제외) 바로구매까지 눌러 주문서에 연락처·주소를 채웁니다."
 }

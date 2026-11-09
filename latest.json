@@ -1,0 +1,9 @@
+{
+  "version": "2026.11.09.3",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.3/MODUMODU-update.zip",
+  "mirrors": [
+    "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
+  ],
+  "sha256": "72cf1ed25369b3973cdcba92b2967b7ea07473701002e8762e7c29f0d1047b65",
+  "notes": "업데이트가 시간 초과로 막히던 문제를 고쳤습니다. 예비 주소로도 확인하고 여러 번 다시 받습니다."
+}

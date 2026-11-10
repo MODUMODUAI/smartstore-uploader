@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.09.12",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.09.12/MODUMODU-update.zip",
+  "version": "2026.11.10.4",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.4/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "504deb64ef35b413c47d75c20667cabb4fbf403d9792cbfa47f04719086bc712",
-  "notes": "공급처 주문에서 옵션을 고른 뒤 다시 고르다 멈추던 문제를 고쳤습니다. 옵션 선택 → 바로구매 → 주소·연락처 입력까지 이어집니다."
+  "sha256": "68d7a961c6cd666599afca1ed4dbbee68394f5a546fdcaedeec007ffb24ff3ed",
+  "notes": "같은 아이디로 여러 PC에서 이어서 쓰고, 데이터는 매일 백업되어 필요하면 날짜로 되돌릴 수 있습니다."
 }

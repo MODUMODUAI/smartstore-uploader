@@ -1,0 +1,30 @@
+
+/* 직원용 설치본은 상품등록과 도움말만 보여 준다 */
+body.staff-install #appTabOrders,
+body.staff-install #appTabInquiries,
+body.staff-install #appTabCollect,
+body.staff-install #appTabWholesalers,
+body.staff-install #appTabMembers,
+body.staff-install #appTabSettings,
+body.staff-install #marketSidebarSettings,
+body.staff-install #viewOrders,
+body.staff-install #viewInquiries,
+body.staff-install #viewCollect,
+body.staff-install #viewWholesalers,
+body.staff-install #viewMembers,
+body.staff-install #viewSettings,
+body.staff-install #settingsTabProgram,
+body.staff-install #settingsTabAdmins,
+body.staff-install #settingsPaneProgram,
+body.staff-install #settingsPaneAdmins,
+body.staff-install #staffLogButton { display: none !important; }
+
+.staff-data-note {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff4e5;
+  color: #8a4b00;
+  font-weight: 700;
+}
+html[data-theme="dark"] .staff-data-note { background: #3a2a10; color: #fcd34d; }

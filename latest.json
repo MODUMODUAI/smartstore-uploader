@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.17",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.17/MODUMODU-update.zip",
+  "version": "2026.11.10.18",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.18/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "b7b064ffb44e215ff6fb9ad1de91d09e0baf82724016a74a45672c3bec6f7bcd",
-  "notes": "셀러용 알파는 로그인 화면과 프로그램 이름에 셀러용 알파라고 나옵니다."
+  "sha256": "cc722cb9fea517fc72ea44cc7b8b87cecb351f0c53813fcad543829a06385e88",
+  "notes": "아이콘으로 프로그램을 켜면 새 버전이 있을 때 바로 받아서 다시 켭니다."
 }

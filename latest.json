@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.15",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.15/MODUMODU-update.zip",
+  "version": "2026.11.10.16",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.16/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "4c43a989fdb530a07e76688a16126ce8c34887552d6fc1eae778bd332435bac4",
-  "notes": "상세페이지 바꾸기 창이 화면 높이를 거의 다 씁니다."
+  "sha256": "75c39b0a2d2851c79403cbf2cf21f09659b8a2dd14c7d47fa72ec61d80c6df54",
+  "notes": "테스트용에서 직원 비밀번호, 여러 PC 같이 쓰기, 관리자 관리를 뺐습니다. 마켓관리에는 아이디와 키를 넣을 수 있습니다."
 }

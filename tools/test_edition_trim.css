@@ -1,0 +1,24 @@
+
+/* test-edition-trim1: 테스트용은 직원 비밀번호, 여러 PC 같이 쓰기, 관리자 관리를 쓰지 않습니다 */
+body.edition-test #setup-staff,
+body.edition-test #setup-sync,
+body.edition-test #settingsTabAdmins,
+body.edition-test #settingsPaneAdmins,
+body.edition-test #helpNav [data-help="help-admins"],
+body.edition-test #help-admins {
+  display: none !important;
+}
+
+/* 테스트용 마켓관리에는 아이디·키 등 주요 설정을 보여 줍니다 */
+body.edition-test #marketLoginIdRow,
+body.edition-test #marketLoginPwRow,
+body.edition-test #marketApiKeyRow,
+body.edition-test #marketApiSecretRow,
+body.edition-test #marketApiAccountRow,
+body.edition-test #marketVendorRow:not([hidden]),
+body.edition-test #marketEsmRow:not([hidden]) {
+  display: grid !important;
+}
+body.edition-test #marketAccountTable .seller-secret {
+  display: table-cell !important;
+}

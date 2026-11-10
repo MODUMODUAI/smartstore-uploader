@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.11",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.11/MODUMODU-update.zip",
+  "version": "2026.11.10.12",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.12/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "235005066758fb93d84c77b3842a026d4fd67cfad060699d51a9edcb286db4c5",
-  "notes": "직원용에서 마스터상품을 마켓으로 보내기를 할 수 있습니다."
+  "sha256": "3c2d9ed55e71371ca124f51771cf96699dc669f8d4970176a6786bb204388316",
+  "notes": "상세페이지추가글이 흰 바탕에 보여 검은 글씨가 보입니다."
 }

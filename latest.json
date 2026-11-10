@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.10",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.10/MODUMODU-update.zip",
+  "version": "2026.11.10.11",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.11/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "8219854d8adf3c425f3b7399226ab39ef7381ad8b5a8d997dcf92fa4ecfd3a46",
-  "notes": "직원용은 연결한 뒤 마스터 비밀번호 없이 상품등록만 엽니다."
+  "sha256": "235005066758fb93d84c77b3842a026d4fd67cfad060699d51a9edcb286db4c5",
+  "notes": "직원용에서 마스터상품을 마켓으로 보내기를 할 수 있습니다."
 }

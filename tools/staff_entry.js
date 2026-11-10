@@ -105,10 +105,32 @@ if (typeof document !== "undefined") {
       }
     }
 
+    async function refreshStaffData() {
+      if (typeof loadProducts === "function") await loadProducts();
+      if (typeof loadMarkets === "function") await loadMarkets();
+    }
+
+    function allowMasterSend() {
+      if (typeof openSendMarketDialog !== "function" || openSendMarketDialog.staffSend) return;
+      const inner = openSendMarketDialog;
+      const wrapped = async function () {
+        if (document.body.classList.contains("staff-install") && typeof loadMarkets === "function") {
+          try { await loadMarkets(); } catch (_) {}
+        }
+        if (document.body.classList.contains("staff-install") && (typeof markets === "undefined" || !markets.length)) {
+          if (typeof toast === "function") toast("보낼 마켓 계정이 아직 없습니다. 사장님 PC의 마켓을 받아 온 뒤 다시 마켓으로 보내기를 누르세요.", true);
+          return;
+        }
+        return inner.apply(this, arguments);
+      };
+      wrapped.staffSend = true;
+      openSendMarketDialog = wrapped;
+    }
+
     async function pullProducts() {
       showNote("사장님 PC의 상품을 받아오는 중입니다. 상품이 많으면 몇 분 걸립니다.");
       try {
-        if (typeof loadProducts === "function") await loadProducts();
+        await refreshStaffData();
       } catch (_) {}
       if (typeof products !== "undefined" && products.length) {
         showNote("");
@@ -125,7 +147,7 @@ if (typeof document !== "undefined") {
         return;
       }
       try {
-        if (typeof loadProducts === "function") await loadProducts();
+        await refreshStaffData();
       } catch (error) {
         showNote(error && error.message ? error.message : "상품 목록을 열지 못했습니다.");
         return;
@@ -185,6 +207,8 @@ if (typeof document !== "undefined") {
       },
       true,
     );
+
+    allowMasterSend();
 
     async function boot() {
       let edition = null;

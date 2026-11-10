@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.14",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.14/MODUMODU-update.zip",
+  "version": "2026.11.10.15",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.15/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "8d5fb0c69797134e22e6cfeb0133485e347db2b776db0119d47e5935cd06177c",
-  "notes": "최근 가입한 회원이 회원관리 목록 위에 나옵니다."
+  "sha256": "4c43a989fdb530a07e76688a16126ce8c34887552d6fc1eae778bd332435bac4",
+  "notes": "상세페이지 바꾸기 창이 화면 높이를 거의 다 씁니다."
 }

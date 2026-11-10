@@ -1,0 +1,16 @@
+
+/* detail-tall1: 상세페이지 바꾸기는 화면 세로를 거의 다 씁니다 */
+#detailDialog {
+  height: calc(100vh - 12px);
+  max-height: calc(100vh - 12px);
+}
+#detailDialog > form {
+  height: calc((100vh - 12px) / var(--sub-zoom, 1));
+  max-height: calc((100vh - 12px) / var(--sub-zoom, 1));
+}
+#detailDialog .detail-visual,
+#detailDialog .detail-source {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}

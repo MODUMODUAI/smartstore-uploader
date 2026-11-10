@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.4",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.4/MODUMODU-update.zip",
+  "version": "2026.11.10.6",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.6/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "68d7a961c6cd666599afca1ed4dbbee68394f5a546fdcaedeec007ffb24ff3ed",
-  "notes": "같은 아이디로 여러 PC에서 이어서 쓰고, 데이터는 매일 백업되어 필요하면 날짜로 되돌릴 수 있습니다."
+  "sha256": "857fc4d244dfe6a5e9f9a1172ee2cfc2692b4c958cbd9dfc74e4ccf244aa50bc",
+  "notes": "모두모두AI를 더 좋게 고쳤습니다."
 }

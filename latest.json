@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.10.13",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.13/MODUMODU-update.zip",
+  "version": "2026.11.10.14",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.10.14/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "125ff15b74083be9d85bb260d726def50993433c145e9b70bacf4513af287033",
-  "notes": "회원 가입·최근 접속 시각을 한국 시간으로 보여 줍니다."
+  "sha256": "8d5fb0c69797134e22e6cfeb0133485e347db2b776db0119d47e5935cd06177c",
+  "notes": "최근 가입한 회원이 회원관리 목록 위에 나옵니다."
 }

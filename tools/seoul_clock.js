@@ -21,4 +21,22 @@ function seoulClock(value, withYear) {
   return withYear ? `${get("year")}-${clock}` : clock;
 }
 
-if (typeof module !== "undefined" && module.exports) module.exports = { seoulClock };
+function memberJoinedStamp(row) {
+  const raw = String(row && row.created_at || "").trim();
+  if (!raw) return 0;
+  let text = raw.replace(" ", "T");
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) text += "T00:00:00Z";
+  else if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(text)) text += "Z";
+  const stamp = Date.parse(text);
+  return Number.isFinite(stamp) ? stamp : 0;
+}
+
+function memberRowsNewestFirst(rows) {
+  return rows.slice().sort((a, b) => {
+    const delta = memberJoinedStamp(b) - memberJoinedStamp(a);
+    if (delta) return delta;
+    return String(a.login_id || "").localeCompare(String(b.login_id || ""), "ko");
+  });
+}
+
+if (typeof module !== "undefined" && module.exports) module.exports = { seoulClock, memberJoinedStamp, memberRowsNewestFirst };

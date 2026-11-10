@@ -14793,6 +14793,198 @@ def restart_stale_master(root: Path) -> bool:
     return stopped
 
 
+_SCREEN_FILES = ("app.js", "index.html", "styles.css")
+_MIRROR_DATA_SKIP = {
+    "launcher.log",
+    "patch-errors.log",
+    "restore-yesterday.log",
+    "update-offer.txt",
+    "master-running-version.txt",
+    ".yesterday-restored",
+}
+
+
+def _master_package(path: Path, root: Path) -> bool:
+    """A second master folder that gets zipped and sent. Seller copies stay separate."""
+    try:
+        if path.resolve() == root.resolve():
+            return False
+    except OSError:
+        return False
+    if any(name in path.name for name in ("셀러용", "배포용", "테스트용")):
+        return False
+    return "마스터" in path.name
+
+
+def _newest_static(root: Path) -> Path | None:
+    found = iter_static_dirs(root)
+    if not found:
+        return None
+
+    def key(path: Path) -> float:
+        js = path / "app.js"
+        try:
+            return js.stat().st_mtime
+        except OSError:
+            return 0
+
+    return max(found, key=key)
+
+
+def _same_bytes(path: Path, data: bytes) -> bool:
+    return path.is_file() and path.read_bytes() == data
+
+
+def _write_bytes(path: Path, data: bytes) -> bool:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _same_bytes(path, data):
+        return False
+    if path.exists():
+        path.chmod(0o666)
+    path.write_bytes(data)
+    return True
+
+
+def _drop_old_screen_backups(folder: Path) -> bool:
+    """October 27 backups used to replace the current screen while version.txt stayed."""
+    if not folder.is_dir():
+        return False
+    changed = False
+    for path in folder.glob("*.bak-20261027*"):
+        if not path.is_file():
+            continue
+        path.chmod(0o666)
+        path.unlink()
+        changed = True
+    return changed
+
+
+def _static_targets(folder: Path) -> list[Path]:
+    targets = []
+    for rel in (Path("app") / "static", Path("_internal") / "app" / "static"):
+        path = folder / rel
+        if path.is_dir() or (folder / rel.parts[0]).exists():
+            targets.append(path)
+    if not targets:
+        targets.append(folder / "app" / "static")
+    return targets
+
+
+def _mirror_screen(source: Path, folder: Path) -> bool:
+    changed = False
+    for target in _static_targets(folder):
+        for name in _SCREEN_FILES:
+            src = source / name
+            if not src.is_file():
+                continue
+            if _write_bytes(target / name, src.read_bytes()):
+                changed = True
+        if _drop_old_screen_backups(target):
+            changed = True
+    return changed
+
+
+def _data_files(folder: Path) -> dict[str, Path]:
+    found = {}
+    if not folder.is_dir():
+        return found
+    for path in folder.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(folder)
+        if any(part in _MIRROR_DATA_SKIP for part in rel.parts):
+            continue
+        found[rel.as_posix()] = path
+    return found
+
+
+def _mirror_data(source: Path, dest: Path) -> bool:
+    files = _data_files(source)
+    if not files:
+        return False
+    changed = False
+    for rel, path in files.items():
+        if _write_bytes(dest / rel, path.read_bytes()):
+            changed = True
+    current = _data_files(dest)
+    for rel, path in current.items():
+        if rel in files:
+            continue
+        path.chmod(0o666)
+        path.unlink()
+        changed = True
+    return changed
+
+
+def _mirror_text_file(source: Path, dest: Path) -> bool:
+    if not source.is_file():
+        return False
+    return _write_bytes(dest, source.read_bytes())
+
+
+def _mirror_edition(root: Path, folder: Path) -> bool:
+    source = root / "edition.txt"
+    dest = folder / "edition.txt"
+    if source.is_file():
+        return _mirror_text_file(source, dest)
+    if dest.is_file() and dest.read_text(encoding="utf-8-sig").strip() in {"test", "seller"}:
+        dest.chmod(0o666)
+        dest.unlink()
+        return True
+    return False
+
+
+def _install_master_launcher(folder: Path) -> bool:
+    source = Path(__file__).resolve().parent / "open-yesterday.vbs"
+    if not source.is_file() or not folder.is_dir():
+        return False
+    data = source.read_bytes()
+    changed = False
+    names = ["open-yesterday.vbs"]
+    if (folder / "어제오후9시.vbs").is_file() or (folder / "launcher.py").is_file() or (folder / "MODUMODU.exe").is_file():
+        names.append("어제오후9시.vbs")
+    for name in names:
+        target = folder / name
+        if name == "open-yesterday.vbs" and not target.is_file():
+            continue
+        try:
+            if _write_bytes(target, data):
+                changed = True
+        except OSError:
+            continue
+    return changed
+
+
+def mirror_master_copies(root: Path) -> bool:
+    """Make other master folders show this PC's screen and supplier/product data.
+
+    Version.txt is copied with them, so a zipped master no longer keeps the same
+    version number on an older screen or a different data folder.
+    """
+    if not root.is_dir():
+        return False
+    changed = False
+    for static in iter_static_dirs(root):
+        if _drop_old_screen_backups(static):
+            changed = True
+    source = _newest_static(root)
+    packages = [path for path in _program_dirs(root) if _master_package(path, root)]
+    if _install_master_launcher(root):
+        changed = True
+    for folder in packages:
+        if source is not None and _mirror_screen(source, folder):
+            changed = True
+        if _mirror_data(root / "data", folder / "data"):
+            changed = True
+        if _mirror_text_file(root / "version.txt", folder / "version.txt"):
+            changed = True
+        if _mirror_edition(root, folder):
+            changed = True
+        if _install_master_launcher(folder):
+            changed = True
+    return changed
+
+
 def _step(root: Path, name: str, func, *args) -> bool:
     """One failing step (a locked seller file, say) must not stop the master
     from getting the rest of the update."""
@@ -14831,6 +15023,7 @@ def main() -> None:
     murray_changed = root.exists() and _step(root, "sources", patch_murray_sources, root)
     seller_changed = root.exists() and _step(root, "seller copies", arrange_seller_copies, root)
     if root.exists():
+        _step(root, "mirror masters", mirror_master_copies, root)
         _step(root, "restart", restart_stale_master, root)
     if not seller_changed and not static_changed and not version_changed and not murray_changed:
         if not iter_static_dirs(root):

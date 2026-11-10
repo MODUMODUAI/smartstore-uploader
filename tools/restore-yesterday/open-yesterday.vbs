@@ -1,7 +1,6 @@
 Option Explicit
 
-Dim fso, shell, here, root, staticDir, marker, py, launcher
-Dim dataDir, bestData, bestCount, liveCount, copied, patched
+Dim fso, shell, here, root, py, launcher, patched
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set shell = CreateObject("WScript.Shell")
 
@@ -19,25 +18,6 @@ End If
 
 If Not fso.FolderExists(root & "\data") Then fso.CreateFolder root & "\data"
 LogLine "root " & root
-
-staticDir = root & "\app\static"
-marker = root & "\data\.yesterday-restored"
-RestoreYesterday staticDir, marker
-
-dataDir = root & "\data"
-liveCount = ProductCount(dataDir)
-bestData = dataDir
-bestCount = liveCount
-ConsiderKnownData root
-If bestData <> dataDir And bestCount > liveCount Then
-  LogLine "copy data " & bestData & " count " & CStr(bestCount)
-  shell.Run "robocopy """ & bestData & """ """ & dataDir & """ /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP", 0, True
-  copied = True
-  liveCount = ProductCount(dataDir)
-Else
-  copied = False
-End If
-LogLine "products " & CStr(liveCount)
 
 py = ChoosePython(root)
 launcher = root & "\launcher.py"
@@ -246,95 +226,6 @@ Function FindRoot(startDir)
     FindRoot = ""
   End If
 End Function
-
-Sub RestoreYesterday(staticDir, markerPath)
-  Dim names, i, bak, count, ts
-  If fso.FileExists(markerPath) Then Exit Sub
-  If Not fso.FolderExists(staticDir) Then Exit Sub
-  names = Array("app.js", "index.html", "styles.css")
-  count = 0
-  For i = 0 To UBound(names)
-    bak = OldestBackup(staticDir, names(i))
-    If bak <> "" Then
-      fso.CopyFile bak, staticDir & "\" & names(i), True
-      count = count + 1
-    End If
-  Next
-  If count > 0 Then
-    Set ts = fso.CreateTextFile(markerPath, True)
-    ts.WriteLine "2026-10-26"
-    ts.Close
-  End If
-End Sub
-
-Function OldestBackup(folder, name)
-  Dim folderObj, file, prefix, best
-  OldestBackup = ""
-  best = ""
-  prefix = name & ".bak-20261027"
-  If Not fso.FolderExists(folder) Then Exit Function
-  Set folderObj = fso.GetFolder(folder)
-  For Each file In folderObj.Files
-    If Left(file.Name, Len(prefix)) = prefix Then
-      If best = "" Or file.Name < best Then best = file.Name
-    End If
-  Next
-  If best <> "" Then OldestBackup = folder & "\" & best
-End Function
-
-Function ProductCount(folderPath)
-  Dim products, folderObj, file, n
-  ProductCount = 0
-  products = folderPath & "\products"
-  If Not fso.FolderExists(products) Then Exit Function
-  On Error Resume Next
-  Set folderObj = fso.GetFolder(products)
-  n = 0
-  For Each file In folderObj.Files
-    n = n + 1
-  Next
-  On Error GoTo 0
-  ProductCount = n
-End Function
-
-Sub ConsiderData(folderPath)
-  Dim n
-  If folderPath = "" Then Exit Sub
-  If Not fso.FolderExists(folderPath) Then Exit Sub
-  n = ProductCount(folderPath)
-  If n > bestCount Then
-    bestCount = n
-    bestData = folderPath
-  End If
-End Sub
-
-Sub ConsiderKnownData(appRoot)
-  Dim paths, i, downloads, folderObj, subFolder, nested
-  paths = Array( _
-    appRoot & "\data", _
-    appRoot & "\배포\MODUMODU-마스터\data", _
-    appRoot & "\dist\MODUMODU\data", _
-    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.9\모두모두AI-마스터\data", _
-    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.8\모두모두AI-마스터\data", _
-    "C:\Users\user\Downloads\MODUMODU-master-oneshot-2026.10.27.7\모두모두AI-마스터\data" _
-  )
-  For i = 0 To UBound(paths)
-    ConsiderData paths(i)
-  Next
-  downloads = "C:\Users\user\Downloads"
-  If Not fso.FolderExists(downloads) Then Exit Sub
-  On Error Resume Next
-  Set folderObj = fso.GetFolder(downloads)
-  For Each subFolder In folderObj.SubFolders
-    If Left(subFolder.Name, 8) = "MODUMODU" Then
-      ConsiderData subFolder.Path & "\data"
-      ConsiderData subFolder.Path & "\모두모두AI-마스터\data"
-      nested = subFolder.Path & "\모두모두AI-마스터\data"
-      ConsiderData nested
-    End If
-  Next
-  On Error GoTo 0
-End Sub
 
 Function ChoosePython(appRoot)
   Dim localPy, knownPy, sysPy

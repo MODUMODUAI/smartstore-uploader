@@ -4,6 +4,6 @@
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "82324e95ca323464c227d840281c92af48e061db60d242cb65db84b9fb11ebbd",
+  "sha256": "73bbb125242a0db2bef67f663c309ef4b42ab5e3af14be64c7d5353c153d6b2b",
   "notes": "모두모두AI를 더 좋게 고쳤습니다."
 }

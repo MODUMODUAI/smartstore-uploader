@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.11",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.11/MODUMODU-update.zip",
+  "version": "2026.11.14.12",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.12/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "3a3e9961058d7b5dcd6da887387301f927ebe5f6b12db2dfe20cf660670c720a",
-  "notes": "온라인 판매 불가 공급처 전용상품이 상품담기 목록에 뜨지 않습니다. 자동품절관리가 공급처 상품 수와 새로 나온 상품도 함께 확인합니다."
+  "sha256": "c5edd84154e8ea21d409f06f4c747682580fb88520511ff223584140b489b46a",
+  "notes": "상품담기에 '공급처 전체상품담기' 버튼과 '새상품 자동담기' 체크가 생겼습니다. 체크해 두면 공급처에 새로 올라온 상품을 자동으로 담습니다."
 }

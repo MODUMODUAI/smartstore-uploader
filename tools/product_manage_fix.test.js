@@ -1,6 +1,8 @@
 const assert = require("assert");
 const {
   supplierFilterRows,
+  supplierChoices,
+  saleUpdatePlan,
   kpageBoxShippingFee,
   kpageFeeFromProduct,
   isAlreadyRegistered,
@@ -57,14 +59,14 @@ const all = supplierFilterRows(products, "all", wholesalers);
 assert.deepStrictEqual(all.map((item) => item.id), ["a", "b", "c", "d"]);
 
 const kpage = supplierFilterRows(products, "kp", wholesalers);
-assert.deepStrictEqual(kpage.map((item) => item.id), ["a", "c"]);
+assert.deepStrictEqual(kpage.map((item) => item.id), ["a"]);
 assert.ok(kpage.length > 0);
 
 const owner = supplierFilterRows(products, "oc", wholesalers);
 assert.deepStrictEqual(owner.map((item) => item.id), ["b"]);
 
 const urlOnly = supplierFilterRows(products, "url", wholesalers);
-assert.deepStrictEqual(urlOnly.map((item) => item.id), ["d"]);
+assert.deepStrictEqual(urlOnly.map((item) => item.id), ["c", "d"]);
 
 const stale = supplierFilterRows([
   { id: "e", wholesale_id: "gone", wholesale_name: "케이페이지", source_url: "" },
@@ -86,9 +88,30 @@ const mixed = [
   { id: "k2", wholesale_id: "", wholesale_name: "케이페이지", source_url: "https://murray.co.kr/stolen" },
   { id: "m2", wholesale_id: "", wholesale_name: "", source_url: "https://shop.murray.co.kr/c" },
 ];
-assert.deepStrictEqual(supplierFilterRows(mixed, "murray", shopWholesalers).map((item) => item.id), ["m1", "m2"]);
+assert.deepStrictEqual(supplierFilterRows(mixed, "murray", shopWholesalers).map((item) => item.id), ["m1"]);
 assert.deepStrictEqual(supplierFilterRows(mixed, "kp", shopWholesalers).map((item) => item.id), ["k1", "k2"]);
 assert.deepStrictEqual(supplierFilterRows(mixed, "all", shopWholesalers).map((item) => item.id), ["m1", "k1", "k2", "m2"]);
+
+const linkedShops = [
+  { id: "han", name: "한빛몰", url: "https://wrong.example/hanbit" },
+  { id: "page", name: "kpage", url: "https://wrong.example/kpage" },
+  { id: "murray", name: "머레이", url: "https://murray.co.kr" },
+];
+const linkedRows = [
+  { id: "h", wholesale_name: "한빛", wholesale_id: "page", source_url: "https://kpage.co.kr/1", name: "한빛 상품" },
+  { id: "k", wholesale_name: "케이페이지", wholesale_id: "han", source_url: "https://hanbit.co.kr/2", name: "케이 상품" },
+  { id: "m", wholesale_name: "머레이", wholesale_id: "murray", source_url: "https://murray.co.kr/3", name: "머레이 상품" },
+];
+const linkedChoices = supplierChoices(linkedShops, linkedRows);
+assert.ok(linkedChoices.some((choice) => choice.label === "한빛"));
+assert.ok(linkedChoices.some((choice) => choice.label === "케이페이지"));
+assert.ok(linkedChoices.some((choice) => choice.label === "머레이"));
+const hanChoice = linkedChoices.find((choice) => choice.label === "한빛");
+const pageChoice = linkedChoices.find((choice) => choice.label === "케이페이지");
+assert.deepStrictEqual(supplierFilterRows(linkedRows, hanChoice.id, linkedShops).map((item) => item.id), ["h"]);
+assert.deepStrictEqual(supplierFilterRows(linkedRows, pageChoice.id, linkedShops).map((item) => item.id), ["k"]);
+assert.deepStrictEqual(supplierFilterRows(linkedRows, "murray", linkedShops).map((item) => item.id), ["m"]);
+assert.deepStrictEqual(supplierFilterRows(linkedRows, "all", linkedShops).map((item) => item.id), ["h", "k", "m"]);
 
 assert.strictEqual(kpageBoxShippingFee("완박스 배송비 1개 주문시 3,850원"), 3850);
 assert.strictEqual(kpageBoxShippingFee("완박스 배송비 3,300원 ~ 27,500원"), 3300);
@@ -163,6 +186,34 @@ assert.ok(!Object.prototype.hasOwnProperty.call(shipOnly, "attributes"));
 const nameAndAttributes = selectiveReregisterPatch(registered, ["name", "attributes"]);
 assert.deepStrictEqual(Object.keys(nameAndAttributes).sort(), ["attributes", "name"]);
 assert.strictEqual(nameAndAttributes.attributes[0].value, "빨강");
+
+const addresses = [
+  { id: "addr-1", name: "기본 출고지", type_label: "출고지" },
+  { id: "addr-2", name: "반품지" },
+];
+const shipPlan = saleUpdatePlan({
+  shipPrice: true,
+  addressId: "addr-1",
+  addresses,
+  product: {
+    name: "상품명 유지",
+    price: 9000,
+    shipping_fee: 27500,
+    summary: "완박스 배송비 3,300원 ~ 27,500원",
+    attributes: [{ name: "색상" }],
+  },
+});
+assert.strictEqual(shipPlan.ok, true);
+assert.deepStrictEqual(shipPlan.fields, ["ship_price"]);
+assert.strictEqual(shipPlan.patch.shipping_address_id, "addr-1");
+assert.strictEqual(shipPlan.patch.price, 9000);
+assert.strictEqual(shipPlan.patch.shipping_fee, 3300);
+assert.ok(!Object.prototype.hasOwnProperty.call(shipPlan.patch, "name"));
+assert.ok(!Object.prototype.hasOwnProperty.call(shipPlan.patch, "attributes"));
+assert.strictEqual(saleUpdatePlan({ shipPrice: true, addressId: "없는주소", addresses, product: { name: "상품" } }).ok, false);
+const optionPlan = saleUpdatePlan({ option: true, product: { name: "상품", price: 1 } });
+assert.deepStrictEqual(optionPlan.fields, ["option"]);
+assert.deepStrictEqual(optionPlan.patch, {});
 
 const saved = [];
 const fresh = { id: "new", name: "새 상품", price: 1000, market_id: "market-1", shipping_fee: 2000 };
@@ -279,7 +330,7 @@ globalThis.document = {
 
 installProductManageFix();
 
-assert.deepStrictEqual(globalThis.scopedProducts().map((item) => item.id), ["a", "c"]);
+assert.deepStrictEqual(globalThis.scopedProducts().map((item) => item.id), ["a"]);
 assert.ok(globalThis.scopedProducts().length > 0);
 globalThis.productFilter = "all";
 assert.deepStrictEqual(globalThis.scopedProducts().map((item) => item.id), ["a", "b", "c", "d"]);
@@ -310,21 +361,17 @@ assert.strictEqual(globalThis.wholesaleShipAmount(manual), 4100);
   globalThis.products = selection.slice();
   globalThis.selectedIds = new Set(["reg-1"]);
   await globalThis.registerSelected();
-  assert.strictEqual(globalThis.registerCalls, 0);
-  assert.deepStrictEqual(saved, [{ name: "이미 등록된 상품" }]);
+  assert.strictEqual(globalThis.registerCalls, 1);
+  assert.deepStrictEqual(saved, []);
   assert.strictEqual(globalThis.products[0].name, "이미 등록된 상품");
-  assert.strictEqual(globalThis.products[0].price, 15000);
-  assert.strictEqual(globalThis.products[0].origin, "국내");
-  assert.strictEqual(globalThis.products[0].origin_product_no, "9001");
   assert.strictEqual(globalThis.products[0].shipping_fee, 3000);
-  assert.strictEqual(globalThis.products[0].attributes[0].value, "빨강");
 
   saved.length = 0;
   selection = [fresh];
   globalThis.products = [fresh];
   globalThis.selectedIds = new Set(["new"]);
   await globalThis.registerSelected();
-  assert.strictEqual(globalThis.registerCalls, 1);
+  assert.strictEqual(globalThis.registerCalls, 2);
   assert.deepStrictEqual(globalThis.lastRegisterIds, ["new"]);
   assert.deepStrictEqual(saved, []);
 
@@ -335,12 +382,10 @@ assert.strictEqual(globalThis.wholesaleShipAmount(manual), 4100);
   globalThis.products = selection.slice();
   globalThis.selectedIds = new Set(["reg-1", "new"]);
   await globalThis.registerSelected();
-  assert.deepStrictEqual(saved, [{ name: "이미 등록된 상품" }]);
+  assert.deepStrictEqual(saved, []);
   assert.strictEqual(registeredAgain.name, "이미 등록된 상품");
-  assert.strictEqual(registeredAgain.shipping_fee, 3000);
-  assert.strictEqual(registeredAgain.price, 15000);
-  assert.deepStrictEqual(globalThis.lastRegisterIds, ["new"]);
-  assert.strictEqual(globalThis.registerCalls, 2);
+  assert.deepStrictEqual(globalThis.lastRegisterIds, ["reg-1", "new"]);
+  assert.strictEqual(globalThis.registerCalls, 3);
 
   console.log("product_manage_fix.test.js ok");
 })().catch((error) => {

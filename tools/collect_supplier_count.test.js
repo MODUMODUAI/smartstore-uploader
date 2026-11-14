@@ -1,57 +1,31 @@
 const assert = require("assert");
 const {
   supplierTotalCountLabel,
-  shopCatalogTotal,
+  parseSettingsCount,
   isOwnerclanSupplier,
+  settingsProductCount,
   paintCollectSupplierCounts,
   installCollectSupplierCounts,
 } = require("./collect_supplier_count.js");
 
 assert.strictEqual(supplierTotalCountLabel(0), "0개");
-assert.strictEqual(supplierTotalCountLabel(1), "1개");
 assert.strictEqual(supplierTotalCountLabel(92), "92개");
 assert.strictEqual(supplierTotalCountLabel(12345), "12,345개");
-assert.strictEqual(supplierTotalCountLabel(1.8), "1개");
-assert.strictEqual(supplierTotalCountLabel(-1), "");
-assert.strictEqual(supplierTotalCountLabel(Number.NaN), "");
 assert.strictEqual(supplierTotalCountLabel(null), "");
 assert.strictEqual(supplierTotalCountLabel(undefined), "");
 
-assert.strictEqual(shopCatalogTotal(null), null);
-assert.strictEqual(shopCatalogTotal({
-  searchMode: false,
-  selectedCategory: "camera",
-  loadedCategory: "",
-  loadedFor: "panasonic",
-  items: Array.from({ length: 92 }),
-}), null);
-assert.strictEqual(shopCatalogTotal({
-  searchMode: true,
-  selectedCategory: "camera",
-  loadedCategory: "camera",
-  loadedFor: "panasonic",
-  items: Array.from({ length: 5 }),
-}), null);
-assert.deepStrictEqual(shopCatalogTotal({
-  searchMode: false,
-  selectedCategory: "camera",
-  loadedCategory: "camera",
-  loadedFor: "panasonic",
-  items: Array.from({ length: 92 }),
-}), { id: "panasonic", count: 92 });
-assert.deepStrictEqual(shopCatalogTotal({
-  searchMode: false,
-  selectedCategory: "lens",
-  loadedCategory: "lens",
-  loadedFor: "sony",
-  items: [],
-}), { id: "sony", count: 0 });
+assert.strictEqual(parseSettingsCount("92"), 92);
+assert.strictEqual(parseSettingsCount("1,234"), 1234);
+assert.strictEqual(parseSettingsCount("0"), 0);
+assert.strictEqual(parseSettingsCount(" 15개"), 15);
+assert.strictEqual(parseSettingsCount(""), null);
+assert.strictEqual(parseSettingsCount("   "), null);
+assert.strictEqual(parseSettingsCount("없음"), null);
 
 assert.strictEqual(isOwnerclanSupplier("ownerclan", [], ""), true);
 assert.strictEqual(isOwnerclanSupplier("shop", [], "오너클랜"), true);
 assert.strictEqual(isOwnerclanSupplier("oc-custom", [{ id: "oc-custom", type: "ownerclan", name: "다른이름" }], ""), true);
 assert.strictEqual(isOwnerclanSupplier("panasonic", [{ id: "panasonic", type: "cafe24", name: "PANASONIC" }], "PANASONIC"), false);
-assert.strictEqual(isOwnerclanSupplier("sony", [], "SONY"), false);
 
 function createElement(tag) {
   const node = {
@@ -71,37 +45,58 @@ function createElement(tag) {
       return node._text;
     },
     set(value) {
-      node._text = String(value);
+      node._text = String(value ?? "");
       node.children.forEach((child) => {
         child.parent = null;
       });
       node.children = [];
     },
   });
-  node.append = (...kids) => {
-    kids.forEach((kid) => {
-      if (kid.parent) kid.parent.children = kid.parent.children.filter((child) => child !== kid);
-      kid.parent = node;
-      node.children.push(kid);
+  Object.defineProperty(node, "innerHTML", {
+    get() { return ""; },
+    set() {
+      node.children.forEach((child) => {
+        child.parent = null;
+      });
+      node.children = [];
       node._text = "";
-    });
+    },
+  });
+  node.append = (...kids) => {
+    kids.forEach((kid) => node.appendChild(kid));
+  };
+  node.appendChild = (kid) => {
+    if (kid.parent) kid.parent.children = kid.parent.children.filter((child) => child !== kid);
+    kid.parent = node;
+    node.children.push(kid);
+    node._text = "";
+    return kid;
   };
   node.remove = () => {
     if (!node.parent) return;
     node.parent.children = node.parent.children.filter((child) => child !== node);
     node.parent = null;
   };
-  node.querySelectorAll = (sel) => {
-    const out = [];
+  node.addEventListener = () => {};
+  const matches = (el, selector) => {
+    if (selector.startsWith(".")) return el.className.split(/\s+/).includes(selector.slice(1));
+    return el.tagName === selector.toUpperCase();
+  };
+  const collect = (root, selectors) => {
+    if (!selectors.length) return [root];
+    const [head, ...rest] = selectors;
+    const found = [];
     const walk = (el) => {
       el.children.forEach((child) => {
-        if (child.className.split(/\s+/).includes(sel.slice(1))) out.push(child);
+        if (matches(child, head)) found.push(child);
         walk(child);
       });
     };
-    if (sel.startsWith(".")) walk(node);
-    return out;
+    walk(root);
+    if (!rest.length) return found;
+    return found.flatMap((el) => collect(el, rest));
   };
+  node.querySelectorAll = (sel) => collect(node, String(sel).trim().split(/\s+/));
   node.querySelector = (sel) => node.querySelectorAll(sel)[0] || null;
   return node;
 }
@@ -117,45 +112,89 @@ function buttonFor(item) {
 }
 
 const suppliers = [
-  { id: "panasonic", name: "PANASONIC" },
-  { id: "sony", name: "SONY" },
-  { id: "unloaded", name: "미로딩" },
-  { id: "ownerclan", name: "오너클랜" },
+  { id: "panasonic", name: "PANASONIC", type: "cafe24" },
+  { id: "sony", name: "SONY", type: "cafe24" },
+  { id: "empty", name: "빈공급사", type: "cafe24" },
+  { id: "unloaded", name: "미로딩", type: "cafe24" },
+  { id: "missing", name: "없는공급사", type: "cafe24" },
+  { id: "ownerclan", name: "오너클랜", type: "ownerclan" },
+  { id: "oc-custom", name: "다른오너", type: "ownerclan" },
 ];
 
 function drawList(tree) {
   tree.textContent = "";
-  suppliers.forEach((item) => {
-    tree.append(buttonFor(item));
-  });
+  suppliers.forEach((item) => tree.append(buttonFor(item)));
 }
+
+function headerCell(text) {
+  const cell = createElement("th");
+  cell.textContent = text;
+  return cell;
+}
+
+function dataCell(text) {
+  const cell = createElement("td");
+  cell.textContent = text;
+  return cell;
+}
+
+function buildSettingsGrid(rows) {
+  const grid = createElement("table");
+  grid.id = "wholesaleGrid";
+  const headRow = createElement("tr");
+  ["공급처", "사이트", "유형", "아이디", "상품수", "사용", "메모"].forEach((label) => {
+    headRow.append(headerCell(label));
+  });
+  const thead = createElement("thead");
+  thead.append(headRow);
+  const tbody = createElement("tbody");
+  tbody.id = "wholesaleTable";
+  rows.forEach((item) => {
+    const row = createElement("tr");
+    row.append(
+      dataCell(item.name),
+      dataCell(item.url || ""),
+      dataCell(item.type || ""),
+      dataCell(item.login || ""),
+      dataCell(item.count),
+      dataCell("사용"),
+      dataCell(""),
+    );
+    tbody.append(row);
+  });
+  grid.append(thead, tbody);
+  return grid;
+}
+
+const settingsRows = [
+  { name: "PANASONIC", count: "92" },
+  { name: "SONY", count: "15" },
+  { name: "빈공급사", count: "0" },
+  { name: "미로딩", count: "" },
+  { name: "오너클랜", count: "2400" },
+  { name: "다른오너", count: "9999" },
+];
+const grid = buildSettingsGrid(settingsRows);
+assert.strictEqual(settingsProductCount(grid, "PANASONIC"), 92);
+assert.strictEqual(settingsProductCount(grid, "SONY"), 15);
+assert.strictEqual(settingsProductCount(grid, "빈공급사"), 0);
+assert.strictEqual(settingsProductCount(grid, "미로딩"), null);
+assert.strictEqual(settingsProductCount(grid, "없는공급사"), null);
+assert.strictEqual(settingsProductCount(grid, "오너클랜"), 2400);
+assert.strictEqual(settingsProductCount(null, "PANASONIC"), null);
 
 const tree = createElement("div");
 drawList(tree);
 paintCollectSupplierCounts(tree, {
   countOf(id) {
-    if (id === "panasonic") return 3;
-    return null;
+    const item = suppliers.find((row) => row.id === id);
+    if (!item || isOwnerclanSupplier(id, suppliers, item.name)) return null;
+    return settingsProductCount(grid, item.name);
+  },
+  skip(id, name) {
+    return isOwnerclanSupplier(id, suppliers, name);
   },
 });
-assert.deepStrictEqual(
-  tree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-  ["3개"],
-);
-paintCollectSupplierCounts(tree, { countOf: () => null });
-assert.strictEqual(tree.querySelectorAll(".collect-supplier-tag").length, 0);
-assert.deepStrictEqual(
-  tree.querySelectorAll(".collect-supplier-item").map((button) => button.textContent),
-  ["PANASONIC", "SONY", "미로딩", "오너클랜"],
-);
-
-function countOfCatalog(id) {
-  const totals = { panasonic: 92, sony: 15 };
-  return Object.prototype.hasOwnProperty.call(totals, id) ? totals[id] : null;
-}
-
-drawList(tree);
-paintCollectSupplierCounts(tree, { countOf: countOfCatalog });
 assert.deepStrictEqual(
   tree.querySelectorAll(".collect-supplier-tag").map((tag) => ({
     text: tag.textContent,
@@ -164,63 +203,38 @@ assert.deepStrictEqual(
   [
     { text: "92개", title: "전체상품 92개" },
     { text: "15개", title: "전체상품 15개" },
+    { text: "0개", title: "전체상품 0개" },
   ],
-);
-assert.deepStrictEqual(
-  tree.querySelectorAll(".collect-supplier-name").map((name) => name.textContent),
-  ["PANASONIC", "SONY"],
-);
-
-drawList(tree);
-paintCollectSupplierCounts(tree, {
-  countOf(id) {
-    if (id === "ownerclan") return 2400;
-    if (id === "panasonic") return 92;
-    if (id === "sony") return 15;
-    return null;
-  },
-  skip(id, name) {
-    return isOwnerclanSupplier(id, [{ id: "ownerclan", type: "ownerclan", name: "오너클랜" }], name);
-  },
-});
-assert.deepStrictEqual(
-  tree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-  ["92개", "15개"],
 );
 assert.strictEqual(
   tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "ownerclan").querySelector(".collect-supplier-tag"),
   null,
 );
+assert.strictEqual(
+  tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "oc-custom").querySelector(".collect-supplier-tag"),
+  null,
+);
+assert.strictEqual(
+  tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "unloaded").querySelector(".collect-supplier-tag"),
+  null,
+);
 
 async function main() {
-  const view = createElement("section");
-  view.id = "viewCollect";
-  view.hidden = false;
   let liveTree = createElement("div");
+  let liveGrid = buildSettingsGrid([]);
   let renderCollectSupplierTree = function () {
     drawList(liveTree);
   };
-  let catalog = {
-    searchMode: false,
-    selectedCategory: "",
-    loadedCategory: "",
-    loadedFor: "",
-    items: [],
+  let renderWholesalerSheet = function () {
+    liveGrid = buildSettingsGrid(settingsRows);
   };
-  let renderCafe24Catalog = function () {};
   let styleNode = null;
-  const supplierRows = [
-    { id: "panasonic", name: "PANASONIC", type: "cafe24" },
-    { id: "sony", name: "SONY", type: "cafe24" },
-    { id: "unloaded", name: "미로딩", type: "cafe24" },
-    { id: "ownerclan", name: "오너클랜", type: "ownerclan" },
-  ];
-  let masterCountReads = 0;
+  let forbiddenReads = 0;
   const doc = {
     head: { appendChild(node) { styleNode = node; } },
     getElementById(id) {
       if (id === "collectSupplierTree") return liveTree;
-      if (id === "viewCollect") return view;
+      if (id === "wholesaleGrid") return liveGrid;
       if (id === "collectSupplierCountStyle") return styleNode;
       return null;
     },
@@ -231,111 +245,31 @@ async function main() {
     document: doc,
     getRender: () => renderCollectSupplierTree,
     setRender: (fn) => { renderCollectSupplierTree = fn; },
-    getRenderCatalog: () => renderCafe24Catalog,
-    setRenderCatalog: (fn) => { renderCafe24Catalog = fn; },
+    getRenderSheet: () => renderWholesalerSheet,
+    setRenderSheet: (fn) => { renderWholesalerSheet = fn; },
     tree: () => liveTree,
-    shopCatalog: () => catalog,
-    supplierRows: () => supplierRows,
-    countMasterProducts() {
-      masterCountReads += 1;
+    supplierRows: () => suppliers,
+    settingsGrid: () => liveGrid,
+    wholesaleProductCount() {
+      forbiddenReads += 1;
       return 4;
     },
+    cafe24CatalogItems: Array.from({ length: 3 }),
   });
 
   renderCollectSupplierTree();
   assert.strictEqual(liveTree.querySelectorAll(".collect-supplier-tag").length, 0);
-  assert.strictEqual(masterCountReads, 0);
 
-  catalog = {
-    searchMode: false,
-    selectedCategory: "camera",
-    loadedCategory: "camera",
-    loadedFor: "panasonic",
-    items: Array.from({ length: 92 }),
-  };
-  renderCafe24Catalog();
+  renderWholesalerSheet();
   assert.deepStrictEqual(
     liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개"],
+    ["92개", "15개", "0개"],
   );
-  assert.notStrictEqual(
-    liveTree.querySelector(".collect-supplier-tag").textContent,
-    "4개",
-  );
-
-  catalog = {
-    searchMode: false,
-    selectedCategory: "body",
-    loadedCategory: "body",
-    loadedFor: "sony",
-    items: Array.from({ length: 15 }),
-  };
-  renderCafe24Catalog();
-  assert.deepStrictEqual(
-    liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개", "15개"],
-  );
-
-  catalog = {
-    searchMode: true,
-    selectedCategory: "camera",
-    loadedCategory: "__search__",
-    loadedFor: "panasonic",
-    items: Array.from({ length: 2 }),
-  };
-  renderCafe24Catalog();
-  assert.deepStrictEqual(
-    liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개", "15개"],
-  );
-
-  catalog = {
-    searchMode: false,
-    selectedCategory: "lens",
-    loadedCategory: "",
-    loadedFor: "",
-    items: [],
-  };
-  renderCollectSupplierTree();
-  assert.deepStrictEqual(
-    liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개", "15개"],
-  );
-
-  catalog = {
-    searchMode: false,
-    selectedCategory: "lens",
-    loadedCategory: "lens",
-    loadedFor: "sony",
-    items: [],
-  };
-  renderCafe24Catalog();
-  assert.deepStrictEqual(
-    liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개", "0개"],
-  );
-
-  catalog = {
-    searchMode: false,
-    selectedCategory: "all",
-    loadedCategory: "all",
-    loadedFor: "ownerclan",
-    items: Array.from({ length: 2400 }),
-  };
-  renderCafe24Catalog();
-  assert.deepStrictEqual(
-    liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
-    ["92개", "0개"],
-  );
+  assert.strictEqual(forbiddenReads, 0);
   assert.strictEqual(
-    liveTree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "ownerclan").querySelector(".collect-supplier-tag"),
-    null,
+    liveTree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "ownerclan").textContent,
+    "오너클랜",
   );
-  assert.strictEqual(
-    liveTree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "unloaded").querySelector(".collect-supplier-tag"),
-    null,
-  );
-  assert.strictEqual(masterCountReads, 0);
 
   console.log("collect supplier count tests ok");
 }

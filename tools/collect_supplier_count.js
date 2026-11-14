@@ -1,9 +1,7 @@
-/* collect-supplier-count2 */
+/* collect-supplier-count3 */
 // 상품담기 왼쪽 공급사 목록에 전체상품 개수를 붙입니다.
-// 개수는 상품 목록이 ‘전체 N개’로 보여주는 그 카탈로그 수입니다.
-// 분류 상품을 불러온 뒤의 cafe24CatalogItems 길이입니다.
-// 그 공급사 목록을 아직 불러오기 전이면 숫자를 그리지 않습니다.
-// 이미 불러온 마스터상품 수(wholesaleProductCount)는 쓰지 않습니다.
+// 개수는 공급처설정 표의 상품수 칸에 이미 나와 있는 숫자입니다.
+// 그 칸이 없거나 비어 있으면 숫자를 만들지 않습니다.
 // 오너클랜은 상품이 너무 많아 개수를 붙이지 않습니다.
 
 function supplierTotalCountLabel(count) {
@@ -11,12 +9,12 @@ function supplierTotalCountLabel(count) {
   return `${Math.trunc(count).toLocaleString("ko-KR")}개`;
 }
 
-function shopCatalogTotal(state) {
-  if (!state || state.searchMode) return null;
-  if (!state.selectedCategory || state.loadedCategory !== state.selectedCategory) return null;
-  const id = String(state.loadedFor || "");
-  if (!id || !Array.isArray(state.items)) return null;
-  return { id, count: state.items.length };
+function parseSettingsCount(text) {
+  const raw = String(text || "").trim().replace(/개$/, "").replace(/,/g, "");
+  if (!/^\d+$/.test(raw)) return null;
+  const count = Number(raw);
+  if (!Number.isFinite(count) || count < 0) return null;
+  return count;
 }
 
 function isOwnerclanSupplier(id, rows, name) {
@@ -26,6 +24,25 @@ function isOwnerclanSupplier(id, rows, name) {
   const list = Array.isArray(rows) ? rows : [];
   const row = list.find((item) => item && String(item.id || "") === key);
   return Boolean(row && row.type === "ownerclan");
+}
+
+function settingsProductCount(grid, supplierName) {
+  if (!grid || typeof grid.querySelectorAll !== "function") return null;
+  const headers = [...grid.querySelectorAll("thead th")];
+  const nameIndex = headers.findIndex((th) => String(th.textContent || "").trim() === "공급처");
+  const countIndex = headers.findIndex((th) => String(th.textContent || "").trim() === "상품수");
+  if (nameIndex < 0 || countIndex < 0) return null;
+  const wanted = String(supplierName || "").trim();
+  if (!wanted) return null;
+  const rows = grid.querySelectorAll("tbody tr");
+  for (const row of rows) {
+    const cells = row.querySelectorAll("td");
+    const name = cells[nameIndex] ? String(cells[nameIndex].textContent || "").trim() : "";
+    if (name !== wanted) continue;
+    const cell = cells[countIndex];
+    return parseSettingsCount(cell ? cell.textContent : "");
+  }
+  return null;
 }
 
 function paintCollectSupplierCounts(tree, options) {
@@ -55,7 +72,7 @@ function paintCollectSupplierCounts(tree, options) {
     }
     let count = null;
     try {
-      count = countOf(button.dataset.id || "");
+      count = countOf(id);
     } catch (error) {
       count = null;
     }
@@ -81,16 +98,6 @@ function paintCollectSupplierCounts(tree, options) {
   });
 }
 
-function readShopCatalog() {
-  return {
-    searchMode: typeof cafe24SearchMode !== "undefined" && Boolean(cafe24SearchMode),
-    selectedCategory: typeof cafe24SelectedCategory !== "undefined" ? cafe24SelectedCategory : "",
-    loadedCategory: typeof cafe24CatalogLoadedCategory !== "undefined" ? cafe24CatalogLoadedCategory : "",
-    loadedFor: typeof cafe24CatalogLoadedFor !== "undefined" ? cafe24CatalogLoadedFor : "",
-    items: typeof cafe24CatalogItems !== "undefined" ? cafe24CatalogItems : null,
-  };
-}
-
 function readSupplierRows() {
   return typeof wholesalers !== "undefined" && Array.isArray(wholesalers) ? wholesalers : [];
 }
@@ -104,17 +111,19 @@ function installCollectSupplierCounts(hooks) {
     setRender(fn) {
       renderCollectSupplierTree = fn;
     },
-    getRenderCatalog() {
-      return typeof renderCafe24Catalog === "function" ? renderCafe24Catalog : null;
+    getRenderSheet() {
+      return typeof renderWholesalerSheet === "function" ? renderWholesalerSheet : null;
     },
-    setRenderCatalog(fn) {
-      renderCafe24Catalog = fn;
+    setRenderSheet(fn) {
+      renderWholesalerSheet = fn;
     },
     tree() {
       return document.getElementById("collectSupplierTree");
     },
-    shopCatalog: readShopCatalog,
     supplierRows: readSupplierRows,
+    settingsGrid() {
+      return document.getElementById("wholesaleGrid");
+    },
   };
   if (api.getRender && api.getRender() && api.getRender().collectSupplierCountHook) return;
 
@@ -134,30 +143,29 @@ function installCollectSupplierCounts(hooks) {
     doc.head.appendChild(style);
   }
 
-  const counts = new Map();
-
   function supplierRows() {
     return api.supplierRows ? api.supplierRows() : [];
   }
 
-  function skipSupplier(id, name) {
-    return isOwnerclanSupplier(id, supplierRows(), name);
+  function supplierRecord(id) {
+    const key = String(id || "");
+    return supplierRows().find((item) => item && String(item.id || "") === key) || null;
   }
 
-  function rememberVisibleTotals() {
-    const shop = shopCatalogTotal(api.shopCatalog ? api.shopCatalog() : null);
-    if (shop && !isOwnerclanSupplier(shop.id, supplierRows(), "")) counts.set(shop.id, shop.count);
+  function skipSupplier(id, name) {
+    const record = supplierRecord(id);
+    return isOwnerclanSupplier(id, supplierRows(), record ? record.name : name);
   }
 
   function countOf(id) {
-    const key = String(id || "");
-    if (isOwnerclanSupplier(key, supplierRows(), "")) return null;
-    if (!counts.has(key)) return null;
-    return counts.get(key);
+    const record = supplierRecord(id);
+    const name = record ? record.name : "";
+    if (isOwnerclanSupplier(id, supplierRows(), name)) return null;
+    const grid = api.settingsGrid ? api.settingsGrid() : null;
+    return settingsProductCount(grid, name);
   }
 
   function paintTree() {
-    rememberVisibleTotals();
     paintCollectSupplierCounts(api.tree(), { countOf, skip: skipSupplier });
   }
 
@@ -180,14 +188,15 @@ function installCollectSupplierCounts(hooks) {
   }
 
   wrap(api.getRender, api.setRender);
-  wrap(api.getRenderCatalog, api.setRenderCatalog);
+  wrap(api.getRenderSheet, api.setRenderSheet);
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     supplierTotalCountLabel,
-    shopCatalogTotal,
+    parseSettingsCount,
     isOwnerclanSupplier,
+    settingsProductCount,
     paintCollectSupplierCounts,
     installCollectSupplierCounts,
   };

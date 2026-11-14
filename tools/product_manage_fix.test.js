@@ -7,6 +7,9 @@ const {
   shippingOnlyPatch,
   applyShippingPatch,
   splitReregister,
+  REREGISTER_FIELDS,
+  changedFieldGroups,
+  selectiveReregisterPatch,
   installProductManageFix,
 } = require("./product_manage_fix.js");
 
@@ -71,7 +74,21 @@ assert.deepStrictEqual(stale.map((item) => item.id), ["e"]);
 const claimed = supplierFilterRows([
   { id: "f", wholesale_id: "oc", wholesale_name: "케이페이지", source_url: "https://kpage.co.kr/x" },
 ], "kp", wholesalers);
-assert.deepStrictEqual(claimed.map((item) => item.id), []);
+assert.deepStrictEqual(claimed.map((item) => item.id), ["f"]);
+assert.deepStrictEqual(supplierFilterRows([
+  { id: "f", wholesale_id: "oc", wholesale_name: "케이페이지", source_url: "https://kpage.co.kr/x" },
+], "oc", wholesalers).map((item) => item.id), []);
+
+const shopWholesalers = wholesalers.concat([{ id: "murray", name: "머레이", url: "https://murray.co.kr" }]);
+const mixed = [
+  { id: "m1", wholesale_id: "murray", wholesale_name: "머레이", source_url: "https://murray.co.kr/a" },
+  { id: "k1", wholesale_id: "murray", wholesale_name: "케이페이지", source_url: "https://www.kpage.co.kr/b" },
+  { id: "k2", wholesale_id: "", wholesale_name: "케이페이지", source_url: "https://murray.co.kr/stolen" },
+  { id: "m2", wholesale_id: "", wholesale_name: "", source_url: "https://shop.murray.co.kr/c" },
+];
+assert.deepStrictEqual(supplierFilterRows(mixed, "murray", shopWholesalers).map((item) => item.id), ["m1", "m2"]);
+assert.deepStrictEqual(supplierFilterRows(mixed, "kp", shopWholesalers).map((item) => item.id), ["k1", "k2"]);
+assert.deepStrictEqual(supplierFilterRows(mixed, "all", shopWholesalers).map((item) => item.id), ["m1", "k1", "k2", "m2"]);
 
 assert.strictEqual(kpageBoxShippingFee("완박스 배송비 1개 주문시 3,850원"), 3850);
 assert.strictEqual(kpageBoxShippingFee("완박스 배송비 3,300원 ~ 27,500원"), 3300);
@@ -99,9 +116,13 @@ assert.strictEqual(kpageFeeFromProduct({ name: "없음", summary: "무료배송"
 const registered = {
   id: "reg-1",
   name: "이미 등록된 상품",
+  original_name: "등록 당시 이름",
   price: 15000,
+  original_price: 15000,
   origin: "국내",
   shipping_fee: 3000,
+  wholesale_shipping_fee: 3850,
+  attributes: [{ name: "색상", value: "빨강" }],
   origin_product_no: "9001",
   channel_product_no: "8001",
   market_id: "market-1",
@@ -130,6 +151,18 @@ const parts = splitReregister([
 ]);
 assert.deepStrictEqual(parts.registered.map((item) => item.id), ["reg-1"]);
 assert.deepStrictEqual(parts.fresh.map((item) => item.id), ["new"]);
+
+assert.deepStrictEqual(REREGISTER_FIELDS.map((group) => group.label).slice(0, 3), ["상품명", "속성", "배송/가격"]);
+assert.deepStrictEqual(changedFieldGroups(registered), ["name", "ship_price"]);
+const nameOnly = selectiveReregisterPatch(registered, ["name"]);
+assert.deepStrictEqual(nameOnly, { name: "이미 등록된 상품" });
+const shipOnly = selectiveReregisterPatch(registered, ["ship_price"]);
+assert.deepStrictEqual(Object.keys(shipOnly).sort(), ["price", "shipping_fee"]);
+assert.ok(!Object.prototype.hasOwnProperty.call(shipOnly, "name"));
+assert.ok(!Object.prototype.hasOwnProperty.call(shipOnly, "attributes"));
+const nameAndAttributes = selectiveReregisterPatch(registered, ["name", "attributes"]);
+assert.deepStrictEqual(Object.keys(nameAndAttributes).sort(), ["attributes", "name"]);
+assert.strictEqual(nameAndAttributes.attributes[0].value, "빨강");
 
 const saved = [];
 const fresh = { id: "new", name: "새 상품", price: 1000, market_id: "market-1", shipping_fee: 2000 };
@@ -182,36 +215,65 @@ globalThis.localStorage = {
   setItem(key, value) { this.values[key] = String(value); },
 };
 
-function fakeDialog() {
-  const input = { value: "", focus() {}, select() {} };
-  const message = { textContent: "" };
-  const count = { textContent: "" };
-  const cancel = { onclick: null };
-  const form = { onsubmit: null };
-  const dialog = {
-    id: "shippingReregisterDialog",
-    innerHTML: "",
-    oncancel: null,
+function walkAll(node, visit) {
+  (node.children || []).forEach((child) => {
+    visit(child);
+    walkAll(child, visit);
+  });
+}
+
+function makeNode(tag) {
+  const node = {
+    tagName: String(tag || "").toUpperCase(),
+    id: "",
+    className: "",
+    type: "",
+    value: "",
+    checked: false,
+    textContent: "",
+    children: [],
+    attrs: {},
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
     querySelector(selector) {
-      if (selector === "form") return form;
-      if (selector === "#shippingReregisterFee") return input;
-      if (selector === "#shippingReregisterMessage") return message;
-      if (selector === "#shippingReregisterCount") return count;
-      if (selector === "[data-cancel]") return cancel;
-      return null;
+      let found = null;
+      walkAll(this, (child) => {
+        if (found) return;
+        if (selector === "form" && child.tagName === "FORM") found = child;
+        if (selector.charAt(0) === "#" && child.id === selector.slice(1)) found = child;
+        if (selector === "[data-cancel]" && child.attrs["data-cancel"]) found = child;
+      });
+      return found;
+    },
+    querySelectorAll(selector) {
+      const found = [];
+      walkAll(this, (child) => {
+        if (selector === "input" && child.tagName === "INPUT") found.push(child);
+      });
+      return found;
     },
     close() {},
-    showModal() {
-      input.value = "4,200";
-      form.onsubmit({ preventDefault() {} });
-    },
+    showModal() {},
   };
-  return dialog;
+  if (tag === "dialog") {
+    node.showModal = function showNameOnly() {
+      node.querySelectorAll("input").forEach((box) => {
+        box.checked = box.value === "name";
+      });
+      node.querySelector("form").onsubmit({ preventDefault() {} });
+    };
+  }
+  return node;
 }
 
 globalThis.document = {
   getElementById() { return null; },
-  createElement() { return fakeDialog(); },
+  createElement(tag) { return makeNode(tag); },
   body: { appendChild() {} },
 };
 
@@ -249,12 +311,13 @@ assert.strictEqual(globalThis.wholesaleShipAmount(manual), 4100);
   globalThis.selectedIds = new Set(["reg-1"]);
   await globalThis.registerSelected();
   assert.strictEqual(globalThis.registerCalls, 0);
-  assert.deepStrictEqual(saved, [{ shipping_fee: 4200 }]);
+  assert.deepStrictEqual(saved, [{ name: "이미 등록된 상품" }]);
   assert.strictEqual(globalThis.products[0].name, "이미 등록된 상품");
   assert.strictEqual(globalThis.products[0].price, 15000);
   assert.strictEqual(globalThis.products[0].origin, "국내");
   assert.strictEqual(globalThis.products[0].origin_product_no, "9001");
-  assert.strictEqual(globalThis.products[0].shipping_fee, 4200);
+  assert.strictEqual(globalThis.products[0].shipping_fee, 3000);
+  assert.strictEqual(globalThis.products[0].attributes[0].value, "빨강");
 
   saved.length = 0;
   selection = [fresh];
@@ -272,8 +335,10 @@ assert.strictEqual(globalThis.wholesaleShipAmount(manual), 4100);
   globalThis.products = selection.slice();
   globalThis.selectedIds = new Set(["reg-1", "new"]);
   await globalThis.registerSelected();
-  assert.deepStrictEqual(saved, [{ shipping_fee: 4200 }]);
+  assert.deepStrictEqual(saved, [{ name: "이미 등록된 상품" }]);
   assert.strictEqual(registeredAgain.name, "이미 등록된 상품");
+  assert.strictEqual(registeredAgain.shipping_fee, 3000);
+  assert.strictEqual(registeredAgain.price, 15000);
   assert.deepStrictEqual(globalThis.lastRegisterIds, ["new"]);
   assert.strictEqual(globalThis.registerCalls, 2);
 

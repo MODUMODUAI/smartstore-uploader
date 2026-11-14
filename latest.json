@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.7",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.7/MODUMODU-update.zip",
+  "version": "2026.11.14.8",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.8/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "3862f9d7a7d901a58e6dfe0b7aedc3a758e5a14c52a01fd14858e5cf13e3106b",
-  "notes": "상품관리에서 공급처 상품이 보이게 하고, 등록 상품은 배송비만 다시 등록합니다. 완박스 배송비는 하나면 그 금액, 범위면 앞자리입니다."
+  "sha256": "728bc855aab0a4665f34e8d7e0463a7572bfb672e61e30134e33be5fac992ee6",
+  "notes": "상품관리 공급처는 목록의 공급처 이름으로 거르고, 이미 등록한 상품은 고른 항목만 다시 등록합니다."
 }

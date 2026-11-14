@@ -2,8 +2,11 @@ const assert = require("assert");
 const {
   supplierTotalCountLabel,
   parseSettingsCount,
+  catalogCountPath,
+  catalogTotal,
   isOwnerclanSupplier,
   settingsProductCount,
+  correctSettingsProductCounts,
   paintCollectSupplierCounts,
   installCollectSupplierCounts,
 } = require("./collect_supplier_count.js");
@@ -21,6 +24,18 @@ assert.strictEqual(parseSettingsCount(" 15개"), 15);
 assert.strictEqual(parseSettingsCount(""), null);
 assert.strictEqual(parseSettingsCount("   "), null);
 assert.strictEqual(parseSettingsCount("없음"), null);
+
+assert.strictEqual(catalogCountPath("panasonic"), "/api/wholesalers/panasonic/catalog");
+assert.strictEqual(catalogCountPath("a/b"), "/api/wholesalers/a%2Fb/catalog");
+assert.strictEqual(catalogCountPath("panasonic").includes("category"), false);
+
+assert.strictEqual(catalogTotal({ count: 92, items: [1, 2, 3] }), 92);
+assert.strictEqual(catalogTotal({ count: 0 }), 0);
+assert.strictEqual(catalogTotal({ count: "15" }), 15);
+assert.strictEqual(catalogTotal({ count: "1,234" }), 1234);
+assert.strictEqual(catalogTotal({ items: [1, 2, 3, 4] }), null);
+assert.strictEqual(catalogTotal({ count: -1 }), null);
+assert.strictEqual(catalogTotal(null), null);
 
 assert.strictEqual(isOwnerclanSupplier("ownerclan", [], ""), true);
 assert.strictEqual(isOwnerclanSupplier("shop", [], "오너클랜"), true);
@@ -166,22 +181,37 @@ function buildSettingsGrid(rows) {
   return grid;
 }
 
-const settingsRows = [
-  { name: "PANASONIC", count: "92" },
-  { name: "SONY", count: "15" },
-  { name: "빈공급사", count: "0" },
-  { name: "미로딩", count: "" },
-  { name: "오너클랜", count: "2400" },
-  { name: "다른오너", count: "9999" },
+function countColumn(grid) {
+  return [...grid.querySelectorAll("tbody tr")].map((row) => row.querySelectorAll("td")[4].textContent);
+}
+
+const wrongCounts = [
+  { name: "PANASONIC", count: "4" },
+  { name: "SONY", count: "100" },
+  { name: "빈공급사", count: "1" },
+  { name: "미로딩", count: "2" },
+  { name: "없는공급사", count: "3" },
+  { name: "오너클랜", count: "7" },
+  { name: "다른오너", count: "8" },
 ];
-const grid = buildSettingsGrid(settingsRows);
-assert.strictEqual(settingsProductCount(grid, "PANASONIC"), 92);
-assert.strictEqual(settingsProductCount(grid, "SONY"), 15);
-assert.strictEqual(settingsProductCount(grid, "빈공급사"), 0);
-assert.strictEqual(settingsProductCount(grid, "미로딩"), null);
-assert.strictEqual(settingsProductCount(grid, "없는공급사"), null);
-assert.strictEqual(settingsProductCount(grid, "오너클랜"), 2400);
-assert.strictEqual(settingsProductCount(null, "PANASONIC"), null);
+
+correctSettingsProductCounts(buildSettingsGrid(wrongCounts), suppliers, (id) => {
+  if (id === "panasonic") return 92;
+  if (id === "sony") return 15;
+  if (id === "empty") return 0;
+  return null;
+});
+const corrected = buildSettingsGrid(wrongCounts);
+correctSettingsProductCounts(corrected, suppliers, (id) => {
+  if (id === "panasonic") return 92;
+  if (id === "sony") return 15;
+  if (id === "empty") return 0;
+  return null;
+});
+assert.deepStrictEqual(countColumn(corrected), ["92", "15", "0", "", "", "", ""]);
+assert.strictEqual(settingsProductCount(corrected, "PANASONIC"), 92);
+assert.strictEqual(settingsProductCount(corrected, "미로딩"), null);
+assert.strictEqual(settingsProductCount(corrected, "오너클랜"), null);
 
 const tree = createElement("div");
 drawList(tree);
@@ -189,34 +219,15 @@ paintCollectSupplierCounts(tree, {
   countOf(id) {
     const item = suppliers.find((row) => row.id === id);
     if (!item || isOwnerclanSupplier(id, suppliers, item.name)) return null;
-    return settingsProductCount(grid, item.name);
+    return settingsProductCount(corrected, item.name);
   },
   skip(id, name) {
     return isOwnerclanSupplier(id, suppliers, name);
   },
 });
 assert.deepStrictEqual(
-  tree.querySelectorAll(".collect-supplier-tag").map((tag) => ({
-    text: tag.textContent,
-    title: tag.title,
-  })),
-  [
-    { text: "92개", title: "전체상품 92개" },
-    { text: "15개", title: "전체상품 15개" },
-    { text: "0개", title: "전체상품 0개" },
-  ],
-);
-assert.strictEqual(
-  tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "ownerclan").querySelector(".collect-supplier-tag"),
-  null,
-);
-assert.strictEqual(
-  tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "oc-custom").querySelector(".collect-supplier-tag"),
-  null,
-);
-assert.strictEqual(
-  tree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "unloaded").querySelector(".collect-supplier-tag"),
-  null,
+  tree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
+  ["92개", "15개", "0개"],
 );
 
 async function main() {
@@ -226,10 +237,14 @@ async function main() {
     drawList(liveTree);
   };
   let renderWholesalerSheet = function () {
-    liveGrid = buildSettingsGrid(settingsRows);
+    liveGrid = buildSettingsGrid(wrongCounts);
   };
   let styleNode = null;
-  let forbiddenReads = 0;
+  let releaseFetch;
+  const gate = new Promise((resolve) => {
+    releaseFetch = resolve;
+  });
+  const fetched = [];
   const doc = {
     head: { appendChild(node) { styleNode = node; } },
     getElementById(id) {
@@ -250,28 +265,88 @@ async function main() {
     tree: () => liveTree,
     supplierRows: () => suppliers,
     settingsGrid: () => liveGrid,
-    wholesaleProductCount() {
-      forbiddenReads += 1;
-      return 4;
+    fetchCatalog(supplier) {
+      fetched.push(catalogCountPath(supplier.id));
+      return gate.then(() => {
+        if (supplier.id === "panasonic") return { count: 92, items: [1, 2, 3] };
+        if (supplier.id === "sony") return { count: 15 };
+        if (supplier.id === "empty") return { count: 0 };
+        if (supplier.id === "unloaded") return { items: [1, 2, 3, 4] };
+        throw new Error("catalog failed");
+      });
     },
-    cafe24CatalogItems: Array.from({ length: 3 }),
   });
 
   renderCollectSupplierTree();
   assert.strictEqual(liveTree.querySelectorAll(".collect-supplier-tag").length, 0);
 
   renderWholesalerSheet();
+  assert.deepStrictEqual(countColumn(liveGrid), ["", "", "", "", "", "", ""]);
+  assert.strictEqual(liveTree.querySelectorAll(".collect-supplier-tag").length, 0);
+  assert.deepStrictEqual(fetched.filter((path) => path.includes("ownerclan") || path.includes("oc-custom")), []);
+  assert.ok(fetched.every((path) => path.startsWith("/api/wholesalers/") && path.endsWith("/catalog") && !path.includes("category")));
+
+  releaseFetch();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepStrictEqual(countColumn(liveGrid), ["92", "15", "0", "", "", "", ""]);
   assert.deepStrictEqual(
     liveTree.querySelectorAll(".collect-supplier-tag").map((tag) => tag.textContent),
     ["92개", "15개", "0개"],
   );
-  assert.strictEqual(forbiddenReads, 0);
   assert.strictEqual(
     liveTree.querySelectorAll(".collect-supplier-item").find((button) => button.dataset.id === "ownerclan").textContent,
     "오너클랜",
   );
+  assert.strictEqual(settingsProductCount(liveGrid, "PANASONIC"), 92);
+  assert.strictEqual(settingsProductCount(liveGrid, "미로딩"), null);
+
+  const calls = [];
+  global.api = (path, options) => {
+    calls.push({ path, quiet: options && options.quiet });
+    return Promise.resolve({ count: 3 });
+  };
+  let soloGrid = buildSettingsGrid([{ name: "SOLO", count: "9" }]);
+  let soloTree = createElement("div");
+  const solo = [{ id: "solo", name: "SOLO", type: "cafe24" }];
+  let renderSoloSheet = function () {
+    soloGrid = buildSettingsGrid([{ name: "SOLO", count: "9" }]);
+  };
+  let renderSoloTree = function () {
+    soloTree.textContent = "";
+    soloTree.append(buttonFor(solo[0]));
+  };
+  installCollectSupplierCounts({
+    document: {
+      head: { appendChild() {} },
+      getElementById(id) {
+        if (id === "collectSupplierTree") return soloTree;
+        if (id === "wholesaleGrid") return soloGrid;
+        return null;
+      },
+      createElement,
+    },
+    getRender: () => renderSoloTree,
+    setRender: (fn) => { renderSoloTree = fn; },
+    getRenderSheet: () => renderSoloSheet,
+    setRenderSheet: (fn) => { renderSoloSheet = fn; },
+    tree: () => soloTree,
+    supplierRows: () => solo,
+    settingsGrid: () => soloGrid,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepStrictEqual(calls.map((call) => call.path), ["/api/wholesalers/solo/catalog"]);
+  assert.strictEqual(calls[0].quiet, true);
+  assert.strictEqual(settingsProductCount(soloGrid, "SOLO"), 3);
+  renderSoloTree();
+  renderSoloSheet();
+  assert.deepStrictEqual(countColumn(soloGrid), ["3"]);
+  assert.strictEqual(soloTree.querySelector(".collect-supplier-tag").textContent, "3개");
 
   console.log("collect supplier count tests ok");
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

@@ -1,8 +1,9 @@
-/* collect-supplier-count3 */
-// 상품담기 왼쪽 공급사 목록에 전체상품 개수를 붙입니다.
-// 개수는 공급처설정 표의 상품수 칸에 이미 나와 있는 숫자입니다.
-// 그 칸이 없거나 비어 있으면 숫자를 만들지 않습니다.
-// 오너클랜은 상품이 너무 많아 개수를 붙이지 않습니다.
+/* collect-supplier-count4 */
+// 공급처설정 상품수는 이미 담아 둔 마스터상품 수라 공급사 전체 상품 수와 다릅니다.
+// 전체 수는 분류 없이 연 공급사 카탈로그 응답의 count 입니다.
+// 그 수를 상품수 칸에 넣은 뒤에만 상품담기 목록에 같은 숫자를 붙입니다.
+// 카탈로그 count 가 아직 없으면 칸을 비우고, 숫자를 만들지 않습니다.
+// 오너클랜은 상품이 너무 많아 상품담기에 개수를 붙이지 않습니다.
 
 function supplierTotalCountLabel(count) {
   if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return "";
@@ -17,6 +18,20 @@ function parseSettingsCount(text) {
   return count;
 }
 
+function catalogCountPath(id) {
+  return `/api/wholesalers/${encodeURIComponent(String(id || ""))}/catalog`;
+}
+
+function catalogTotal(data) {
+  if (!data || typeof data !== "object" || !Object.prototype.hasOwnProperty.call(data, "count")) return null;
+  const count = data.count;
+  if (typeof count === "number") {
+    if (!Number.isFinite(count) || count < 0) return null;
+    return Math.trunc(count);
+  }
+  return parseSettingsCount(count);
+}
+
 function isOwnerclanSupplier(id, rows, name) {
   const key = String(id || "");
   const label = String(name || "").trim();
@@ -27,6 +42,12 @@ function isOwnerclanSupplier(id, rows, name) {
 }
 
 function settingsProductCount(grid, supplierName) {
+  const found = settingsCountCell(grid, supplierName);
+  if (!found) return null;
+  return parseSettingsCount(found.cell.textContent);
+}
+
+function settingsCountCell(grid, supplierName) {
   if (!grid || typeof grid.querySelectorAll !== "function") return null;
   const headers = [...grid.querySelectorAll("thead th")];
   const nameIndex = headers.findIndex((th) => String(th.textContent || "").trim() === "공급처");
@@ -39,10 +60,38 @@ function settingsProductCount(grid, supplierName) {
     const cells = row.querySelectorAll("td");
     const name = cells[nameIndex] ? String(cells[nameIndex].textContent || "").trim() : "";
     if (name !== wanted) continue;
-    const cell = cells[countIndex];
-    return parseSettingsCount(cell ? cell.textContent : "");
+    if (!cells[countIndex]) return null;
+    return { cell: cells[countIndex] };
   }
   return null;
+}
+
+function writeSettingsCount(cell, count) {
+  const text = count == null ? "" : String(Math.trunc(count));
+  cell.textContent = text;
+  if ("title" in cell) cell.title = text;
+}
+
+function correctSettingsProductCounts(grid, rows, countOfId) {
+  if (!grid || typeof grid.querySelectorAll !== "function") return;
+  const headers = [...grid.querySelectorAll("thead th")];
+  const nameIndex = headers.findIndex((th) => String(th.textContent || "").trim() === "공급처");
+  const countIndex = headers.findIndex((th) => String(th.textContent || "").trim() === "상품수");
+  if (nameIndex < 0 || countIndex < 0) return;
+  const list = Array.isArray(rows) ? rows : [];
+  grid.querySelectorAll("tbody tr").forEach((row) => {
+    const cells = row.querySelectorAll("td");
+    const cell = cells[countIndex];
+    if (!cell) return;
+    const name = cells[nameIndex] ? String(cells[nameIndex].textContent || "").trim() : "";
+    const record = list.find((item) => item && String(item.name || "").trim() === name);
+    if (!record || isOwnerclanSupplier(record.id, list, record.name)) {
+      writeSettingsCount(cell, null);
+      return;
+    }
+    const count = typeof countOfId === "function" ? countOfId(record.id) : null;
+    writeSettingsCount(cell, count == null ? null : count);
+  });
 }
 
 function paintCollectSupplierCounts(tree, options) {
@@ -103,7 +152,10 @@ function readSupplierRows() {
 }
 
 function installCollectSupplierCounts(hooks) {
-  const api = hooks || {
+  const known = new Map();
+  const pending = new Set();
+  const failed = new Set();
+  const api = Object.assign({
     document,
     getRender() {
       return typeof renderCollectSupplierTree === "function" ? renderCollectSupplierTree : null;
@@ -124,7 +176,15 @@ function installCollectSupplierCounts(hooks) {
     settingsGrid() {
       return document.getElementById("wholesaleGrid");
     },
-  };
+    fetchCatalog(supplier) {
+      if (typeof globalThis.api !== "function") return Promise.resolve(null);
+      const options = { quiet: true };
+      if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+        options.signal = AbortSignal.timeout(120000);
+      }
+      return globalThis.api(catalogCountPath(supplier && supplier.id), options);
+    },
+  }, hooks || {});
   if (api.getRender && api.getRender() && api.getRender().collectSupplierCountHook) return;
 
   const doc = api.document;
@@ -159,14 +219,47 @@ function installCollectSupplierCounts(hooks) {
 
   function countOf(id) {
     const record = supplierRecord(id);
-    const name = record ? record.name : "";
-    if (isOwnerclanSupplier(id, supplierRows(), name)) return null;
+    if (!record || isOwnerclanSupplier(id, supplierRows(), record.name)) return null;
     const grid = api.settingsGrid ? api.settingsGrid() : null;
-    return settingsProductCount(grid, name);
+    return settingsProductCount(grid, record.name);
   }
 
-  function paintTree() {
-    paintCollectSupplierCounts(api.tree(), { countOf, skip: skipSupplier });
+  function publish() {
+    const grid = api.settingsGrid ? api.settingsGrid() : null;
+    correctSettingsProductCounts(grid, supplierRows(), (id) => (known.has(String(id || "")) ? known.get(String(id || "")) : null));
+    paintCollectSupplierCounts(api.tree ? api.tree() : null, { countOf, skip: skipSupplier });
+  }
+
+  function loadOne(supplier) {
+    const id = String(supplier && supplier.id || "");
+    if (!id || known.has(id) || pending.has(id) || failed.has(id)) return Promise.resolve();
+    if (isOwnerclanSupplier(id, supplierRows(), supplier && supplier.name)) return Promise.resolve();
+    if (typeof api.fetchCatalog !== "function") return Promise.resolve();
+    pending.add(id);
+    return Promise.resolve()
+      .then(() => api.fetchCatalog(supplier))
+      .then((data) => {
+        const count = catalogTotal(data);
+        if (count == null) failed.add(id);
+        else known.set(id, count);
+      })
+      .catch(() => {
+        failed.add(id);
+      })
+      .finally(() => {
+        pending.delete(id);
+        try {
+          publish();
+        } catch (error) {
+          /* 개수 표시가 실패해도 목록은 그대로 둡니다 */
+        }
+      });
+  }
+
+  function loadMissing() {
+    supplierRows().forEach((row) => {
+      loadOne(row);
+    });
   }
 
   function wrap(getFn, setFn) {
@@ -176,7 +269,8 @@ function installCollectSupplierCounts(hooks) {
     const wrapped = function () {
       const result = current.apply(this, arguments);
       try {
-        paintTree();
+        publish();
+        loadMissing();
       } catch (error) {
         /* 개수 표시가 실패해도 목록은 그대로 둡니다 */
       }
@@ -189,14 +283,23 @@ function installCollectSupplierCounts(hooks) {
 
   wrap(api.getRender, api.setRender);
   wrap(api.getRenderSheet, api.setRenderSheet);
+  try {
+    publish();
+    loadMissing();
+  } catch (error) {
+    /* 처음 그릴 공급사 표가 없어도 다음 그리기에서 다시 합니다 */
+  }
 }
 
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     supplierTotalCountLabel,
     parseSettingsCount,
+    catalogCountPath,
+    catalogTotal,
     isOwnerclanSupplier,
     settingsProductCount,
+    correctSettingsProductCounts,
     paintCollectSupplierCounts,
     installCollectSupplierCounts,
   };

@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.3",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.3/MODUMODU-update.zip",
+  "version": "2026.11.14.4",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.4/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "008bf4abd6e3737485d6fae4046472ddad9619449b4f21bb7c74a3be33b657e1",
-  "notes": "모두모두AI를 더 좋게 고쳤습니다."
+  "sha256": "4a0e576c7d6e200bf9828073faf1e3fb4731b0b8b048ac6703ef742ec4780569",
+  "notes": "상품담기 공급사 목록에 전체상품 개수를 표시합니다."
 }

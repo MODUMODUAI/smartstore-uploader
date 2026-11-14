@@ -1,21 +1,55 @@
-/* collect-supplier-count1 */
+/* collect-supplier-count2 */
 // 상품담기 왼쪽 공급사 목록에 전체상품 개수를 붙입니다.
-// 개수는 공급처 표의 상품수와 같습니다. wholesaleProductCount 가 세는,
-// 이미 불러온 마스터상품 수입니다. 상품 목록이 아직 바뀌기 전이면 숫자를 그리지 않습니다.
+// 개수는 상품 목록이 ‘전체 N개’로 보여주는 그 카탈로그 수입니다.
+// 분류 상품을 불러온 뒤의 cafe24CatalogItems 길이입니다.
+// 그 공급사 목록을 아직 불러오기 전이면 숫자를 그리지 않습니다.
+// 이미 불러온 마스터상품 수(wholesaleProductCount)는 쓰지 않습니다.
+// 오너클랜은 상품이 너무 많아 개수를 붙이지 않습니다.
 
-function supplierTotalCountLabel(count, loaded) {
-  if (!loaded) return "";
+function supplierTotalCountLabel(count) {
   if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return "";
   return `${Math.trunc(count).toLocaleString("ko-KR")}개`;
 }
 
+function shopCatalogTotal(state) {
+  if (!state || state.searchMode) return null;
+  if (!state.selectedCategory || state.loadedCategory !== state.selectedCategory) return null;
+  const id = String(state.loadedFor || "");
+  if (!id || !Array.isArray(state.items)) return null;
+  return { id, count: state.items.length };
+}
+
+function isOwnerclanSupplier(id, rows, name) {
+  const key = String(id || "");
+  const label = String(name || "").trim();
+  if (label === "오너클랜" || key === "ownerclan") return true;
+  const list = Array.isArray(rows) ? rows : [];
+  const row = list.find((item) => item && String(item.id || "") === key);
+  return Boolean(row && row.type === "ownerclan");
+}
+
 function paintCollectSupplierCounts(tree, options) {
   if (!tree) return;
-  const loaded = Boolean(options && options.loaded);
   const countOf = options && options.countOf;
+  const skip = options && options.skip;
   tree.querySelectorAll(".collect-supplier-item").forEach((button) => {
     const existing = button.querySelector(".collect-supplier-tag");
-    if (!loaded || typeof countOf !== "function") {
+    const id = button.dataset.id || "";
+    const nameNode = button.querySelector(".collect-supplier-name");
+    const visibleName = nameNode ? nameNode.textContent : button.textContent;
+    if (typeof skip === "function") {
+      let hidden = false;
+      try {
+        hidden = Boolean(skip(id, visibleName));
+      } catch (error) {
+        hidden = false;
+      }
+      if (hidden) {
+        if (existing) existing.remove();
+        return;
+      }
+    }
+    if (typeof countOf !== "function") {
       if (existing) existing.remove();
       return;
     }
@@ -25,7 +59,7 @@ function paintCollectSupplierCounts(tree, options) {
     } catch (error) {
       count = null;
     }
-    const text = supplierTotalCountLabel(count, true);
+    const text = supplierTotalCountLabel(count);
     if (!text) {
       if (existing) existing.remove();
       return;
@@ -47,40 +81,40 @@ function paintCollectSupplierCounts(tree, options) {
   });
 }
 
+function readShopCatalog() {
+  return {
+    searchMode: typeof cafe24SearchMode !== "undefined" && Boolean(cafe24SearchMode),
+    selectedCategory: typeof cafe24SelectedCategory !== "undefined" ? cafe24SelectedCategory : "",
+    loadedCategory: typeof cafe24CatalogLoadedCategory !== "undefined" ? cafe24CatalogLoadedCategory : "",
+    loadedFor: typeof cafe24CatalogLoadedFor !== "undefined" ? cafe24CatalogLoadedFor : "",
+    items: typeof cafe24CatalogItems !== "undefined" ? cafe24CatalogItems : null,
+  };
+}
+
+function readSupplierRows() {
+  return typeof wholesalers !== "undefined" && Array.isArray(wholesalers) ? wholesalers : [];
+}
+
 function installCollectSupplierCounts(hooks) {
   const api = hooks || {
     document,
-    readProducts() {
-      return products;
-    },
-    countOf(id) {
-      return typeof wholesaleProductCount === "function" ? wholesaleProductCount(id) : null;
-    },
     getRender() {
       return typeof renderCollectSupplierTree === "function" ? renderCollectSupplierTree : null;
     },
     setRender(fn) {
       renderCollectSupplierTree = fn;
     },
-    getRenderSheets() {
-      return typeof renderSheets === "function" ? renderSheets : null;
+    getRenderCatalog() {
+      return typeof renderCafe24Catalog === "function" ? renderCafe24Catalog : null;
     },
-    setRenderSheets(fn) {
-      renderSheets = fn;
-    },
-    getLoadProducts() {
-      return typeof loadProducts === "function" ? loadProducts : null;
-    },
-    setLoadProducts(fn) {
-      loadProducts = fn;
-    },
-    viewOpen() {
-      const view = document.getElementById("viewCollect");
-      return Boolean(view && !view.hidden);
+    setRenderCatalog(fn) {
+      renderCafe24Catalog = fn;
     },
     tree() {
       return document.getElementById("collectSupplierTree");
     },
+    shopCatalog: readShopCatalog,
+    supplierRows: readSupplierRows,
   };
   if (api.getRender && api.getRender() && api.getRender().collectSupplierCountHook) return;
 
@@ -100,96 +134,63 @@ function installCollectSupplierCounts(hooks) {
     doc.head.appendChild(style);
   }
 
-  let beforeLoad = null;
-  try {
-    beforeLoad = api.readProducts();
-  } catch (error) {
-    beforeLoad = null;
-  }
-  let ready = Array.isArray(beforeLoad) && beforeLoad.length > 0;
+  const counts = new Map();
 
-  function loadedNow() {
-    if (ready) return true;
-    let current = null;
-    try {
-      current = api.readProducts();
-    } catch (error) {
-      return false;
-    }
-    if (current !== beforeLoad) ready = true;
-    return ready;
+  function supplierRows() {
+    return api.supplierRows ? api.supplierRows() : [];
+  }
+
+  function skipSupplier(id, name) {
+    return isOwnerclanSupplier(id, supplierRows(), name);
+  }
+
+  function rememberVisibleTotals() {
+    const shop = shopCatalogTotal(api.shopCatalog ? api.shopCatalog() : null);
+    if (shop && !isOwnerclanSupplier(shop.id, supplierRows(), "")) counts.set(shop.id, shop.count);
+  }
+
+  function countOf(id) {
+    const key = String(id || "");
+    if (isOwnerclanSupplier(key, supplierRows(), "")) return null;
+    if (!counts.has(key)) return null;
+    return counts.get(key);
   }
 
   function paintTree() {
-    paintCollectSupplierCounts(api.tree(), {
-      loaded: loadedNow(),
-      countOf: api.countOf,
-    });
+    rememberVisibleTotals();
+    paintCollectSupplierCounts(api.tree(), { countOf, skip: skipSupplier });
   }
 
-  function refreshOpenList() {
-    if (!api.viewOpen()) return;
-    const render = api.getRender();
-    if (typeof render === "function") render();
-  }
-
-  const render = api.getRender();
-  if (typeof render === "function") {
+  function wrap(getFn, setFn) {
+    if (typeof getFn !== "function" || typeof setFn !== "function") return;
+    const current = getFn();
+    if (typeof current !== "function" || current.collectSupplierCountHook) return;
     const wrapped = function () {
-      const result = render.apply(this, arguments);
+      const result = current.apply(this, arguments);
       try {
         paintTree();
       } catch (error) {
-        /* 개수 표시가 실패해도 공급사 목록은 그대로 둡니다 */
+        /* 개수 표시가 실패해도 목록은 그대로 둡니다 */
       }
       return result;
     };
     wrapped.collectSupplierCountHook = true;
-    Object.assign(wrapped, render);
-    api.setRender(wrapped);
+    Object.assign(wrapped, current);
+    setFn(wrapped);
   }
 
-  // 지역 이름을 renderSheets/loadProducts 로 두면, 기본 훅이 그 이름을 찾을 때
-  // 전역 함수 대신 초기화 중인 지역 변수를 봐서 감싸기가 실패합니다.
-  const currentSheets = api.getRenderSheets();
-  if (typeof currentSheets === "function" && !currentSheets.collectSupplierCountHook) {
-    const wrappedSheets = function () {
-      const result = currentSheets.apply(this, arguments);
-      const wasReady = ready;
-      if (!wasReady && loadedNow()) {
-        try {
-          refreshOpenList();
-        } catch (error) {
-          /* 목록을 다시 그리지 못해도 상품 목록 갱신은 막지 않습니다 */
-        }
-      }
-      return result;
-    };
-    wrappedSheets.collectSupplierCountHook = true;
-    Object.assign(wrappedSheets, currentSheets);
-    api.setRenderSheets(wrappedSheets);
-  }
-
-  const currentLoad = api.getLoadProducts();
-  if (typeof currentLoad === "function" && !currentLoad.collectSupplierCountHook) {
-    const wrappedLoad = async function () {
-      const result = await currentLoad.apply(this, arguments);
-      ready = true;
-      try {
-        refreshOpenList();
-      } catch (error) {
-        /* 개수는 다음에 목록을 그릴 때 붙습니다 */
-      }
-      return result;
-    };
-    wrappedLoad.collectSupplierCountHook = true;
-    Object.assign(wrappedLoad, currentLoad);
-    api.setLoadProducts(wrappedLoad);
-  }
+  wrap(api.getRender, api.setRender);
+  wrap(api.getRenderCatalog, api.setRenderCatalog);
 }
 
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { supplierTotalCountLabel, paintCollectSupplierCounts, installCollectSupplierCounts };
+  module.exports = {
+    supplierTotalCountLabel,
+    shopCatalogTotal,
+    isOwnerclanSupplier,
+    paintCollectSupplierCounts,
+    installCollectSupplierCounts,
+  };
 }
 
 if (typeof document !== "undefined") installCollectSupplierCounts();

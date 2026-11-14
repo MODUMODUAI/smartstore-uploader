@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.8",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.8/MODUMODU-update.zip",
+  "version": "2026.11.14.9",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.9/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "728bc855aab0a4665f34e8d7e0463a7572bfb672e61e30134e33be5fac992ee6",
-  "notes": "상품관리 공급처는 목록의 공급처 이름으로 거르고, 이미 등록한 상품은 고른 항목만 다시 등록합니다."
+  "sha256": "6749cb957e884031eff51ba01da9988376885f8a29af76b79c1de6f0cab889a5",
+  "notes": "판매정보업데이트에서 배송/가격(배송템플릿·가격세트)을 골라 반영하고, 바뀔 내용을 미리 볼 수 있습니다. 공급처 필터가 더 정확해졌고, 온라인 판매 불가 전용상품은 가져오지 않습니다."
 }

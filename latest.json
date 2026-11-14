@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.5",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.5/MODUMODU-update.zip",
+  "version": "2026.11.14.6",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.6/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "42ad82b22ae586ae86b5bb92137eeafa4ff2d0d62144b7e896aba606964486d3",
-  "notes": "상품담기 공급사 개수를 전체 상품 수에 맞추고, 오너클랜은 빼 둡니다."
+  "sha256": "8219a19efb944dde3757edf2f2f1ec6bdfeb778101089ad5450f4d50eb70dec0",
+  "notes": "공급처설정 상품수를 전체 상품 수로 맞추고, 상품담기도 그 숫자를 씁니다. 오너클랜은 빼 둡니다."
 }

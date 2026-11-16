@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.14.12",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.14.12/MODUMODU-update.zip",
+  "version": "2026.11.16.8",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.16.8/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "c5edd84154e8ea21d409f06f4c747682580fb88520511ff223584140b489b46a",
-  "notes": "상품담기에 '공급처 전체상품담기' 버튼과 '새상품 자동담기' 체크가 생겼습니다. 체크해 두면 공급처에 새로 올라온 상품을 자동으로 담습니다."
+  "sha256": "1e5b8d8f0ba0e41423174a5cb0fae11936f9f7e97d2f8071c57e9efe1d8d3f8d",
+  "notes": "모두모두AI를 더 좋게 고쳤습니다."
 }

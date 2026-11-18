@@ -1,9 +1,9 @@
 {
-  "version": "2026.11.18.4",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.18.4/MODUMODU-update.zip",
+  "version": "2026.11.18.5",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.18.5/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "c77db437b8d705c32cbee90a6fb1b9f129735648929c73c05a52cb51ab3fc8a8",
+  "sha256": "b1a6fb915eeb3d63fd88385005e99cfe1a899e7c77257c4e524385e8713fc456",
   "notes": "모두모두AI를 더 좋게 고쳤습니다."
 }

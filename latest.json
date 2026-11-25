@@ -1,12 +1,20 @@
 {
-  "version": "2026.11.25.18",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.25.18/MODUMODU-update.zip",
+  "version": "2026.11.25.23",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.25.23/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "fa2cd0979b080d7df9ce37764484b30a21b73e619291dbadef62774bedae8276",
+  "sha256": "e6f367da8e4aba18b5ca72049de365b06254e892980642d1f79b861726989a46",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.25.23",
+      "title": "상품요약 칸 없앰 (요약 설명 특수문자 등록 거절 해결)",
+      "items": [
+        "상품표의 '상품요약' 칸을 없앴어요. 공급처 상세글로 자동으로 만들어져서 ₩ * ? \" < > 같은 특수문자 때문에 네이버 등록이 거절되곤 했어요.",
+        "이제 네이버에 요약 설명을 보내지 않아요 (네이버 필수 항목이 아니에요). 상품명·태그는 그대로예요."
+      ]
+    },
     {
       "version": "2026.11.25.18",
       "title": "업데이트 창에 바뀐 내용이 보여요",
@@ -34,6 +42,7 @@
   ],
   "news_seen": [
     "업데이트 창에 바뀐 내용이 보여요",
+    "상품요약 칸 없앰 (요약 설명 특수문자 등록 거절 해결)",
     "침구친구 상품은 '세트'일 때만 이불세트 카테고리",
     "엑셀 저장 뒤 바로 열기 + 같은 주문 두 번 방지",
     "주문 엑셀 파일 생성 창이 간단해졌어요",

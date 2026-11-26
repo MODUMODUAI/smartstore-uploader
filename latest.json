@@ -1,12 +1,20 @@
 {
-  "version": "2026.11.26.11",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.11/MODUMODU-update.zip",
+  "version": "2026.11.26.12",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.12/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "1884a5675f7be1489d49c1a34a533336407d983d79ad310049c5070c77259a10",
+  "sha256": "c6902fb9426646750a12bfc8f02588fb2b056d9d5f20267f21c735023f493a67",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.26.12",
+      "title": "공급처 자동 로그인 때 로그인 버튼까지 눌러요",
+      "items": [
+        "공급처에서 주문하기·공급처 로그인에서 아이디·비밀번호만 들어가고 로그인 화면에 머물던 경우(공급처 등 보안접속 화면), 로그인 버튼을 직접 누르고 안 되면 Enter로 로그인해요.",
+        "비밀번호가 틀렸다는 알림이 뜨면 다시 누르지 않아요 (계정이 잠기지 않게). 공급처 관리에서 비밀번호를 확인해 주세요."
+      ]
+    },
     {
       "version": "2026.11.26.11",
       "title": "공급처 주문 중 Chrome 연결이 끊기면 다시 붙어서 한 번 더 해요",
@@ -162,17 +170,10 @@
         "상품표의 '상품요약' 칸을 없앴어요. 공급처 상세글로 자동으로 만들어져서 ₩ * ? \" < > 같은 특수문자 때문에 네이버 등록이 거절되곤 했어요.",
         "이제 네이버에 요약 설명을 보내지 않아요 (네이버 필수 항목이 아니에요). 상품명·태그는 그대로예요."
       ]
-    },
-    {
-      "version": "2026.11.25.18",
-      "title": "업데이트 창에 바뀐 내용이 보여요",
-      "items": [
-        "새 버전을 받는 업데이트 창에 '이번 업데이트에서 바뀐 점'을 보여 줘요. 지금 쓰는 버전 다음부터 바뀐 것만 골라 보여요.",
-        "업데이트한 뒤 처음 켜면 바뀐 점을 한 번 창으로 알려 줘요. '도움말에서 전체 보기'를 누르면 이 화면(최근 바뀐 점)으로 와요."
-      ]
     }
   ],
   "news_seen": [
+    "#6c52db5546",
     "#c449a4a5b9",
     "#daebd11e7b",
     "#5eea742004",

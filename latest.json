@@ -1,12 +1,28 @@
 {
-  "version": "2026.11.26.26",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.26/MODUMODU-update.zip",
+  "version": "2026.11.26.29",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.29/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "83cfd0e7008c00327f243c363bb29ce62920bf5cfac0eea3b9919a67c28a18b9",
+  "sha256": "fd9a08591eeaa5f8b67723bc6e0c8f305306f6f64fffe9e2198fda5419a15335",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.26.29",
+      "title": "설정에 이미지 바꾸기 모델을 표시해요",
+      "items": [
+        "설정 → AI API 의 ChatGPT 줄 아래에 '이미지 바꾸기 모델: gpt-image-2 (낮은 화질)'이 보여요. 'ChatGPT 모델' 칸(gpt-4.1-mini 등)은 상품명·태그·속성 같은 글자 AI에만 써요."
+      ]
+    },
+    {
+      "version": "2026.11.26.29",
+      "title": "추천인 혜택: 추천받은 분이 결제하면 두 사람 모두 한 달 더",
+      "items": [
+        "홈페이지 회원가입 때 '추천인' 칸에 추천해 준 분의 가입 이메일·전화번호를 넣고, 가입한 분이 처음 결제하면 가입한 분과 추천한 분 모두 사용기간이 한 달 더해져요. 가입만 해서는 늘지 않아요.",
+        "한 달이 늘면 추천한 분에게 '한 달이 늘었어요' 메일이 가요.",
+        "셀러용 알파 위쪽 '추천 링크' 버튼을 누르면 내 추천 링크가 복사돼요. 이 링크로 들어오면 가입 칸의 추천인이 자동으로 채워져요."
+      ]
+    },
     {
       "version": "2026.11.26.26",
       "title": "오류관리에 들어가면 메뉴 옆 숫자가 없어져요",
@@ -158,27 +174,12 @@
         "스마트스토어 주소로 상품수집을 하면 숨은(최소화된) Chrome 창에서 읽어서, 네이버 보안확인·로그인 화면이 떠도 보이지 않고 빈 창(about:blank#modumodu-worker)만 보였어요.",
         "이제 스마트스토어 주소는 보이는 Chrome 탭에서 읽어요. 잘 읽으면 탭을 닫고, 못 읽으면 탭을 열어 두니 보안확인·로그인을 한 뒤 다시 상품수집을 눌러 주세요."
       ]
-    },
-    {
-      "version": "2026.11.25.37",
-      "title": "'Chrome에 연결하지 못했습니다'가 되풀이되지 않게 했어요",
-      "items": [
-        "프로그램이 뒤에서 상품을 읽던 작은(최소화된) Chrome 탭이 사이트 알림창 등에 멈추면, 그 뒤 상품담기가 상품마다 1분씩 기다리다 'Chrome에 연결하지 못했습니다'로 끝났어요.",
-        "이제 연결이 안 되면 멈춘 작업 탭을 스스로 닫고 다시 연결해요. 직접 보던 Chrome 탭과 로그인은 그대로 두어요."
-      ]
-    },
-    {
-      "version": "2026.11.25.37",
-      "title": "송장수집 때 바뀐 배송중 송장도 바로 수정해요",
-      "items": [
-        "주문관리에서 공급처 송장을 가져올 때, 이미 배송중인 스마트스토어 주문의 송장번호나 택배사가 공급처에서 바뀌었으면 바로 송장수정까지 해요 (네이버 API 먼저, 막히면 스마트스토어센터로 자동).",
-        "자동으로 못 고친 주문은 배송현황 관리 안내가 이유와 함께 떠요. 그 전까지는 예전 송장번호가 그대로 남아 있어요."
-      ]
     }
   ],
   "news_seen": [
+    "#4c1cfdeb79",
+    "#32369e2faa",
     "#c9ea93acfa",
-    "#cf091b0fdd",
     "#b0d204cabe",
     "#c748c60040",
     "#e9487ede6c",

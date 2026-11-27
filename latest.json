@@ -425,7 +425,9 @@
         "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.27.6/MODUMODU-update.zip",
         "sha256": "ffa823f97263f21c4b0c22e62ee974b6a4f8dd042bcf42b9ebc5d039a5867131",
         "published_at": 1795751826,
-        "ready_at": 1795838226
+        "ready_at": 1795838226,
+        "blocked": true,
+        "auto_hold": "테스트용 2026.11.27.6 오류 보고"
       },
       {
         "version": "2026.11.27.4",

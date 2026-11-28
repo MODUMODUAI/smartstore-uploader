@@ -1,12 +1,28 @@
 {
-  "version": "2026.11.28.1",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.1/MODUMODU-update.zip",
+  "version": "2026.11.28.6",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.6/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "dfc9b4c17fe20ab2aa4d7537c101c7aadb0e360ff3912ae137f9d5cbd2f79f29",
+  "sha256": "d7cc50a25edebd6f01ae015fea963f05abd864bf229f3b1eaf6d5e76bafe5fbb",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.28.6",
+      "title": "테스트용: 메뉴가 왼쪽으로",
+      "items": [
+        "테스트용 먼저: 위쪽 메뉴가 왼쪽 메뉴로 (상품관리 아래 상품담기·공급처, 주문관리 아래 신규주문~고객문의).",
+        "마케팅 글쓰기 → 네이버 블로그 자리가 생겼어요 (블로그는 아직 마스터용에서만).",
+        "« 메뉴 숨기기로 화면을 넓게, 맨 위 ☰ 메뉴로 다시 열어요."
+      ]
+    },
+    {
+      "version": "2026.11.28.6",
+      "title": "이미지바꾸기: 상세 이미지 잘라 목록 이미지 채우기",
+      "items": [
+        "이미지추가 줄 끝에서 5~10장을 고르고 상세 잘라 채우기를 누르면 상세 사진을 잘라 목록 이미지를 그 장수로 채워요. 대표는 그대로, 글씨 띠는 빼요."
+      ]
+    },
     {
       "version": "2026.11.27.13",
       "title": "주문넣기: 엑셀파일 / 이카운트 ERP 고르기",
@@ -155,24 +171,11 @@
         "ChatGPT API 키 옆 초록 표시에 고른 이미지 모델이 보여요. 'ChatGPT 글자 AI 모델'(gpt-4.1-mini 등)은 상품명·태그·속성에만 쓰고 이미지와는 관계없어요.",
         "고른 모델을 그 키로 못 쓰면 gpt-image-2 낮은 화질 → gpt-image-1.5 → 예전 모델 순서로 자동으로 바꿔 써요. 글씨 지우기는 예전 방식 그대로예요. 셀러용 알파에서 AI 포인트로 쓸 때는 gpt-image-2 낮은 화질로 고정이에요."
       ]
-    },
-    {
-      "version": "2026.11.26.34",
-      "title": "추천 링크를 카톡으로 바로 보내요",
-      "items": [
-        "셀러용 알파 위쪽 '추천 링크' 옆 노란 '카톡으로 보내기'를 누르면 추천 문구와 내 추천 링크가 복사되고 카카오톡 PC 버전이 열려요. 보낼 대화방에서 Ctrl+V 로 붙여 넣어 보내세요.",
-        "홈페이지 맨 위에 '친구 추천하면 한 달 무료' 안내 띠가 생겼어요. 추천받아 가입한 친구가 처음 결제하면 친구와 나 모두 사용기간이 한 달 늘어나요."
-      ]
-    },
-    {
-      "version": "2026.11.26.29",
-      "title": "설정에 이미지 바꾸기 모델을 표시해요",
-      "items": [
-        "설정 → AI API 의 ChatGPT 줄 아래에 '이미지 바꾸기 모델: gpt-image-2 (낮은 화질)'이 보여요. 'ChatGPT 모델' 칸(gpt-4.1-mini 등)은 상품명·태그·속성 같은 글자 AI에만 써요."
-      ]
     }
   ],
   "news_seen": [
+    "#027be825d9",
+    "#ec377e0d05",
     "#b16fd32f60",
     "#36a5eab123",
     "#448c77bf7c",
@@ -425,6 +428,13 @@
   "alpha": {
     "delay_hours": 24,
     "versions": [
+      {
+        "version": "2026.11.28.6",
+        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.6/MODUMODU-update.zip",
+        "sha256": "d7cc50a25edebd6f01ae015fea963f05abd864bf229f3b1eaf6d5e76bafe5fbb",
+        "published_at": 1795844361,
+        "ready_at": 1795930761
+      },
       {
         "version": "2026.11.28.1",
         "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.1/MODUMODU-update.zip",

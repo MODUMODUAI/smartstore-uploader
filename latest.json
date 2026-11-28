@@ -1,12 +1,39 @@
 {
-  "version": "2026.11.27.6",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.27.6/MODUMODU-update.zip",
+  "version": "2026.11.27.13",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.27.13/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "ffa823f97263f21c4b0c22e62ee974b6a4f8dd042bcf42b9ebc5d039a5867131",
+  "sha256": "1f5a9bef4f4f639a42321fb8144331f11f594907ca2ee800803c89d047a885e4",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.27.13",
+      "title": "주문넣기: 엑셀파일 / 이카운트 ERP 고르기",
+      "items": [
+        "신규주문 탭의 주문넣기에서 엑셀파일과 이카운트 ERP 중에 골라요. 모모에게 '신규주문 주문 넣어 줘'라고 해도 돼요.",
+        "ERP는 도매처마다 Code·아이디·비밀번호와 '옵션명 = 품목코드' 리스트를 저장하면, 리스트에 든 주문만 이카운트 주문서에 채워요. 저장은 확인한 뒤 직접 눌러 주세요.",
+        "옵션명은 '주문 옵션에서 옵션명 가져오기'로 주문에서 뽑아 붙이고, '=' 오른쪽에 품목코드만 적으면 돼요."
+      ]
+    },
+    {
+      "version": "2026.11.27.13",
+      "title": "발주 엑셀을 공급처 메일로 보내요",
+      "items": [
+        "주문관리 엑셀파일생성으로 엑셀을 만들면 저장 완료 창에 📧 공급처에 메일 보내기 버튼이 생겨요. 받는 사람(공급처 메일)과 제목(예: 1127 퀸스토어 발주/장경석)을 확인하고 보내기를 누르면 엑셀이 첨부돼서 가요.",
+        "처음 한 번 보내는 메일 설정에 내 메일 주소와 비밀번호를 넣어 주세요. 카카오메일은 환경설정 → IMAP/SMTP 사용을 켜야 하고, 2단계 인증을 쓰면 앱 비밀번호를 넣어요. 비밀번호는 이 PC에만 암호화해서 저장돼요.",
+        "받는 메일 주소는 주문의 공급처마다 기억해서, 다음에 그 공급처 주문으로 엑셀을 만들면 주소가 채워진 보내기 창이 바로 떠요. 확인하고 보내기만 누르면 돼요. 여러 공급처 주문이 섞인 파일은 주소를 기억하지 않아요."
+      ]
+    },
+    {
+      "version": "2026.11.27.13",
+      "title": "새 버전이 있으면 버전 번호에 빨간 점이 떠요",
+      "items": [
+        "위쪽 버전 번호에 빨간 점이 붙고 옆에 주황색 업데이트 v… 버튼이 보이면 새 버전이 나온 거예요.",
+        "버전 번호나 그 버튼을 누르면 바로 업데이트해요. 상품·설정·주문 기록은 그대로이고 1~2분 뒤 다시 켜져요. 누르지 않으면 예전처럼 다음에 프로그램을 켤 때 적용돼요.",
+        "셀러용 알파는 나온 지 하루가 지난 버전만 알려 줘요."
+      ]
+    },
     {
       "version": "2026.11.27.6",
       "title": "고도몰 공급처 분류가 몰 메뉴 이름·순서 그대로 나와요",
@@ -143,34 +170,12 @@
       "items": [
         "설정 → AI API 의 ChatGPT 줄 아래에 '이미지 바꾸기 모델: gpt-image-2 (낮은 화질)'이 보여요. 'ChatGPT 모델' 칸(gpt-4.1-mini 등)은 상품명·태그·속성 같은 글자 AI에만 써요."
       ]
-    },
-    {
-      "version": "2026.11.26.29",
-      "title": "추천인 혜택: 추천받은 분이 결제하면 두 사람 모두 한 달 더",
-      "items": [
-        "홈페이지 회원가입 때 '추천인' 칸에 추천해 준 분의 가입 이메일·전화번호를 넣고, 가입한 분이 처음 결제하면 가입한 분과 추천한 분 모두 사용기간이 한 달 더해져요. 가입만 해서는 늘지 않아요.",
-        "한 달이 늘면 추천한 분에게 '한 달이 늘었어요' 메일이 가요.",
-        "셀러용 알파 위쪽 '추천 링크' 버튼을 누르면 내 추천 링크가 복사돼요. 이 링크로 들어오면 가입 칸의 추천인이 자동으로 채워져요."
-      ]
-    },
-    {
-      "version": "2026.11.26.26",
-      "title": "오류관리에 들어가면 메뉴 옆 숫자가 없어져요",
-      "items": [
-        "오류관리에 한 번 들어가면 빨간 숫자가 사라지고, 그 뒤에 새로 들어온 오류만 숫자로 보여요.",
-        "오류관리 화면에서는 지난번에 본 뒤 새로 들어온 기록에 빨간 '새' 표시가 붙어요. 전체 건수는 화면 위 '받은 오류 N건'에 그대로 나와요."
-      ]
-    },
-    {
-      "version": "2026.11.26.26",
-      "title": "추천인 혜택: 추천하면 두 사람 모두 한 달 더",
-      "items": [
-        "홈페이지 회원가입 때 '추천인' 칸에 추천해 준 분의 가입 이메일이나 전화번호를 넣으면, 가입한 분과 추천한 분 모두 사용기간이 한 달 더해져요.",
-        "본인 추천, 탈퇴 뒤 다시 가입해 또 받기는 안 돼요 (한 전화번호·이메일당 한 번). 회원관리 사용기간 칸에 '추천인 …', '추천 N명'이 보여요."
-      ]
     }
   ],
   "news_seen": [
+    "#b16fd32f60",
+    "#36a5eab123",
+    "#448c77bf7c",
     "#ef818994dd",
     "#0b9ad2e5da",
     "#7e0ca1ee6f",
@@ -421,6 +426,13 @@
     "delay_hours": 24,
     "versions": [
       {
+        "version": "2026.11.27.13",
+        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.27.13/MODUMODU-update.zip",
+        "sha256": "1f5a9bef4f4f639a42321fb8144331f11f594907ca2ee800803c89d047a885e4",
+        "published_at": 1795835146,
+        "ready_at": 1795921546
+      },
+      {
         "version": "2026.11.27.6",
         "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.27.6/MODUMODU-update.zip",
         "sha256": "ffa823f97263f21c4b0c22e62ee974b6a4f8dd042bcf42b9ebc5d039a5867131",
@@ -435,34 +447,6 @@
         "sha256": "f2fa12ad2613572dbc032f1db1591a578c42aa61e5837edb6d78d9b5d5d88b97",
         "published_at": 1795738085,
         "ready_at": 1795824485
-      },
-      {
-        "version": "2026.11.26.58",
-        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.58/MODUMODU-update.zip",
-        "sha256": "ad952f9aee85e6a64ad614510f0fe8dc53651c292ae5030210303b825c5ecec3",
-        "published_at": 1795733465,
-        "ready_at": 1795819865
-      },
-      {
-        "version": "2026.11.26.57",
-        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.57/MODUMODU-update.zip",
-        "sha256": "3de0bfd0dd63b686b52130aa2772ccbbb10787a055c21969a15347e6c9df9ce3",
-        "published_at": 1795691379,
-        "ready_at": 1795777779
-      },
-      {
-        "version": "2026.11.26.55",
-        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.55/MODUMODU-update.zip",
-        "sha256": "1febd4acc48f0bfd9be205874797d697a282b327b6e8bc6e6889dce4a2583394",
-        "published_at": 1795688303,
-        "ready_at": 1795774703
-      },
-      {
-        "version": "2026.11.26.44",
-        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.26.44/MODUMODU-update.zip",
-        "sha256": "3a4ec353f49a184604051652497b87a28251254866453134a5c05b837c8d0f76",
-        "published_at": 1795688303,
-        "ready_at": 1795688303
       }
     ]
   }

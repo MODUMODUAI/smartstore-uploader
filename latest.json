@@ -1,12 +1,21 @@
 {
-  "version": "2026.11.28.15",
-  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.15/MODUMODU-update.zip",
+  "version": "2026.11.28.22",
+  "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.22/MODUMODU-update.zip",
   "mirrors": [
     "https://github.com/MODUMODUAI/smartstore-uploader/releases/latest/download/MODUMODU-update.zip"
   ],
-  "sha256": "05190483d7856caa70d2b44644f9e78d76884b53bf073f2e128b7688b95afaa4",
+  "sha256": "e462fe9914e2ba8e6c1be85c28af2bed18205763cf95f873be9a85cd813fbfac",
   "notes": "모두모두AI를 더 좋게 고쳤습니다.",
   "changes": [
+    {
+      "version": "2026.11.28.22",
+      "title": "왼쪽 메뉴: 너비 조절·마켓선택 펼치기·블로그 로그인 정보",
+      "items": [
+        "왼쪽 메뉴 오른쪽 세로줄을 끌어 너비를 바꿔요 (아주 좁히면 그림표만, 두 번 누르면 처음대로). 글씨도 커졌어요.",
+        "마켓선택은 상품관리 안에 있고, 누르면 마켓 목록이 펼쳐지고 다시 누르면 접혀요. 주문넣기관리는 주문관리 탭 줄 고객문의 옆이에요.",
+        "마스터 네이버 블로그 화면에 스토어별 로그인 정보(블로그 주소·아이디·비밀번호)와 발행한 글 링크가 생겼어요. 저장해 두면 자동 발행 때 자동으로 로그인해요."
+      ]
+    },
     {
       "version": "2026.11.28.15",
       "title": "왼쪽 메뉴: 마켓선택·주문넣기관리·네이버 블로그 화면",
@@ -161,19 +170,10 @@
         "새 오류를 2분마다 확인하고(예전 5분), 다른 창을 보다가 모두모두 창으로 돌아오면 바로 다시 확인해요. 못 읽었으면 30초 뒤에 다시 해요.",
         "오류관리 화면을 켜 둔 채로 있어도 그 사이 새로 온 오류는 숫자와 '새' 표시로 남아요. 숫자는 오류관리 메뉴를 누르거나 새로고침할 때 없어져요."
       ]
-    },
-    {
-      "version": "2026.11.26.37",
-      "title": "모모에게 일을 시킬 수 있어요",
-      "items": [
-        "모모 대화창에 '어제 주문 송장 보내 줘', '신규주문 수집해 줘', '품절 확인해 줘', '상품담기 열어 줘'처럼 시키면 모모가 그 메뉴를 열고 버튼까지 눌러 줘요. 뭘 시킬 수 있는지는 '뭘 시킬 수 있어?'라고 물어보세요.",
-        "송장보내기·송장수집·주문확인·품절 확인처럼 마켓·공급처에 바뀌는 일은 모모가 카드로 먼저 보여 주고, '실행하기'를 눌러야 해요. 그다음 원래 버튼의 확인 창(몇 건 보낼까요?)도 한 번 더 나와요.",
-        "직원용처럼 주문관리를 못 쓰는 PC에서는 모모도 하지 않고 이유만 알려 줘요."
-      ]
     }
   ],
   "news_seen": [
-    "#18e3b8b4a3",
+    "#f859fb6a06",
     "#ec377e0d05",
     "#3129540fe5",
     "#b16fd32f60",
@@ -429,18 +429,29 @@
     "delay_hours": 24,
     "versions": [
       {
+        "version": "2026.11.28.22",
+        "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.22/MODUMODU-update.zip",
+        "sha256": "e462fe9914e2ba8e6c1be85c28af2bed18205763cf95f873be9a85cd813fbfac",
+        "published_at": 1795857722,
+        "ready_at": 1795944122
+      },
+      {
         "version": "2026.11.28.15",
         "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.15/MODUMODU-update.zip",
         "sha256": "05190483d7856caa70d2b44644f9e78d76884b53bf073f2e128b7688b95afaa4",
         "published_at": 1795852137,
-        "ready_at": 1795938537
+        "ready_at": 1795938537,
+        "blocked": true,
+        "auto_hold": "테스트용 2026.11.28.6 오류 보고"
       },
       {
         "version": "2026.11.28.6",
         "url": "https://github.com/MODUMODUAI/smartstore-uploader/releases/download/v2026.11.28.6/MODUMODU-update.zip",
         "sha256": "d7cc50a25edebd6f01ae015fea963f05abd864bf229f3b1eaf6d5e76bafe5fbb",
         "published_at": 1795844361,
-        "ready_at": 1795930761
+        "ready_at": 1795930761,
+        "blocked": true,
+        "auto_hold": "테스트용 2026.11.28.6 오류 보고"
       },
       {
         "version": "2026.11.28.1",
